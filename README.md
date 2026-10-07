@@ -27,6 +27,7 @@ Code for one game goes in a `tk5/` subfolder, so that a `tk6/` can come later.
 ## Build
 
 ```
+./download-deps.sh         # vendor/wasmtime (the build runs it when missing)
 ./build.sh                 # build/openwavu-import, then the tests
 build/openwavu-import <rpcs3 dir | game dir [file.rap]> -o content/
 ```
