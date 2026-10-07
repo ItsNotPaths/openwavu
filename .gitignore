@@ -1,7 +1,9 @@
-content/
-build/
+/content/
+/build/
 *.bin
 *.elf
 *.pkg
 *.rap
-docs/
+/docs/
+/ws.md
+/vendor/
