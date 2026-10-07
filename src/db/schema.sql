@@ -123,6 +123,7 @@ CREATE TABLE sound (
 	file TEXT NOT NULL
 );
 
+-- (hole music-extract :tags (importer audio) :sev polish) where TK5 keeps its music is not known.
 CREATE TABLE music (
 	id   TEXT PRIMARY KEY,
 	file TEXT NOT NULL
@@ -133,6 +134,7 @@ CREATE TABLE image (  -- UI, portraits
 	file TEXT NOT NULL
 );
 
+-- (hole text-strings :tags importer :sev polish) no source found yet for localized UI strings.
 CREATE TABLE text (
 	id    TEXT NOT NULL,
 	lang  TEXT NOT NULL,

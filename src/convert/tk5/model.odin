@@ -85,8 +85,7 @@ material :: proc(g: ^convert.Gltf, cache: ^map[u32]int, textures: Textures, pass
 }
 
 // Joint nodes in bind pose plus the skin. Returns the root nodes.
-// Costume meshes use joints past the skeleton (cloth chains in the undecoded MOP section 13):
-// they get an identity bind under bone 0, so their vertices keep the bind pose and follow the root.
+// (hole mop-joints :tags importer) costume joints past the skeleton (MOP, model section 13) get an identity bind under bone 0; cloth does not animate.
 @(private = "file")
 add_skin :: proc(g: ^convert.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dynamic]int) {
 	bones := len(s.bones)

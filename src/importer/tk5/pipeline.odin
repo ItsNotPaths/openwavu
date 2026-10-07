@@ -54,6 +54,8 @@ run :: proc(game: Game, out: string) -> (err: string) {
 	common := read_entry(im.archive, formats.COMMON_ANIMS) or_else nil
 	write_bank(&im, "common", common)
 	for id in 0 ..< formats.STAGE_COUNT do import_stage(&im, id)
+	import_sounds(&im)
+	import_images(&im)
 	return db.finish(w)
 }
 
@@ -84,6 +86,7 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 		if owner == c.id {
 			container := read_entry(im.archive, c.container) or_else nil
 			sections, _ := formats.sections(container, context.temp_allocator)
+			// (hole hand-face-anims :tags importer) container sections 1..5 (type 1 banks: hands, face?) are not decoded.
 			if len(sections) > 0 do write_bank(im, owner, sections[0])
 		}
 	}
@@ -176,11 +179,18 @@ import_stage :: proc(im: ^Import, index: int) {
 			append(&matrices, transform)
 		}
 	}
+	// (hole stage-break-pieces :tags importer :sev polish) section 4 (flying pieces of breakable props) is not exported.
 	file := fmt.tprintf("stages/%s.glb", id)
 	if len(meshes) > 0 && !convert.write_model(join(im.root, file), meshes[:], textures, nil, matrices[:]) do return
 	db.insert(&im.w, "stage", id, id, i64(index), file)
 	convert.write_stage_rows(&im.w, id, s)
 }
+
+// (hole sound-extract :tags (importer audio)) vag sound packs (entries 161..206, character slots +4/+5, stage packs) are not decoded.
+import_sounds :: proc(im: ^Import) {}
+
+// (hole ui-images :tags importer :sev polish) PNG entries 33..36 and model TIM2 sections are not exported.
+import_images :: proc(im: ^Import) {}
 
 // Unpacked archive entry in temp memory. The LZ layer, if any, stays.
 read_entry :: proc(a: Archive, index: int) -> (data: []byte, ok: bool) {

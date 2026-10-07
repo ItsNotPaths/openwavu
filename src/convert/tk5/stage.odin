@@ -16,6 +16,7 @@ write_stage_rows :: proc(w: ^db.Writer, id: string, s: formats.Stage) {
 			q.link < 0 ? db.Null{} : i64(q.link), i64(q.is_wall))
 	}
 	for f, i in s.floors {
+		// (hole ground-kinds :tags importer :sev polish) floor flag bits 0x4..0x800 (ground kind) have no code_name rows.
 		db.insert(w, "stage_floor", id, i64(i), m(f.centre.x), m(f.centre.y), m(f.centre.z),
 			f64(f.radius_sq) / (MM * MM), i64(f.flags))
 		for p, j in f.polygons {
