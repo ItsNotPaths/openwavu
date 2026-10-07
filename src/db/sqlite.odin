@@ -3,8 +3,7 @@ package db
 
 import "core:c"
 
-// (hole static-sqlite :tags importer) links the system libsqlite3; shipped builds need the amalgamation linked statically.
-foreign import sqlite "system:sqlite3"
+foreign import sqlite "../../vendor/sqlite/libsqlite3.a"
 
 Sqlite :: struct {}
 Stmt :: struct {}
