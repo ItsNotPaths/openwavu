@@ -7,7 +7,6 @@ import "base:intrinsics"
 import "base:runtime"
 import "core:io"
 import "core:os"
-import "core:slice"
 import "core:strconv"
 
 FLOAT :: 5126
@@ -128,6 +127,11 @@ write_float :: proc(w: io.Writer, v: any, _: ^json.Marshal_Options) -> json.Mars
 	return err
 }
 
+// (hole glb-reader :tags (render tools)) glb files can not be read back (JSON chunk, accessors, embedded PNGs).
+read_glb :: proc(data: []byte, allocator := context.allocator) -> (g: Gltf, ok: bool) {
+	return {}, false
+}
+
 // Appends data to the binary chunk, 4-byte aligned. Returns the buffer view index.
 add_view :: proc(g: ^Gltf, data: []byte, target: Maybe(int) = nil) -> int {
 	for len(g.bin) % 4 != 0 do append(&g.bin, 0)
@@ -146,7 +150,7 @@ add_accessor :: proc(g: ^Gltf, data: []$T, type: string, target: Maybe(int) = ni
 	else when E == u32 do component = UNSIGNED_INT
 	else do #panic("unsupported accessor element")
 
-	view := add_view(g, slice.to_bytes(data), target)
+	view := add_view(g, ([^]byte)(raw_data(data))[:len(data) * size_of(T)], target)
 	a := Accessor{bufferView = view, componentType = component, normalized = normalized, count = len(data), type = type}
 	when E == f32 {
 		if with_bounds && len(data) > 0 {
