@@ -8,7 +8,7 @@ export_clips :: proc(anim_path, skeleton_glb, out_glb: string) -> (ok: bool) {
 	return false
 }
 
-// (hole anim-gltf-import :tags tools :needs glb-reader) glTF clips can not be turned into .anim (bones -> channels; root motion into channels 0 and 2).
+// (hole anim-gltf-import :tags tools) glTF clips can not be turned into .anim (bones -> channels; root motion into channels 0 and 2).
 import_clip :: proc(in_glb, layout, out_anim: string) -> (ok: bool) {
 	return false
 }
