@@ -1,0 +1,197 @@
+package tk5_importer
+
+import "core:fmt"
+import "core:os"
+import "core:strings"
+import "../../db"
+import convert "../../convert/tk5"
+import formats "../../formats/tk5"
+
+TK5_SCHEMA :: #load("../../db/tk5/schema.sql", string)
+SCHEMA_VERSION :: "1"
+IMPORTER_VERSION :: "0.1.0"
+SKELETON_NAMES := [convert.BODY_BONES]string{
+	"root", "hips", "spine", "chest", "pelvis", "neck", "head",
+	"r_clavicle", "r_upperarm", "r_forearm", "r_hand", "l_clavicle", "l_upperarm", "l_forearm", "l_hand",
+	"r_thigh", "r_shin", "r_foot", "l_thigh", "l_shin", "l_foot", "r_toe", "l_toe",
+}
+
+Archive :: struct {
+	table: []formats.Entry,
+	file:  ^os.File,
+}
+
+Import :: struct {
+	archive: Archive,
+	root:    string,  // out/tk5
+	w:       db.Writer,
+}
+
+// Archive -> content pack under out/tk5/.
+run :: proc(game: Game, out: string) -> (err: string) {
+	table, ok := formats.read_file_table(game.eboot, game.build)
+	if !ok do return "file table not found in EBOOT"
+	defer delete(table)
+	file, open_err := os.open(game.data)
+	if open_err != nil do return "cannot open T55DATA1.BIN"
+	defer os.close(file)
+
+	im := Import{archive = {table, file}, root = strings.clone(join(out, "tk5"))}
+	defer delete(im.root)
+	for dir in ([]string{"anims", "parts", "stages"}) {
+		if !make_dir(join(im.root, dir)) do return fmt.tprintf("cannot create %s", join(im.root, dir))
+	}
+	im.w, err = db.create(join(im.root, "tk5.db"), TK5_SCHEMA)
+	if err != "" do return err
+	w := &im.w
+	db.insert(w, "source", "title_id", game.build.title_id)
+	db.insert(w, "source", "elf_sha256", game.build.elf_sha256)
+	db.insert(w, "source", "data_sha256", game.data_sha256)
+	db.insert(w, "source", "schema_version", SCHEMA_VERSION)
+	db.insert(w, "source", "importer_version", IMPORTER_VERSION)
+
+	if err = import_characters(&im); err != "" do return err
+	common := read_entry(im.archive, formats.COMMON_ANIMS) or_else nil
+	write_bank(&im, "common", common)
+	for id in 0 ..< formats.STAGE_COUNT do import_stage(&im, id)
+	return db.finish(w)
+}
+
+import_characters :: proc(im: ^Import) -> (err: string) {
+	for c, char_index in formats.CHARACTERS {
+		defer free_all(context.temp_allocator)
+		w := &im.w
+		db.insert(w, "character", c.id, c.name, i64(char_index))
+		owner := formats.container_owner(c.container)
+
+		packed := read_entry(im.archive, formats.MOTBIN_FIRST + 2 * char_index) or_else nil
+		data, unpacked := formats.unlz(packed, context.temp_allocator)
+		m, read := formats.read_motbin(data, context.temp_allocator)
+		if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
+		convert.write_moveset_rows(w, c.id, owner, m)
+
+		first, count := formats.costume_groups(c.container)
+		for k in 0 ..< count {
+			model, has := read_entry(im.archive, first + k * formats.GROUP_SIZE + formats.GROUP_MODEL)
+			if !has do continue
+			costume := fmt.tprintf("%d", k + 1)
+			part := fmt.tprintf("%s_%s", owner, costume)
+			parts := []string{part, fmt.tprintf("%s_lod", part)}
+			if owner == c.id && !import_parts(im, owner, parts, model) do continue
+			db.insert(w, "costume", c.id, costume)
+			for p in parts do db.insert(w, "costume_part", c.id, costume, p)
+		}
+		if owner == c.id {
+			container := read_entry(im.archive, c.container) or_else nil
+			sections, _ := formats.sections(container, context.temp_allocator)
+			if len(sections) > 0 do write_bank(im, owner, sections[0])
+		}
+	}
+	return ""
+}
+
+// Body (first NDP3) and LOD (second NDP3) of one costume model, sharing one skeleton.
+import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte) -> bool {
+	sections, ok := formats.sections(model, context.temp_allocator)
+	if !ok do return false
+	textures := make(convert.Textures, context.temp_allocator)
+	swaps := make(map[u32]u32, context.temp_allocator)
+	nud: [dynamic][]byte
+	nud.allocator = context.temp_allocator
+	skeleton: formats.Skeleton
+	for s in sections {
+		if len(s) < 4 do continue
+		switch string(s[:4]) {
+		case "NDP3": append(&nud, s)
+		case "NTP3":
+			list, _ := formats.read_ntp3(s, context.temp_allocator)
+			for t in list do textures[t.hash] = t
+		case "MIF\x00": formats.read_mif_swaps(s, &swaps)
+		}
+		if bones, is_bon := formats.read_skeleton(s, context.temp_allocator); is_bon && len(bones.bones) > len(skeleton.bones) {
+			skeleton = bones  // the largest bon section
+		}
+	}
+	for placeholder, frame0 in swaps do if t, has := textures[frame0]; has do textures[placeholder] = t
+	if len(nud) < len(parts) || len(skeleton.bones) == 0 do return false
+
+	dir := join(im.root, "parts", owner)
+	if !make_dir(dir) do return false
+	for part, i in parts {
+		meshes, read := formats.read_ndp3(nud[i], context.temp_allocator)
+		file := fmt.tprintf("parts/%s/%s.glb", owner, part)
+		if !read || !convert.write_model(join(im.root, file), meshes, textures, skeleton) do return false
+		db.insert(&im.w, "part", part, owner, i == 0 ? "body" : "lod", parts[0], file)
+	}
+	for b, i in skeleton.bones {
+		name := i < len(SKELETON_NAMES) ? SKELETON_NAMES[i] : fmt.tprintf("helper_%d", i)
+		standard: db.Value = i < len(SKELETON_NAMES) ? SKELETON_NAMES[i] : db.Null{}
+		db.insert(&im.w, "bone", parts[0], i64(i), i64(b.parent), name, standard)
+	}
+	return true
+}
+
+// Every anim of a body bank as anims/<owner>/<idx>.anim.
+write_bank :: proc(im: ^Import, owner: string, data: []byte) {
+	bank, ok := formats.read_bank(data)
+	if !ok do return
+	dir := join(im.root, "anims", owner)
+	if !make_dir(dir) do return
+	for i in 0 ..< bank.count {
+		a, decoded := formats.read_anim(bank, i, context.temp_allocator)
+		if !decoded do continue
+		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
+		if convert.write_anim(join(im.root, file), a) do db.insert(&im.w, "anim", owner, i64(i), i64(a.frames), file)
+	}
+}
+
+import_stage :: proc(im: ^Import, index: int) {
+	defer free_all(context.temp_allocator)
+	data, has := read_entry(im.archive, formats.STAGE_FIRST + 3 * index)
+	if !has do return
+	s, ok := formats.read_stage(data, context.temp_allocator)
+	if !ok do return
+	id := formats.STAGE_NAMES[index]
+	if id == "" do id = fmt.tprintf("stage_%02d", index)
+
+	textures := make(convert.Textures, context.temp_allocator)
+	list, _ := formats.read_ntp3(s.sections[1], context.temp_allocator)
+	for t in list do textures[t.hash] = t
+	meshes: [dynamic]formats.Mesh
+	matrices: [dynamic]Maybe([16]f32)
+	meshes.allocator, matrices.allocator = context.temp_allocator, context.temp_allocator
+	nuds, _ := formats.sections(s.sections[formats.STAGE_MESHES], context.temp_allocator)
+	mifs, _ := formats.sections(s.sections[formats.STAGE_NODES], context.temp_allocator)
+	for nud, i in nuds {
+		if len(nud) == 0 || i >= len(mifs) do continue
+		group, read := formats.read_ndp3(nud, context.temp_allocator)
+		nodes, nodes_read := formats.read_mif_nodes(mifs[i], context.temp_allocator)
+		if !read || !nodes_read || len(nodes) != len(group) do continue
+		for mesh, k in group {
+			mesh := mesh
+			mesh.name = nodes[k].name  // _DRWOFF_ in the name: a broken state, hidden at start
+			append(&meshes, mesh)
+			transform: Maybe([16]f32)
+			if mesh.single_bind >= 0 do transform = nodes[k].transform  // unbound meshes are in world space
+			append(&matrices, transform)
+		}
+	}
+	file := fmt.tprintf("stages/%s.glb", id)
+	if len(meshes) > 0 && !convert.write_model(join(im.root, file), meshes[:], textures, nil, matrices[:]) do return
+	db.insert(&im.w, "stage", id, id, i64(index), file)
+	convert.write_stage_rows(&im.w, id, s)
+}
+
+// Unpacked archive entry in temp memory. The LZ layer, if any, stays.
+read_entry :: proc(a: Archive, index: int) -> (data: []byte, ok: bool) {
+	if index < 0 || index >= len(a.table) do return nil, false
+	e := a.table[index]
+	if formats.entry_missing(e) do return nil, false
+	stored := make([]byte, e.stored_size, context.temp_allocator)
+	if n, err := os.read_at(a.file, stored, formats.entry_offset(e)); err != nil || n != len(stored) do return nil, false
+	return formats.unpack_entry(e, stored, context.temp_allocator)
+}
+
+make_dir :: proc(path: string) -> bool {
+	return os.make_directory_all(path) == nil || os.is_dir(path)
+}
