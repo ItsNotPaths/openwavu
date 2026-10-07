@@ -1,5 +1,7 @@
 package tests
 
+import "core:fmt"
+import "core:image/png"
 import "core:os"
 import "core:testing"
 import "../src/convert"
@@ -32,6 +34,22 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part WHERE slot = 'body'"), 85)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 15421)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage"), 37)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 4)
+	images: ^db.Stmt
+	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT id, file FROM image ORDER BY id", -1, &images, nil), db.OK) do return
+	defer db.finalize(images)
+	for index in 33 ..< 37 {
+		if !testing.expect_value(t, db.step(images), db.ROW) do break
+		file := fmt.tprintf("images/%d.png", index)
+		testing.expect_value(t, string(db.column_text(images, 0)), fmt.tprintf("%d", index))
+		testing.expect_value(t, string(db.column_text(images, 1)), file)
+		data, read_err := os.read_entire_file(fmt.tprintf("build/test_content/tk5/%s", file), context.temp_allocator)
+		if !testing.expect_value(t, read_err, nil) do continue
+		image, png_err := png.load_from_bytes(data, {.alpha_add_if_missing}, context.temp_allocator)
+		testing.expect_value(t, png_err, nil)
+		testing.expect(t, png_err == nil && image.width > 0 && image.height > 0, file)
+	}
+	testing.expect_value(t, db.step(images), db.DONE)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM move m LEFT JOIN anim a ON a.character = m.anim_owner AND a.idx = m.anim_idx WHERE a.idx IS NULL AND m.anim_owner NOT LIKE '%/embedded'"), 0)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part p WHERE NOT EXISTS (SELECT 1 FROM costume_part c WHERE c.part = p.id)"), 0)
 

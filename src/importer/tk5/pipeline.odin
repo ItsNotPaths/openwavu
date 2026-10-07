@@ -38,7 +38,7 @@ run :: proc(game: Game, out: string) -> (err: string) {
 
 	im := Import{archive = {table, file}, root = strings.clone(join(out, "tk5"))}
 	defer delete(im.root)
-	for dir in ([]string{"anims", "parts", "stages"}) {
+	for dir in ([]string{"anims", "parts", "stages", "images"}) {
 		if !make_dir(join(im.root, dir)) do return fmt.tprintf("cannot create %s", join(im.root, dir))
 	}
 	im.w, err = db.create(join(im.root, "tk5.db"), TK5_SCHEMA)
@@ -86,7 +86,10 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 		if owner == c.id {
 			container := read_entry(im.archive, c.container) or_else nil
 			sections, _ := formats.sections(container, context.temp_allocator)
-			// (hole hand-face-anims :tags importer) container sections 1..5 (type 1 banks: hands, face?) are not decoded.
+			// (hole hand-anims :tags importer) container sections 1..5 hold type-1 banks (hands, maybe faces); hand banks are not decoded to .anim (layout tk5hand).
+			// (hole face-anims :tags importer :needs hand-anims) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
+			// (hole intro-re :tags importer) intros, win poses and outros are not located: motbin moves or separate data, and where their camera tracks live.
+			// (hole camera-anims :tags importer :needs intro-re) camera tracks are not imported (.anim layout tk5cam: position, target, roll, fov).
 			if len(sections) > 0 do write_bank(im, owner, sections[0])
 		}
 	}
@@ -189,8 +192,16 @@ import_stage :: proc(im: ^Import, index: int) {
 // (hole sound-extract :tags (importer audio)) vag sound packs (entries 161..206, character slots +4/+5, stage packs) are not decoded.
 import_sounds :: proc(im: ^Import) {}
 
-// (hole ui-images :tags importer :sev polish) PNG entries 33..36 and model TIM2 sections are not exported.
-import_images :: proc(im: ^Import) {}
+// (hole tim2-textures :tags importer :sev polish) model section 17 (TIM2) is not decoded.
+import_images :: proc(im: ^Import) {
+	for index in 33 ..< 37 {
+		defer free_all(context.temp_allocator)
+		data, has := read_entry(im.archive, index)
+		if !has do continue
+		file := fmt.tprintf("images/%d.png", index)
+		if os.write_entire_file(join(im.root, file), data) == nil do db.insert(&im.w, "image", fmt.tprintf("%d", index), file)
+	}
+}
 
 // Unpacked archive entry in temp memory. The LZ layer, if any, stays.
 read_entry :: proc(a: Archive, index: int) -> (data: []byte, ok: bool) {
