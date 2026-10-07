@@ -15,8 +15,7 @@ Title_Pack :: struct {
 	overlays:     [][32]u8,
 }
 
-// (hole toml-parser :tags titlepack) no TOML reader (core has JSON and INI only); a small subset is enough.
-// (hole titlepack-format :tags titlepack :needs toml-parser :sev blocker) no title pack format: manifest.toml, rules.toml, seam -> module hashes, settings, overlays.
+// (hole titlepack-format :tags titlepack :sev blocker) no title pack format: manifest.toml, rules.toml, seam -> module hashes, settings, overlays.
 read_titlepack :: proc(zip: []byte, allocator := context.allocator) -> (tp: Title_Pack, ok: bool) {
 	return {}, false
 }
