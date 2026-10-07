@@ -1,0 +1,114 @@
+package tests
+
+import "core:fmt"
+import "core:math"
+import "core:os"
+import "core:strings"
+import "core:testing"
+import formats "../src/formats/tk5"
+
+// Dumps stage_collision.py's walls and floors with float bits. Polygon headers are not in its Zone, so
+// the dump walks them with the same layout.
+STAGE_DUMP :: `
+import sys, struct, numpy as np
+sys.path.insert(0, 'tools')
+import stage_collision as sc
+def h(a): return ' '.join('%08x' % v for v in np.asarray(a, dtype='<f4').reshape(-1).view('<u4'))
+for s in range(sc.COUNT):
+    got = sc.load(s)
+    if got is None:
+        print('S', s, 'none'); continue
+    mho, zones = got
+    print('S', s)
+    for q in mho.quads:
+        print('Q', q.obj, q.link, int(q.is_wall), h(q.corners), h(q.normal))
+    d = sc.stage_file(s)[17]
+    off = struct.unpack_from('<I', d, 0x34)[0] if len(d) >= 0x38 else 0
+    for z in zones:
+        print('Z %d %s %016x %d' % (z.flags, h(z.centre), np.float64(z.radius).view('<u8'), len(z.polys)))
+        p = off + 0x20
+        for poly in z.polys:
+            print('P', h(np.frombuffer(d, '<f4', 7, p)), h(poly))
+            p += 0x20 + 0x10 * len(poly)
+        off += struct.unpack_from('<I', d, off + 0x18)[0]
+`
+
+bits :: proc(b: ^strings.Builder, v: []f32) {
+	for f, i in v do fmt.sbprintf(b, i == 0 ? "%08x" : " %08x", transmute(u32)f)
+}
+
+dump_stage :: proc(b: ^strings.Builder, id: int, s: formats.Stage, has: bool) {
+	if !has || len(s.sections[formats.STAGE_MHO]) < 0x98 {
+		fmt.sbprintf(b, "S %d none\n", id)
+		return
+	}
+	fmt.sbprintf(b, "S %d\n", id)
+	for &q in s.quads {
+		fmt.sbprintf(b, "Q %d %d %d ", q.object, q.link, int(q.is_wall))
+		bits(b, (cast([^]f32)&q.corners)[:12])
+		strings.write_byte(b, ' ')
+		bits(b, q.normal[:])
+		strings.write_byte(b, '\n')
+	}
+	for &z in s.floors {
+		fmt.sbprintf(b, "Z %d ", z.flags)
+		bits(b, z.centre[:])
+		fmt.sbprintf(b, " %016x %d\n", transmute(u64)math.sqrt(f64(z.radius_sq)), len(z.polygons))
+		for &p in z.polygons {
+			head := [7]f32{p.centre.x, p.centre.y, p.centre.z, p.radius_sq, p.normal.x, p.normal.y, p.normal.z}
+			strings.write_string(b, "P ")
+			bits(b, head[:])
+			strings.write_byte(b, ' ')
+			bits(b, (cast([^]f32)raw_data(p.points))[:3 * len(p.points)])
+			strings.write_byte(b, '\n')
+		}
+	}
+}
+
+@(test)
+stage_collision_matches_reference :: proc(t: ^testing.T) {
+	table, ok := read_table()
+	if !ok do return
+	defer delete(table)
+	f, err := os.open(TK5 + "/game/USRDIR/T55DATA1.BIN")
+	if err != nil do return
+	defer os.close(f)
+
+	cwd, _ := os.get_working_directory(context.temp_allocator)
+	python := strings.concatenate({cwd, "/", TK5, "/.venv/bin/python"}, context.temp_allocator)  // not resolved: the venv is a symlink
+	state, want, stderr, perr := os.process_exec({working_dir = TK5, command = {python, "-c", STAGE_DUMP}}, context.allocator)
+	defer delete(want)
+	defer delete(stderr)
+	if perr != nil || state.exit_code != 0 {
+		testing.expectf(t, false, "reference dump failed: %v %s", perr, stderr)
+		return
+	}
+
+	b := strings.builder_make()
+	defer strings.builder_destroy(&b)
+	for id in 0 ..< formats.STAGE_COUNT {
+		e := table[formats.STAGE_FIRST + 3 * id]
+		s: formats.Stage
+		has := false
+		if !formats.entry_missing(e) {
+			stored := make([]byte, e.stored_size, context.temp_allocator)
+			os.read_at(f, stored, formats.entry_offset(e))
+			data, unpacked := formats.unpack_entry(e, stored, context.temp_allocator)
+			testing.expectf(t, unpacked, "stage %d entry did not unpack", id)
+			s, has = formats.read_stage(data, context.temp_allocator)
+			testing.expectf(t, has, "stage %d did not read", id)
+		}
+		dump_stage(&b, id, s, has)
+		free_all(context.temp_allocator)
+	}
+
+	got_lines := strings.split_lines(strings.to_string(b), context.temp_allocator)
+	want_lines := strings.split_lines(string(want), context.temp_allocator)
+	testing.expect_value(t, len(got_lines), len(want_lines))
+	for i in 0 ..< min(len(got_lines), len(want_lines)) {
+		if got_lines[i] != want_lines[i] {
+			testing.expectf(t, false, "line %d differs:\n got  %s\n want %s", i, got_lines[i], want_lines[i])
+			break
+		}
+	}
+}
