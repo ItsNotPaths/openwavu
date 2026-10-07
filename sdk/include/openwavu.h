@@ -8,11 +8,8 @@
 #define OW_EXPORT(name) __attribute__((export_name(#name)))
 #define OW_IMPORT(name) __attribute__((import_module("openwavu"), import_name(#name)))
 
-// (hole seam-abi :tags sdk :sev blocker) the world layout, the seam exports and the host imports are not defined; they wait on tk5decomp's semantic structs.
+// (hole seam-abi :tags sdk :sev blocker) draft v0 is tk5decomp sim/include/t5/world_abi.h, not copied here; open: the rules layout, where module private data lives, and T5Player still stores pointers.
 typedef struct OwWorld OwWorld;
-
-// (hole sdk-math :tags (sdk net) :needs seam-abi :sev blocker) no deterministic sin/atan2 (port the game's own) or exact fma import; tk5decomp quat.c uses host libm sin() and atan2(), which differ across OS/CPU.
-OW_IMPORT(fma) float ow_fma(float a, float b, float c);
 
 // (hole world-extensions :tags sdk :needs seam-abi) a pack can not declare named fields (heat.value, ...) in the world's extension area for other modules and the UI.
 

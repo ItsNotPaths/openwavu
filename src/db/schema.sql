@@ -134,6 +134,7 @@ CREATE TABLE image (  -- UI, portraits
 	file TEXT NOT NULL
 );
 
+-- (hole intro-timelines :tags importer :needs intro-re) no intro, win and outro timelines: fighter anim, camera track, frame events (effect, sound, voice).
 -- (hole text-strings :tags importer :sev polish) no source found yet for localized UI strings.
 CREATE TABLE text (
 	id    TEXT NOT NULL,

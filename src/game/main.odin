@@ -8,6 +8,7 @@ import "../input"
 import "../render"
 import "../sim"
 
+// (hole client-menus :tags game :needs (render-gpu pack-open render-api)) no client menus: lobby browser, character select (characters and costumes from the pack database), settings.
 // (hole game-loop :tags game :needs (pack-open fighter-data-load seam-wiring mode-host render-fighter render-stage input-pad mod-frame) :sev blocker) no playable local match.
 main :: proc() {
 	pack, ok := content.open_pack("content/tk5")

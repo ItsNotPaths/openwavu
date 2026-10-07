@@ -119,7 +119,7 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 }
 
 // 0x4000: the character's container bank 0; else 0x8000: common bank; else embedded bank 0.
-// (hole embedded-anims :tags importer) embedded bank 0 is empty in every motbin, yet 24 throw moves use it; their anims do not resolve.
+// (hole embedded-anims :tags importer) embedded bank 0 is empty in every motbin, yet 24 throw moves use it; their anims do not resolve. Probably the receiver side of throws (opponent or common bank).
 anim_ref :: proc(char, container_owner: string, anim: u32) -> (owner: string, idx: int) {
 	idx = int(anim & 0x3fff)
 	switch {
