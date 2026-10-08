@@ -1,4 +1,5 @@
 // Checks against the tk5decomp Python reference. Needs ../tk5decomp/game and extract/; skips without them.
+// (hole synthetic-fixtures :tags importer :sev polish) without game files every reader test skips; no small hand-made inputs (LZ edges, motbin end markers).
 package tests
 
 import "core:bytes"

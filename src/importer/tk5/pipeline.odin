@@ -50,6 +50,7 @@ run :: proc(game: Game, out: string) -> (err: string) {
 	db.insert(w, "source", "schema_version", SCHEMA_VERSION)
 	db.insert(w, "source", "importer_version", IMPORTER_VERSION)
 
+	// (hole import-skips :tags importer) a part, bank or stage that does not read is skipped without a message; the pack looks complete.
 	if err = import_characters(&im); err != "" do return err
 	common := read_entry(im.archive, formats.COMMON_ANIMS) or_else nil
 	write_bank(&im, "common", common)

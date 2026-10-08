@@ -40,6 +40,7 @@ engine_create :: proc() -> Engine {
 	config := wasm_config_new()
 	wasmtime_config_cranelift_nan_canonicalization_set(config, true)
 	wasmtime_config_consume_fuel_set(config, true)
+	// (hole seam-slots :tags wasm :needs seam-abi) the host enables multi-memory and the tests give each module a private memory; one memory with fixed seam slots, and the __data_end/__heap_base check per slot, are not built.
 	wasmtime_config_wasm_multi_memory_set(config, true)  // the shared world plus each module's own memory
 	return {wasm_engine_new_with_config(config)}
 }
