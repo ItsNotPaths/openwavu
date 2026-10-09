@@ -1,35 +1,33 @@
-// The sim host: runs a title pack's sim modules on one shared world memory. Bit exact to the game
-// with the default TK5 modules.
+// The sim host: runs a title pack's sim module. The module owns its memory; a snapshot is that memory
+// plus its globals. Bit exact to the game with the stock TK5 sim.
 package sim
 
 import "../content"
 import "../wasm"
-
-SEAMS :: [?]string{"frame", "input", "state", "motion", "collision", "hit", "pose", "match"}
 
 Input :: struct {
 	pad: u16,  // raw TK5 pad bits
 }
 
 World :: struct {
-	memory:    []byte,  // the shared world; layout from sdk/include/openwavu.h
-	instances: [len(SEAMS)]^wasm.Instance,
+	instance: ^wasm.Instance,
+	memory:   []byte,  // the sim module's own memory
 }
 
-// (hole world-memory :tags sim :needs (seam-abi seam-slots) :sev blocker) no world memory layout (host header, seam slots, mutable world, read-only content), no instances of the sim seams, no rules block filled from the pack.
-create :: proc(modules: [len(SEAMS)]^wasm.Module, rules: map[string]string) -> (w: ^World) {
+// (hole world-memory :tags sim :needs (seam-abi module-memory) :sev blocker) no sim instance; final params and loadout blobs are not passed to its init export.
+create :: proc(module: ^wasm.Module, params: map[string]f64, loadouts: [2][]byte) -> (w: ^World) {
 	return nil
 }
 
-// (hole fighter-data-load :tags (sim content) :needs (world-memory pack-open) :sev blocker) moveset rows and .anim files are not loaded into the world for the seams.
+// (hole fighter-data-load :tags (sim content) :needs (world-memory pack-open) :sev blocker) moveset rows and .anim files are not loaded into the sim module's memory.
 load_fighter :: proc(w: ^World, slot: int, p: ^content.Pack, character, costume: string) -> (ok: bool) {
 	return false
 }
 
-// (hole seam-wiring :tags sim :needs world-memory :sev blocker) the host does not run the frame seam or route its calls to the other seams.
+// (hole sim-step :tags sim :needs world-memory :sev blocker) the host does not call the sim module's step export each frame.
 step :: proc(w: ^World, inputs: [2]Input) {}
 
-// (hole module-snapshot :tags (sim net) :needs world-memory :sev blocker) no save/restore of the mutable world region plus the module globals.
+// (hole module-snapshot :tags (sim net) :needs (world-memory snapshot-range) :sev blocker) no save/restore of the sim module's exported mutable range plus its globals.
 save :: proc(w: ^World, buf: []byte) -> (size: int) {
 	return 0
 }
@@ -38,7 +36,13 @@ restore :: proc(w: ^World, buf: []byte) -> (ok: bool) {
 	return false
 }
 
-// (hole event-stream :tags (sim render) :needs seam-abi) no event stream (KO, round end, hits, spawn effect); presentation can not cancel effects of rolled-back frames.
+// The view the app reads: the sim's ow_view export, copied into the app module each frame.
+// (hole sim-view :tags (sim game) :needs (world-memory app-host)) the sim view is not copied into the app module.
+view :: proc(w: ^World) -> []byte {
+	return nil
+}
+
+// (hole event-stream :tags sim :needs seam-abi) no ow_event import: KO, round end and match end are not collected for match reports and lobby rotation.
 events :: proc(w: ^World) -> []u8 {
 	return nil
 }

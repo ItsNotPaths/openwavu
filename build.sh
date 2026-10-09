@@ -8,7 +8,8 @@ if [ ! -f vendor/sqlite/libsqlite3.a ] || [ vendor/sqlite/sqlite3.c -nt vendor/s
 	ar rcs vendor/sqlite/libsqlite3.a vendor/sqlite/sqlite3.o
 fi
 odin build src/importer -out:build/openwavu-import -o:speed -vet -strict-style
-# (hole module-build :tags (wasm tk5mod) :needs seam-abi) the default modules in modules/tk5 are not built to WASM, each for its seam slot (zig cc --target=wasm32-freestanding, -Wl,--import-memory,--global-base=<slot>).
+# (hole module-build :tags (wasm tk5mod) :needs (seam-abi ow-cli)) the stock sim.wasm and app.wasm are not built from modules/tk5 with ow build.
 odin check src/game -vet -strict-style
 odin check src/tools/animconv -vet -strict-style
+odin check src/tools/ow -vet -strict-style
 odin test tests -out:build/tests -o:speed -vet -strict-style

@@ -1,4 +1,4 @@
-// Online play: sessions between peers or through a server, and lobbies that carry overlays.
+// Online play: sessions between peers or through a server, and lobbies that run one title pack.
 package net
 
 import "../sim"
@@ -13,7 +13,15 @@ session_create :: proc(host: string) -> (s: ^Session, ok: bool) {
 // (hole net-session :tags net :needs module-snapshot :sev blocker) no rollback session (our own loop, not GGPO): input exchange, prediction, resimulation, state checksums.
 session_step :: proc(s: ^Session, w: ^sim.World, local: sim.Input) {}
 
-// (hole lobby-join :tags net :needs (net-session server-lobby content-cache titlepack-hash overlay-apply overlay-merge)) joining a lobby does not fetch its title pack, apply its overlays and rules, or check the lobby hash.
+// (hole lobby-join :tags net :needs (net-session server-lobby content-cache registry-verify titlepack-hash overlay-apply overlay-merge loadout-blob)) joining a lobby does not fetch its title pack from the registry, apply its params and overlays, or check the lobby hash.
 join_lobby :: proc(s: ^Session, lobby: string) -> (ok: bool) {
+	return false
+}
+
+// A player's loadout: pack format, opaque to the engine. Sent at join, passed to sim init, kept in replays.
+LOADOUT_MAX :: 4096
+
+// (hole loadout-blob :tags (net sim) :needs net-session) loadout blobs are not exchanged at join or capped.
+send_loadout :: proc(s: ^Session, blob: []byte) -> (ok: bool) {
 	return false
 }

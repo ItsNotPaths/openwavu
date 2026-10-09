@@ -1,0 +1,10 @@
+// ow: the creator tool. Builds a pack's modules with a pinned zig and SDK, so the same source
+// always gives the same bytes; registry reviewers rebuild from source and compare hashes.
+package ow
+
+import "core:fmt"
+
+// (hole ow-cli :tags (tools sdk) :needs seam-abi) no ow new (templates), ow build (reproducible) or ow run.
+main :: proc() {
+	fmt.eprintln("ow: not built")
+}

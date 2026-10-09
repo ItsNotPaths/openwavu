@@ -1,5 +1,5 @@
-// openwavu module SDK: the world layout every sim module shares, the seam exports, the host imports.
-// Modules are WASM, built from any language that can read these structs. Plain data only.
+// openwavu module SDK: the host imports (net, saves, content, input, audio, render, fx, rand, params,
+// events) and the exports of the sim and app modules. Each module owns its memory.
 #ifndef OPENWAVU_H
 #define OPENWAVU_H
 
@@ -8,9 +8,8 @@
 #define OW_EXPORT(name) __attribute__((export_name(#name)))
 #define OW_IMPORT(name) __attribute__((import_module("openwavu"), import_name(#name)))
 
-// (hole seam-abi :tags sdk :sev blocker) draft v0 is tk5decomp sim/include/t5/world_abi.h, not copied here; open: the rules layout and the seam slot map (base and size per seam).
+// (hole seam-abi :tags sdk :sev blocker) no host imports or module exports yet; open: the sim exports (init with params and loadouts, step, ow_view) and the app exports (frame, host events).
 typedef struct OwWorld OwWorld;
 
-// (hole world-extensions :tags sdk :needs seam-abi) a pack can not declare named fields (heat.value, ...) in the world's extension area for other modules and the UI.
 
 #endif

@@ -8,8 +8,9 @@ import "../input"
 import "../render"
 import "../sim"
 
-// (hole client-menus :tags game :needs (render-gpu pack-open render-api)) no client menus: lobby browser, character select (characters and costumes from the pack database), settings.
-// (hole game-loop :tags game :needs (pack-open fighter-data-load seam-wiring mode-host render-fighter render-stage input-pad mod-frame) :sev blocker) no playable local match.
+// (hole app-shell :tags game :needs (render-gpu content-cache registry-verify)) no launcher (installed packs, ROM import), join path for lobby links, or system overlay (controls, video, audio, leave pack).
+// (hole app-host :tags (game wasm) :needs (module-memory render-api)) the pack's app module is not run: no instance, no frame export call, no events from host requests.
+// (hole game-loop :tags game :needs (pack-open fighter-data-load sim-step render-fighter render-stage input-pad mod-frame) :sev blocker) no playable local match.
 main :: proc() {
 	pack, ok := content.open_pack("content/tk5")
 	if !ok {
@@ -18,7 +19,7 @@ main :: proc() {
 	}
 	defer content.close_pack(&pack)
 	r, _ := render.init(1280, 720)
-	w := sim.create({}, nil)
+	w := sim.create(nil, nil, {})
 	for {
 		sim.step(w, {input.poll(0), input.poll(1)})
 		render.draw_fighter(r, nil, nil)

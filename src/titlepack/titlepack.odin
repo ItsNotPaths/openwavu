@@ -1,26 +1,46 @@
-// Title pack: one ruleset bundle. A lobby runs one pack; players download it once, cached by hash.
-// Modules for the sim, mode and presentation seams; the default TK5 modules ship with the release.
+// Title pack: a self-contained game. pack.toml names the sim and app modules, files by hash, and params.
+// Params narrow in layers: core defaults, pack, server, lobby. Each layer sets values and exposes a subset.
 package titlepack
 
-Setting :: struct {
-	name, type, default_value: string,  // a value the server host may change
+// A param as a module declares it (OW_PARAM writes the openwavu.params custom section).
+Param :: struct {
+	name:     string,
+	default:  f64,
+	min, max: f64,
+}
+
+// One layer's say on a param: its value, whether the next layer may change it, and a narrower range.
+Param_Set :: struct {
+	value:    f64,
+	expose:   bool,
+	min, max: f64,
 }
 
 Title_Pack :: struct {
-	id, version:  string,
-	base_sources: map[string]string,  // source key -> value the base pack must have
-	modules:      map[string][32]u8,  // seam -> module hash
-	rules:        map[string]string,  // rules.toml
-	settings:     []Setting,
-	overlays:     [][32]u8,
+	id, version: string,
+	sim, app:    [32]u8,  // module hashes; stock modules are hashes too
+	files:       map[string][32]u8,  // pack path -> hash
+	mirrors:     []string,
+	params:      map[string]Param_Set,
+	overlays:    [][32]u8,
 }
 
-// (hole titlepack-format :tags titlepack :sev blocker) no title pack format: manifest.toml, rules.toml, seam -> module hashes, settings, overlays.
-read_titlepack :: proc(zip: []byte, allocator := context.allocator) -> (tp: Title_Pack, ok: bool) {
+// (hole titlepack-format :tags titlepack :sev blocker) pack.toml is not read: id, version, sim/app hashes, files, mirrors, params, overlays.
+read_titlepack :: proc(manifest: []byte, allocator := context.allocator) -> (tp: Title_Pack, ok: bool) {
 	return {}, false
 }
 
-// (hole titlepack-hash :tags titlepack :needs titlepack-format) the lobby hash (pack hash + host settings) is not computed.
-pack_hash :: proc(tp: Title_Pack, settings: map[string]string) -> (hash: [32]u8) {
+// (hole param-section :tags (titlepack sdk) :needs seam-abi) no OW_PARAM macro in the SDK, and the host does not read the openwavu.params section.
+read_params :: proc(module: []byte, allocator := context.allocator) -> (params: []Param, ok: bool) {
+	return nil, false
+}
+
+// (hole param-layers :tags titlepack :needs (titlepack-format param-section)) params are not narrowed pack -> server -> lobby; a layer could change what the one above locked.
+resolve_params :: proc(declared: []Param, layers: []map[string]Param_Set) -> (final: map[string]f64, ok: bool) {
+	return nil, false
+}
+
+// (hole titlepack-hash :tags titlepack :needs (titlepack-format param-layers)) the lobby hash (manifest hash + final params) is not computed.
+lobby_hash :: proc(manifest_hash: [32]u8, final: map[string]f64) -> (hash: [32]u8) {
 	return {}
 }
