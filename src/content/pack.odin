@@ -8,7 +8,7 @@ Pack :: struct {
 	db:   ^db.Sqlite,  // in memory, overlays applied
 }
 
-// (hole pack-open :tags content :sev blocker) packs do not load; nothing reads tk5.db at run time.
+// (hole pack-open :tags (content mech) :sev blocker) packs do not load; nothing reads tk5.db at run time.
 open_pack :: proc(root: string) -> (p: Pack, ok: bool) {
 	return {}, false
 }

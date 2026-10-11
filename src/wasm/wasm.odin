@@ -40,7 +40,7 @@ engine_create :: proc() -> Engine {
 	config := wasm_config_new()
 	wasmtime_config_cranelift_nan_canonicalization_set(config, true)
 	wasmtime_config_consume_fuel_set(config, true)
-	// (hole module-memory :tags wasm) the host still defines a shared world memory with multi-memory on; each module should own its memory, with a cap per store.
+	// (hole module-memory :tags (wasm mech)) the host still defines a shared world memory with multi-memory on; each module should own its memory, with a cap per store.
 	wasmtime_config_wasm_multi_memory_set(config, true)
 	return {wasm_engine_new_with_config(config)}
 }
