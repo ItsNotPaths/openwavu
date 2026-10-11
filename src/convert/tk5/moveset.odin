@@ -114,6 +114,7 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 		for u in c.unk_2c do append(&values, n(u))
 		db.insert(w, "command_list", ..values[:])
 	}
+	// (hole side-bands-import :tags importer :sev gap) the motbin+0x140 side band table (8 records of 4 u16) is not exported; the sim reads it in 0x18ae4.
 	// (hole motbin-unknown-tables :tags importer :sev polish) motbin tables 0x208..0x238 are stored as raw blobs.
 	for t in m.unknown_tables do db.insert(w, "unknown_table", char, n(t.header), n(t.count), t.data)
 }
