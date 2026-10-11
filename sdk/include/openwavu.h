@@ -43,6 +43,7 @@ OW_IMPORT(view) int32_t ow_view(void *buf, uint32_t cap);
 // Sim exports. Inside rollback: the host snapshots [ow_sim_state, + ow_sim_state_size) plus globals.
 
 OW_EXPORT(ow_sim_init) int32_t ow_sim_init(void);  // 0 = ok; reads params, loadouts and content
+// Pads are Tekken pad bits, the same in every Tekken.
 OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1);
 OW_EXPORT(ow_sim_state) void *ow_sim_state(void);
 OW_EXPORT(ow_sim_state_size) uint32_t ow_sim_state_size(void);

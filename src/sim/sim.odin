@@ -5,7 +5,7 @@ package sim
 import "../wasm"
 
 Input :: struct {
-	pad: u16,  // raw TK5 pad bits
+	pad: u16,  // Tekken pad bits, the same in every Tekken
 }
 
 World :: struct {

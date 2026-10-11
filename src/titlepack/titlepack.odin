@@ -18,6 +18,8 @@ Param_Set :: struct {
 
 Title_Pack :: struct {
 	id, version: string,
+	// (hole pack-base :tags titlepack :needs titlepack-format) the base import (game id, import schema version) is not checked; a pack for an import the player lacks fails inside the sim, not at join.
+	base:        string,  // e.g. "tk5/1"
 	sim, app:    [32]u8,  // module hashes; stock modules are hashes too
 	files:       map[string][32]u8,  // pack path -> hash
 	mirrors:     []string,
