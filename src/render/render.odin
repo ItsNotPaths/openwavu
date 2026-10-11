@@ -15,7 +15,7 @@ load_glb :: proc(r: ^Renderer, path: string) -> (m: Model, ok: bool) {
 	return {}, false
 }
 
-// (hole render-fighter :tags render :needs (render-gpu glb-loader mod-pose world-memory)) fighters are not drawn from the bone matrices in the world.
+// (hole render-fighter :tags render :needs (render-gpu glb-loader port-motion world-memory)) fighters are not drawn from the bone matrices in the world.
 draw_fighter :: proc(r: ^Renderer, parts: []Model, bones: []matrix[4, 4]f32) {}
 
 // (hole render-stage :tags render :needs (render-gpu glb-loader)) stages are not drawn; _DRWOFF_ meshes must start hidden.
