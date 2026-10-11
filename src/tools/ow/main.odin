@@ -4,7 +4,7 @@ package ow
 
 import "core:fmt"
 
-// (hole ow-cli :tags (tools sdk) :needs seam-abi) no ow new (templates), ow build (reproducible) or ow run.
+// (hole ow-cli :tags (tools sdk)) no ow new (templates), ow build (reproducible) or ow run.
 main :: proc() {
 	fmt.eprintln("ow: not built")
 }

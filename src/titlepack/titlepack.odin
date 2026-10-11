@@ -30,7 +30,7 @@ read_titlepack :: proc(manifest: []byte, allocator := context.allocator) -> (tp:
 	return {}, false
 }
 
-// (hole param-section :tags (titlepack sdk) :needs seam-abi) no OW_PARAM macro in the SDK, and the host does not read the openwavu.params section.
+// (hole param-section :tags (titlepack sdk)) no OW_PARAM macro in the SDK, and the host does not read the openwavu.params section.
 read_params :: proc(module: []byte, allocator := context.allocator) -> (params: []Param, ok: bool) {
 	return nil, false
 }

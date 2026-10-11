@@ -2,7 +2,6 @@
 // plus its globals. Bit exact to the game with the stock TK5 sim.
 package sim
 
-import "../content"
 import "../wasm"
 
 Input :: struct {
@@ -14,14 +13,9 @@ World :: struct {
 	memory:   []byte,  // the sim module's own memory
 }
 
-// (hole world-memory :tags sim :needs (seam-abi module-memory) :sev blocker) no sim instance; final params and loadout blobs are not passed to its init export.
+// (hole world-memory :tags sim :needs module-memory :sev blocker) no sim instance; the param, loadout and match_seed imports are not served to its init export.
 create :: proc(module: ^wasm.Module, params: map[string]f64, loadouts: [2][]byte) -> (w: ^World) {
 	return nil
-}
-
-// (hole fighter-data-load :tags (sim content) :needs (world-memory pack-open) :sev blocker) moveset rows and .anim files are not loaded into the sim module's memory.
-load_fighter :: proc(w: ^World, slot: int, p: ^content.Pack, character, costume: string) -> (ok: bool) {
-	return false
 }
 
 // (hole sim-step :tags sim :needs world-memory :sev blocker) the host does not call the sim module's step export each frame.
@@ -42,7 +36,7 @@ view :: proc(w: ^World) -> []byte {
 	return nil
 }
 
-// (hole event-stream :tags sim :needs seam-abi) no ow_event import: KO, round end and match end are not collected for match reports and lobby rotation.
+// (hole event-stream :tags sim) no ow_event import: KO, round end and match end are not collected for match reports and lobby rotation.
 events :: proc(w: ^World) -> []u8 {
 	return nil
 }
