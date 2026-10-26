@@ -89,7 +89,7 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 			sections, _ := formats.sections(container, context.temp_allocator)
 			// (hole hand-anims :tags importer) container sections 1..5 hold type-1 banks (hands, maybe faces); hand banks are not decoded to .anim (layout tk5hand).
 			// (hole face-anims :tags importer :needs hand-anims) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
-			// (hole intro-re :tags importer) intros, win poses and outros are not located: motbin moves or separate data, and where their camera tracks live.
+			// (hole intro-re :tags importer) intros, win poses and outros are not located: motbin moves or separate data, and where their camera tracks live. Leads: move properties 0x8001..0x8008 (camera, dropped by the sim), the type-1 anim sections 1..5 (tk5decomp docs/data.md), the flashback angles, the fight camera 0x75724 (for sdk-camera params only).
 			// (hole camera-anims :tags importer :needs intro-re) camera tracks are not imported (.anim layout tk5cam: position, target, roll, fov).
 			if len(sections) > 0 do write_bank(im, owner, sections[0])
 		}

@@ -50,6 +50,8 @@ enum {
 // Both peers report; the server cross-checks. Ignored during resimulation.
 OW_IMPORT(event) void ow_event(uint32_t kind, int32_t a, int32_t b);
 
+// (hole cue-api :tags (sdk sim) :needs world-memory) no ow_cue import (fx, sound, voice, camera) and no host table that matches cues by (frame, key) across rollback and replay seeks.
+
 // Host imports, app only.
 
 // The sim view of the last frame; returns its length.
