@@ -115,6 +115,10 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 		db.insert(w, "command_list", ..values[:])
 	}
 	// (hole side-bands-import :tags importer :sev gap) the motbin+0x140 side band table (8 records of 4 u16) is not exported; the sim reads it in 0x18ae4.
+	// (hole move-db-edits :tags importer) move rows are stored as the game has them; the rewrite's edits are not applied: live flag bits, 0xf1/0xf2 phase-test params, rides_partner (tk5decomp docs/rewrite.md Db edits, motbin2bin.py).
+	// (hole hit-point-rows :tags importer) no HITP hit pairs or HITS categories/slots per move (tk5decomp hitpoints.py).
+	// (hole tracking-rows :tags importer) no facing rows (TRKR/TOVR/TFIX), move tracking or cancel tracking picks (tk5decomp tracking.py).
+	// (hole body-rows :tags importer) no per-character BODY (hurt/push rows, head probe, head top), ANCH points/shots or GAZE rows (tk5decomp body.py, hitpoints.py, gaze.py).
 	// (hole motbin-unknown-tables :tags importer :sev polish) motbin tables 0x208..0x238 are stored as raw blobs.
 	for t in m.unknown_tables do db.insert(w, "unknown_table", char, n(t.header), n(t.count), t.data)
 }

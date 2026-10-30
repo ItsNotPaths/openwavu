@@ -6,6 +6,7 @@ import formats "../../formats/tk5"
 
 MM :: 1000.0
 
+// (hole stage-collision-rows :tags importer) no wall broadphase grid (cells in the game's list order), object kinds/links or start points (sections 14/13) (tk5decomp export_collision.py, stage_start.py).
 write_stage_rows :: proc(w: ^db.Writer, id: string, s: formats.Stage) {
 	for q, i in s.quads {
 		c := q.corners

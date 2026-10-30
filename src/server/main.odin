@@ -3,7 +3,7 @@ package server
 
 import "core:fmt"
 
-// (hole server-lobby :tags server :needs (titlepack-hash param-layers) :sev blocker) no lobby list, matchmaking or relay; no server.toml (pack hash, server params).
+// (hole server-lobby :tags server :needs (titlepack-hash param-layers) :sev blocker) no lobby list, matchmaking, relay or master server registration; no server.toml (pack hash, server params).
 main :: proc() {
 	fmt.eprintln("openwavu-server: not built")
 }
