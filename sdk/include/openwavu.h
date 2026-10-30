@@ -1,5 +1,6 @@
 // openwavu module SDK: the host imports (net, saves, content, input, audio, render, fx, rand, params,
-// events) and the exports of the sim and app modules. Each module owns its memory.
+// events) and the exports of the gameplay and app modules. The gameplay module has two parts: the sim
+// (deterministic, rolled back) and the visual (display-only fighter animation, outside the snapshot). Each module owns its memory.
 // Strings are OwStr views (length + bytes, no NUL); they cross the import boundary as (pointer, length)
 // into the calling module's memory.
 #ifndef OPENWAVU_H
@@ -66,6 +67,17 @@ OW_EXPORT(ow_sim_state) void *ow_sim_state(void);
 OW_EXPORT(ow_sim_state_size) uint32_t ow_sim_state_size(void);
 OW_EXPORT(ow_sim_view) const void *ow_sim_view(void);
 OW_EXPORT(ow_sim_view_size) uint32_t ow_sim_view_size(void);
+
+// Visual exports. Outside rollback: once per displayed frame, after any resimulation and the newest sim step.
+// Reads the sim view only; never writes sim state.
+
+OW_EXPORT(ow_visual_init) int32_t ow_visual_init(void);
+OW_EXPORT(ow_visual_step) void ow_visual_step(float dt);
+OW_EXPORT(ow_visual_reset) void ow_visual_reset(void);  // replay seek: start fresh from the current view
+// The posed visual skeletons, for the renderer.
+// (hole visual-view :tags (sdk render) :needs render-api) the layout of the visual view (bone matrices per fighter) is not fixed.
+OW_EXPORT(ow_visual_view) const void *ow_visual_view(void);
+OW_EXPORT(ow_visual_view_size) uint32_t ow_visual_view_size(void);
 
 // App exports. Outside rollback, once per rendered frame.
 

@@ -15,12 +15,12 @@ load_glb :: proc(r: ^Renderer, path: string) -> (m: Model, ok: bool) {
 	return {}, false
 }
 
-// (hole render-fighter :tags render :needs (render-gpu glb-loader port-motion world-memory)) fighters are not drawn from the bone matrices in the world.
+// (hole render-fighter :tags render :needs (render-gpu glb-loader world-memory)) fighters are not drawn from the bone matrices in the world.
 draw_fighter :: proc(r: ^Renderer, parts: []Model, bones: []matrix[4, 4]f32) {}
 
 // (hole render-stage :tags render :needs (render-gpu glb-loader)) stages are not drawn; _DRWOFF_ meshes must start hidden.
 draw_stage :: proc(r: ^Renderer, stage: Model) {}
 
-// (hole hand-pose :tags render :needs (render-fighter hand-anims face-anims)) hand and face poses are not layered over the sim pose; which game code picks them is not known (presentation only, never in the sim).
+// (hole hand-pose :tags render :needs (render-fighter visual-view hand-anims face-anims)) the visual skeleton from ow_visual_view (fingers, face, eyes, head tilt over the hitbox skeleton) is not drawn; only the sim pose is.
 // (hole render-api :tags (render sdk) :needs render-gpu) the app module has no host draw API: a 2D draw list, 3D fighter (loadout, anim), mesh and stage primitives, body slot swaps, material params.
 draw_list :: proc(r: ^Renderer, commands: []byte) {}

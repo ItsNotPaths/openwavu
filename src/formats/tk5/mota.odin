@@ -1,5 +1,5 @@
 // Animation banks: LE, 23 channels, frame 0 base pose then 16-frame blocks of second-order
-// delta streams. Port of FUN_000b8a88 as in ../tk5decomp/sim/src/anim.c. data.md §5-6.
+// delta streams. Port of FUN_000b8a88 as in ../tk5decomp/src/sim/anim.c. data.md §5-6.
 package tk5_formats
 
 import "base:intrinsics"
