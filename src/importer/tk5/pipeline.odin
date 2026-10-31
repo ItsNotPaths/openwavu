@@ -72,6 +72,9 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 		m, read := formats.read_motbin(data, context.temp_allocator)
 		if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
 		convert.write_moveset_rows(w, c.id, owner, m)
+		top, measured := idle_head_top(im, c, m, data)
+		if !measured do return fmt.tprintf("%s: standing idle did not read", c.id)
+		if err = convert.write_stock_rows(w, c.id, char_index, m, top); err != "" do return err
 
 		first, count := formats.costume_groups(c.container)
 		for k in 0 ..< count {
@@ -105,7 +108,6 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 	swaps := make(map[u32]u32, context.temp_allocator)
 	nud: [dynamic][]byte
 	nud.allocator = context.temp_allocator
-	skeleton: formats.Skeleton
 	for s in sections {
 		if len(s) < 4 do continue
 		switch string(s[:4]) {
@@ -115,10 +117,8 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 			for t in list do textures[t.hash] = t
 		case "MIF\x00": formats.read_mif_swaps(s, &swaps)
 		}
-		if bones, is_bon := formats.read_skeleton(s, context.temp_allocator); is_bon && len(bones.bones) > len(skeleton.bones) {
-			skeleton = bones  // the largest bon section
-		}
 	}
+	skeleton := largest_skeleton(sections)
 	for placeholder, frame0 in swaps do if t, has := textures[frame0]; has do textures[placeholder] = t
 	if len(nud) < len(parts) || len(skeleton.bones) == 0 do return false
 
@@ -133,9 +133,43 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 	for b, i in skeleton.bones {
 		name := i < len(SKELETON_NAMES) ? SKELETON_NAMES[i] : fmt.tprintf("helper_%d", i)
 		standard: db.Value = i < len(SKELETON_NAMES) ? SKELETON_NAMES[i] : db.Null{}
+		// (hole skeleton-bind-rows :tags importer) bones have no bind values (bon offsets, head end); the sim parses the raw bon (tk5decomp bon2bin.py, skel.c).
 		db.insert(&im.w, "bone", parts[0], i64(i), i64(b.parent), name, standard)
 	}
 	return true
+}
+
+largest_skeleton :: proc(sections: [][]byte) -> (skeleton: formats.Skeleton) {
+	for s in sections {
+		if bones, is_bon := formats.read_skeleton(s, context.temp_allocator); is_bon && len(bones.bones) > len(skeleton.bones) {
+			skeleton = bones
+		}
+	}
+	return
+}
+
+// Head end height in the standing idle (alias 1), on the skeleton of the first costume. data: the unpacked motbin.
+idle_head_top :: proc(im: ^Import, c: formats.Character, m: formats.Motbin, data: []byte) -> (top: f32, ok: bool) {
+	model := read_entry(im.archive, c.container + formats.GROUP_MODEL) or_return
+	sections := formats.sections(model, context.temp_allocator) or_return
+	skeleton := largest_skeleton(sections)
+	move := int(m.aliases[convert.IDLE_STAND_ALIAS])
+	if len(skeleton.bones) == 0 || move >= len(m.moves) do return
+	anim := m.moves[move].anim
+	bank_data: []byte
+	switch {
+	case anim & 0x4000 != 0:
+		container := read_entry(im.archive, c.container) or_return
+		banks := formats.sections(container, context.temp_allocator) or_return
+		if len(banks) == 0 do return
+		bank_data = banks[0]
+	case anim & 0x8000 != 0: bank_data = read_entry(im.archive, formats.COMMON_ANIMS) or_return
+	case: bank_data = data[m.bank_offsets[0]:]
+	}
+	bank := formats.read_bank(bank_data) or_return
+	idle := formats.read_anim(bank, int(anim & 0x3fff), context.temp_allocator) or_return
+	if idle.frames == 0 do return
+	return convert.head_top(skeleton, idle), true
 }
 
 // Every anim of a body bank as anims/<owner>/<idx>.anim.

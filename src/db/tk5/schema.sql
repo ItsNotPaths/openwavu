@@ -1,4 +1,5 @@
 -- Tekken 5 DR movesets (motbin, tk5decomp data.md §4, code-map.md). Applied after ../schema.sql.
+-- (hole tekken-schema :tags importer) this schema is TK5's own; it is not yet the shared Tekken shape (record layouts of the sim, the sim's tables BODY/ANCH/GAZE/HITP/HITS/TRKR/TOVR/TFIX, game-only tables optional) that every Tekken sim reads.
 -- A game list (cancels, requirements, ...) is (character, list, pos). A list starts at every index
 -- that something points to; the list id is that index. Joining the lists in id order gives the
 -- game table back. Lists stay shared like in the game. End-marker rows stay as rows.
@@ -224,4 +225,73 @@ CREATE TABLE unknown_table (
 	count     INTEGER NOT NULL,
 	data      BLOB NOT NULL,
 	PRIMARY KEY (character, header)
+);
+
+-- Stock rules the game keeps in code, as rows the sim reads (tk5decomp docs/rewrite.md, Db edits). Units: mm, radians.
+
+CREATE TABLE body (
+	character       TEXT PRIMARY KEY,
+	throw_range_cut REAL NOT NULL,     -- both fighters' throw range is shorter by this for this fighter
+	probe_x         REAL NOT NULL,     -- head floor probe: point and radius, fractions of the head end bone length
+	probe_z         REAL NOT NULL,
+	probe_radius    REAL NOT NULL,
+	head_top        REAL NOT NULL,     -- head end height in the standing idle (not stock: measured at import)
+	hitscan         INTEGER NOT NULL,  -- row of the sim's hitscan list, 0: none
+	projectile      INTEGER NOT NULL   -- row of the sim's projectile list, 0: none
+);
+
+-- Hurtboxes: vertical cylinders on bones of skeleton B, in the order of the hit record index.
+CREATE TABLE body_hurt (
+	character TEXT NOT NULL,
+	idx       INTEGER NOT NULL,
+	radius    INTEGER NOT NULL,  -- and half height
+	bone      INTEGER NOT NULL,
+	lift      REAL NOT NULL,
+	PRIMARY KEY (character, idx)
+);
+
+-- Push spheres on bones of skeleton B; radius at rest.
+CREATE TABLE body_push (
+	character TEXT NOT NULL,
+	idx       INTEGER NOT NULL,
+	radius    REAL NOT NULL,
+	bone      INTEGER NOT NULL,
+	PRIMARY KEY (character, idx)
+);
+
+-- Points fixed to a bone of skeleton B (special slots 6, 7).
+CREATE TABLE body_point (
+	character TEXT NOT NULL,
+	idx       INTEGER NOT NULL,
+	bone      INTEGER NOT NULL,
+	x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
+	PRIMARY KEY (character, idx)
+);
+
+CREATE TABLE gaze (
+	character TEXT PRIMARY KEY,
+	tilt      REAL NOT NULL,     -- radians, about the level axis across the line to the opponent's head
+	head_turn INTEGER NOT NULL   -- angle steps (65536 a turn) about the head's y axis
+);
+
+-- The two hitbox slots of a move: end and start point, each a kind (none, bone, special, effect, keep, fixed,
+-- hitscan, projectile) and an index.
+CREATE TABLE hit_pair (
+	character   TEXT NOT NULL,
+	move        INTEGER NOT NULL,
+	slot        INTEGER NOT NULL,
+	end_kind    INTEGER NOT NULL,
+	end_index   INTEGER NOT NULL,
+	start_kind  INTEGER NOT NULL,
+	start_index INTEGER NOT NULL,
+	PRIMARY KEY (character, move, slot)
+);
+
+CREATE TABLE move_hits (
+	character    TEXT NOT NULL,
+	move         INTEGER NOT NULL,
+	attack_bones INTEGER NOT NULL,  -- bit b: the move attacks with bone b of skeleton B
+	slots        INTEGER NOT NULL,  -- hitbox slots that get points while active: 0..2
+	launches     INTEGER NOT NULL,  -- a hitbox runs from the projectile's point
+	PRIMARY KEY (character, move)
 );
