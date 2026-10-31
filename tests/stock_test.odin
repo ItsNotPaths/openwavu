@@ -13,6 +13,12 @@ import tk5 "../src/importer/tk5"
 STOCK_DB :: "build/stock_test.db"
 T5M_HEAD :: 4 + 4 + 37 * 4
 T5M_MOVE :: 0x4d
+T5M_MOVE_FLAGS :: 52  // T5Move.flags
+T5M_MOVE_RIDES :: 76  // T5Move.rides_partner
+CANCEL_SIZE :: 24
+CANCEL_OPTION :: 22  // T5Cancel.option
+CANCEL_PICK :: 10    // T5Cancel.tracking_pick
+T5M_MOVE_TRACK :: 68  // T5Move.tracking: row, far row, far source, pad, far angle u16, pad 2
 BODY_HEAD_TOP :: 192  // T5Body.head_top: measured from the idle pose, not a stock rule
 HEAD_TOP_TOLERANCE :: 0.001  // mm: the sim's f32 pose against body.py's f64 numpy
 
@@ -38,6 +44,7 @@ stock_rows_match_sim_files :: proc(t: ^testing.T) {
 		data, unpacked := formats.unlz(packed, context.temp_allocator)
 		m, read := formats.read_motbin(data, context.temp_allocator)
 		if !testing.expect(t, unpacked && read, name) do continue
+		testing.expect_value(t, convert.write_moveset_rows(&w, name, formats.container_owner(characters[i].container), m), "")
 		top, measured := tk5.idle_head_top(&im, characters[i], m, data)
 		testing.expect(t, measured, name)
 		testing.expect_value(t, convert.write_stock_rows(&w, name, i, m, top), "")
@@ -63,6 +70,29 @@ stock_rows_match_sim_files :: proc(t: ^testing.T) {
 		check(t, name, "ANCH", tag(file, "ANCH"), anch_row(h, name))
 		check(t, name, "GAZE", tag(file, "GAZE"), rows(h, name, "SELECT tilt, head_turn FROM gaze WHERE character = ?", pack_gaze))
 		check(t, name, "HITP", tag(file, "HITP"), rows(h, name, "SELECT end_kind, end_index, start_kind, start_index FROM hit_pair WHERE character = ? ORDER BY move, slot", pack_hit_pair))
+		check(t, name, "SBND", tag(file, "SBND"), rows(h, name, "SELECT offset, width_0, width_1, width_2 FROM side_band WHERE character = ? ORDER BY idx", pack_u16x4))
+		check(t, name, "REQS", tag(file, "REQS"), rows(h, name, "SELECT id, param FROM requirement WHERE character = ? ORDER BY list, pos", pack_u16x2))
+		check(t, name, "CANC option", field(tag(file, "CANC"), CANCEL_SIZE, CANCEL_OPTION, 2), rows(h, name, "SELECT option FROM cancel WHERE character = ? ORDER BY list, pos", pack_u16))
+		check(t, name, "GRPC option", field(tag(file, "GRPC"), CANCEL_SIZE, CANCEL_OPTION, 2), rows(h, name, "SELECT option FROM group_cancel WHERE character = ? ORDER BY list, pos", pack_u16))
+		move_count, _ := endian.get_i32(file[4:], .Little)
+		moves := file[T5M_HEAD:][:int(move_count) * T5M_MOVE]
+		want_moves := make([dynamic]byte, context.temp_allocator)
+		append(&want_moves, ..field(moves, T5M_MOVE, T5M_MOVE_FLAGS, 4))
+		append(&want_moves, ..field(moves, T5M_MOVE, T5M_MOVE_RIDES, 1))
+		got_moves := make([dynamic]byte, context.temp_allocator)
+		append(&got_moves, ..rows(h, name, "SELECT flags FROM move WHERE character = ? ORDER BY idx", pack_u32))
+		append(&got_moves, ..rows(h, name, "SELECT rides_partner FROM move WHERE character = ? ORDER BY idx", pack_u8))
+		check(t, name, "move flags/rides", want_moves[:], got_moves[:])
+		check(t, name, "TRKR", tag(file, "TRKR"), rows(h, name, `SELECT law, start, target, stock_mode, gate_until, gate_min_distance, gate_kind,
+			rate_normal, rate_late, rate_air, rate_late_from, rate_frames, rate_halving, rate_by_distance, limit_total,
+			sweep_front, sweep_left, sweep_back, sweep_right, end_grace, end_yaw_when, end_pivot_when, end_phase
+			FROM tracking_row WHERE character = ? ORDER BY idx`, pack_facing_row))
+		check(t, name, "TOVR", tag(file, "TOVR"), rows(h, name, "SELECT row, far_row, far_source, far_angle FROM tracking_override WHERE character = ? ORDER BY idx", pack_track))
+		check(t, name, "TFIX", tag(file, "TFIX"), rows(h, name, "SELECT row, far_row, far_source, far_angle FROM tracking_fixed WHERE character = ? ORDER BY idx", pack_track))
+		check(t, name, "move tracking", field(moves, T5M_MOVE, T5M_MOVE_TRACK, 8), rows(h, name, "SELECT tracking_row, tracking_far_row, tracking_far_source, tracking_far_angle FROM move WHERE character = ? ORDER BY idx", pack_track))
+		check(t, name, "CANC pick", field(tag(file, "CANC"), CANCEL_SIZE, CANCEL_PICK, 2), rows(h, name, "SELECT tracking_pick FROM cancel WHERE character = ? ORDER BY list, pos", pack_u16))
+		check(t, name, "GRPC pick", field(tag(file, "GRPC"), CANCEL_SIZE, CANCEL_PICK, 2), rows(h, name, "SELECT tracking_pick FROM group_cancel WHERE character = ? ORDER BY list, pos", pack_u16))
+		check(t, name, "XPRP", tag(file, "XPRP"), rows(h, name, "SELECT unk_00, unk_02, unk_04 >> 16, unk_04 & 65535 FROM extra_prop WHERE character = ? ORDER BY list, pos", pack_u16x4))
 		check(t, name, "HITS", tag(file, "HITS"), rows(h, name, "SELECT attack_bones, slots, launches FROM move_hits WHERE character = ? ORDER BY move", pack_move_hits))
 	}
 }
@@ -85,6 +115,14 @@ tag :: proc(file: []byte, name: string) -> []byte {
 		at += 12 + len(records)
 	}
 	return nil
+}
+
+// Bytes [at, at + width) of every record.
+@(private = "file")
+field :: proc(records: []byte, size, at, width: int) -> []byte {
+	out := make([dynamic]byte, context.temp_allocator)
+	for start := 0; start + size <= len(records); start += size do append(&out, ..records[start + at:][:width])
+	return out[:]
 }
 
 // T5Body: 14 hurt rows, 8 push rows, cut, probe x z radius, head top.
@@ -137,6 +175,37 @@ pack_hit_pair :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {for c in i32(0) ..< 4 d
 pack_move_hits :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {put(out, 4, column_u32(s, 0)); put(out, 1, column_u32(s, 1)); put(out, 1, column_u32(s, 2)); pad(out, 2)}
 @(private = "file")
 pack_floats :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {for c in i32(0) ..< 5 do put_f32(out, column_f32(s, c))}
+
+@(private = "file")
+pack_u8 :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {put(out, 1, column_u32(s, 0))}
+@(private = "file")
+pack_u16 :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {put(out, 2, column_u32(s, 0))}
+@(private = "file")
+pack_u32 :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {put(out, 4, column_u32(s, 0))}
+@(private = "file")
+pack_u16x2 :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {for c in i32(0) ..< 2 do put(out, 2, column_u32(s, c))}
+@(private = "file")
+pack_u16x4 :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {for c in i32(0) ..< 4 do put(out, 2, column_u32(s, c))}
+
+// T5FacingRow, 68 bytes: 4 u8; gate i32 i32 u8 pad 3; rate 5 i32, u8 u8 pad 2; limit 5 i32; end i32 u8 u8 u8 pad.
+@(private = "file")
+pack_facing_row :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {
+	widths := [?]int{1, 1, 1, 1, 4, 4, 1, 4, 4, 4, 4, 4, 1, 1, 4, 4, 4, 4, 4, 4, 1, 1, 1}
+	pads := [?]int{6 = 3, 13 = 2, 22 = 1}
+	for width, c in widths {
+		put(out, width, column_u32(s, i32(c)))
+		pad(out, pads[c])
+	}
+}
+
+// T5MoveTracking: row, far row, far source, pad, far angle u16, pad 2.
+@(private = "file")
+pack_track :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {
+	for c in i32(0) ..< 3 do put(out, 1, column_u32(s, c))
+	pad(out, 1)
+	put(out, 2, column_u32(s, 3))
+	pad(out, 2)
+}
 
 @(private = "file")
 column_u32 :: proc(s: ^db.Stmt, column: i32) -> u32 {return u32(db.column_int64(s, column))}

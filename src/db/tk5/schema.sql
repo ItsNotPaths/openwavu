@@ -39,11 +39,16 @@ CREATE TABLE move (
 	extra_props   INTEGER,
 	start_props   INTEGER,
 	end_props     INTEGER,
-	flags         INTEGER,  -- +0x3c as stored, before the loader permutes the bits
+	flags         INTEGER,  -- +0x3c in the loader's bit order (0xc8508): bits 0..3 kept, file bit i (4..31) at 35 - i
 	hit_category  INTEGER,  -- +0x40, 4 bytes
 	active_first  INTEGER,
 	active_last   INTEGER,
 	unk_1a INTEGER, unk_1c INTEGER, unk_24 INTEGER, unk_26 INTEGER, unk_28 INTEGER, unk_48 INTEGER,
+	tracking_row        INTEGER NOT NULL,  -- default tracking: tracking_row of the character
+	tracking_far_row    INTEGER NOT NULL,  -- used instead when the angle of far_source is above far_angle
+	tracking_far_source INTEGER NOT NULL,  -- 0 never, 1 opponent angle, 2 angle 0x84
+	tracking_far_angle  INTEGER NOT NULL,
+	rides_partner INTEGER NOT NULL,  -- the thrower rides on the partner (Xiaoyu's Hien throws)
 	PRIMARY KEY (character, idx)
 );
 
@@ -60,7 +65,8 @@ CREATE TABLE cancel (
 	window_start INTEGER,
 	window_end   INTEGER,
 	start_frame  INTEGER,
-	option       INTEGER,
+	option       INTEGER,           -- as the loader computes it (0xc8508); the file value is ignored
+	tracking_pick INTEGER NOT NULL,  -- 1 + tracking_override idx, 0: the move's default
 	PRIMARY KEY (character, list, pos)
 );
 
@@ -76,7 +82,8 @@ CREATE TABLE group_cancel (
 	window_start INTEGER,
 	window_end   INTEGER,
 	start_frame  INTEGER,
-	option       INTEGER,
+	option       INTEGER,           -- as the loader computes it (0xc8508); the file value is ignored
+	tracking_pick INTEGER NOT NULL,  -- 1 + tracking_override idx, 0: the move's default
 	PRIMARY KEY (character, list, pos)
 );
 
@@ -93,7 +100,7 @@ CREATE TABLE requirement (
 	list      INTEGER NOT NULL,
 	pos       INTEGER NOT NULL,
 	id        INTEGER NOT NULL,  -- code_name kind 'tk5.requirement'
-	param     INTEGER NOT NULL,
+	param     INTEGER NOT NULL,  -- 0xf1, 0xf2: a phase test (stock.odin requirement_param), not the game's flow state
 	PRIMARY KEY (character, list, pos)
 );
 
@@ -146,7 +153,7 @@ CREATE TABLE extra_prop (
 	pos       INTEGER NOT NULL,
 	unk_00    INTEGER,
 	unk_02    INTEGER,
-	unk_04    INTEGER,
+	unk_04    INTEGER,           -- 0x8071: high half is a tracking_row, not the game's mode
 	PRIMARY KEY (character, list, pos)
 );
 
@@ -265,6 +272,64 @@ CREATE TABLE body_point (
 	idx       INTEGER NOT NULL,
 	bone      INTEGER NOT NULL,
 	x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
+	PRIMARY KEY (character, idx)
+);
+
+-- Facing rows: how a move turns the fighter (law, target, gate, rate, limit, end). Row 0 is hold. Degrees, frames, mm.
+CREATE TABLE tracking_row (
+	character  TEXT NOT NULL,
+	idx        INTEGER NOT NULL,
+	law        INTEGER NOT NULL,  -- hold, home, settle, sweep, ease out, ease in, leave
+	start      INTEGER NOT NULL,  -- phase: running, free, reaim, scripted
+	target     INTEGER NOT NULL,  -- none, opponent, behind, reference, side, stage centre, start spot
+	stock_mode INTEGER NOT NULL,  -- the game's mode byte (oracle and harness only)
+	gate_kind  INTEGER NOT NULL,  -- none, skip, spread, spread early (while the opponent is busy)
+	gate_until INTEGER NOT NULL,
+	gate_min_distance INTEGER NOT NULL,
+	rate_normal INTEGER NOT NULL, rate_late INTEGER NOT NULL, rate_air INTEGER NOT NULL,
+	rate_late_from INTEGER NOT NULL,
+	rate_frames INTEGER NOT NULL,
+	rate_halving INTEGER NOT NULL,  -- none, all, late
+	rate_by_distance INTEGER NOT NULL,
+	limit_total INTEGER NOT NULL,
+	sweep_front INTEGER NOT NULL, sweep_left INTEGER NOT NULL, sweep_back INTEGER NOT NULL, sweep_right INTEGER NOT NULL,
+	end_yaw_when INTEGER NOT NULL,  -- never, always, unless the anim changed
+	end_pivot_when INTEGER NOT NULL,
+	end_grace INTEGER NOT NULL,
+	end_phase INTEGER NOT NULL,
+	PRIMARY KEY (character, idx)
+);
+
+-- Tracking a cancel entry names (cancel.tracking_pick - 1).
+CREATE TABLE tracking_override (
+	character  TEXT NOT NULL,
+	idx        INTEGER NOT NULL,
+	row        INTEGER NOT NULL,
+	far_row    INTEGER NOT NULL,
+	far_source INTEGER NOT NULL,
+	far_angle  INTEGER NOT NULL,
+	PRIMARY KEY (character, idx)
+);
+
+-- Fixed tracking: 0 a carried cancel the sim rewrites to motion code 2, 1 a guarding reaction.
+CREATE TABLE tracking_fixed (
+	character  TEXT NOT NULL,
+	idx        INTEGER NOT NULL,
+	row        INTEGER NOT NULL,
+	far_row    INTEGER NOT NULL,
+	far_source INTEGER NOT NULL,
+	far_angle  INTEGER NOT NULL,
+	PRIMARY KEY (character, idx)
+);
+
+-- Side bands (motbin header 0x140): the sector widths of an angle, by band.
+CREATE TABLE side_band (
+	character TEXT NOT NULL,
+	idx       INTEGER NOT NULL,
+	offset    INTEGER NOT NULL,  -- added to the angle
+	width_0   INTEGER NOT NULL,  -- sectors 0..2; sector 3 is the rest
+	width_1   INTEGER NOT NULL,
+	width_2   INTEGER NOT NULL,
 	PRIMARY KEY (character, idx)
 );
 

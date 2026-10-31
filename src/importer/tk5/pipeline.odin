@@ -71,7 +71,7 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 		data, unpacked := formats.unlz(packed, context.temp_allocator)
 		m, read := formats.read_motbin(data, context.temp_allocator)
 		if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
-		convert.write_moveset_rows(w, c.id, owner, m)
+		if err = convert.write_moveset_rows(w, c.id, owner, m); err != "" do return err
 		top, measured := idle_head_top(im, c, m, data)
 		if !measured do return fmt.tprintf("%s: standing idle did not read", c.id)
 		if err = convert.write_stock_rows(w, c.id, char_index, m, top); err != "" do return err

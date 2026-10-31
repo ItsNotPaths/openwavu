@@ -256,3 +256,78 @@ is_category_requirement :: proc(id: u16) -> bool {
 	k := id - 0x123
 	return k < 36 && k % 6 >= 1 && k % 6 <= 4
 }
+
+// --- db edits to the move rows (tk5decomp motbin2bin.py, cancels.py)
+
+// Move +0x3c as the loader 0xc8508 stores it (0xc8874..0xc8a84): bits 0..3 stay, file bit i (4..31) -> 35 - i.
+live_flags :: proc(stored: u32) -> (live: u32) {
+	live = stored & 0xf
+	for i in u32(4) ..< 32 do live |= (stored >> i & 1) << (35 - i)
+	return
+}
+
+// Xiaoyu's Hien throws, front and back (compare id: move +0x1c high half). Stock lifts the rider only on Kuma and Panda;
+// the sim lifts it on any partner by the partner's head height.
+RIDE_MOVE_IDS :: [?]u32{0x35f3, 0x35f5}
+
+rides_partner :: proc(mv: formats.Move) -> bool {
+	for id in RIDE_MOVE_IDS do if mv.unk_1c >> 16 == id do return true
+	return false
+}
+
+REQUIREMENT_END :: 0x147
+REQ_FLOW_STATE :: 0xf1
+REQ_FLOW_NEXT :: 0xf2
+PHASE_FIRST_FRAME_UNIT :: 4096
+
+// The sim's phases (src/sim/phase.h T5Phase).
+Phase :: enum u16 {None, Intro_1, Intro_2, Ready, Fight, Ko, Flashback, Round_End, Match_End, Over}
+
+// Requirements 0xf1, 0xf2 test the game's flow state (G_game, its next state); the db holds the phases the state stands
+// for on every frame (bit p for phase p), plus one phase it stands for on its first frame only, times
+// PHASE_FIRST_FRAME_UNIT. State 9 is the flashback and the first frame of the round end. Other states hold in no phase.
+requirement_param :: proc(r: formats.Requirement) -> u16 {
+	if r.id != REQ_FLOW_STATE && r.id != REQ_FLOW_NEXT do return r.param
+	every, first: Phase
+	switch r.param {
+	case 1: every = .Intro_1
+	case 2: every = .Intro_2
+	case 4: every = .Ready
+	case 5: every = .Fight
+	case 6, 8: every = .Ko
+	case 9: every, first = .Flashback, .Round_End
+	case 10: every = .Match_End
+	case 12: every = .Round_End
+	case 37, 39: every = .Over
+	case: return 0
+	}
+	return 1 << u16(every) + u16(first) * PHASE_FIRST_FRAME_UNIT
+}
+
+// The cancel option bits as the loader 0xc8508 computes them; the file value is ignored.
+cancel_option :: proc(m: formats.Motbin, c: formats.Cancel) -> (option: u16) {
+	ids := requirement_ids(m, c.requirements)
+	extra := m.cancel_extras[c.extra]
+	if c.command == 0 do option |= 1
+	for id in ids {
+		if id > 0x122 && id < 0x8000 do option |= 2
+		if id > 0x134 && id < 0x8000 do option |= 4
+		if id == 0x8162 do option |= 8
+		if id >= 0x6a && id <= 0x6c do option |= 0x10
+	}
+	if c.command != 0 do option |= 0x10
+	if extra & 0x3c00 != 0x2400 do option |= 0x40
+	if extra & 0x3f == 0x10 do option |= 0x80
+	return
+}
+
+// Requirement ids of the list at `first`, up to its end marker.
+@(private = "file")
+requirement_ids :: proc(m: formats.Motbin, first: u32) -> []u16 {
+	ids := make([dynamic]u16, context.temp_allocator)
+	for r in m.requirements[first:] {
+		if r.id == REQUIREMENT_END do break
+		append(&ids, r.id)
+	}
+	return ids[:]
+}

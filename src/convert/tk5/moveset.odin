@@ -1,4 +1,4 @@
-// Moveset rows (src/db/tk5/schema.sql) from a motbin. Values stay as stored.
+// Moveset rows (src/db/tk5/schema.sql) from a motbin. Values stay as stored, except the db edits of stock.odin.
 package tk5_convert
 
 import "core:fmt"
@@ -6,10 +6,13 @@ import "../../db"
 import formats "../../formats/tk5"
 
 CMD_GROUP :: 0x8005
+SIDE_BANDS :: 8  // header 0x140, 4 u16 each
 
 // anim_owner: the owner of the character's anim container (shared by Kuma and Panda, ...).
-write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.Motbin) {
+write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.Motbin) -> (err: string) {
 	context.allocator = context.temp_allocator
+	if !check_facing_props(m) do return fmt.tprintf("%s: facing mode property 0x8072, or 0x8071 outside the extra properties", char)
+	t := seed_tracking(m, char == "xiaoyu")
 	db.insert(w, "motbin", char, n(m.char_id), transmute([]byte)m.name, transmute([]byte)m.creator, m.date, m.full_date, m.unk_140)
 	for move, i in m.aliases do db.insert(w, "move_alias", char, n(i), n(move))
 
@@ -47,8 +50,8 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 		mark(start_prop_starts, mv.start_props)
 		mark(end_prop_starts, mv.end_props)
 	}
-	for t in m.unknown_tables do if t.header == 0x238 {
-		for i in 0 ..< t.count do mark(extra_prop_starts, formats.be_u32(t.data, i * 8 + 4))
+	for u in m.unknown_tables do if u.header == 0x238 {
+		for i in 0 ..< u.count do mark(extra_prop_starts, formats.be_u32(u.data, i * 8 + 4))
 	}
 	for id, i in m.move_pool do if id == 0 && i + 1 < len(m.move_pool) do pool_starts[i + 1] = true  // 0 ends a pool
 
@@ -57,15 +60,16 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 		db.insert(w, "move", char, n(i), mv.name, mv.anim_name, owner, n(idx), n(mv.anim),
 			n(mv.vuln), n(mv.hit_level), n(mv.cancels), n(mv.transition), n(mv.hit_conditions),
 			opt(mv.voiceclips), opt(mv.extra_props), opt(mv.start_props), opt(mv.end_props),
-			n(mv.flags), n(mv.hit_category), n(mv.active_first), n(mv.active_last),
-			n(mv.unk_1a), n(mv.unk_1c), n(mv.unk_24), n(mv.unk_26), n(mv.unk_28), n(mv.unk_48))
+			n(live_flags(mv.flags)), n(mv.hit_category), n(mv.active_first), n(mv.active_last),
+			n(mv.unk_1a), n(mv.unk_1c), n(mv.unk_24), n(mv.unk_26), n(mv.unk_28), n(mv.unk_48),
+			n(t.default[i].row), n(t.default[i].far_row), n(t.default[i].far_source), n(t.default[i].far_angle), n(rides_partner(mv)))
 	}
-	write_cancels(w, "cancel", char, m.cancels, cancel_starts)
-	write_cancels(w, "group_cancel", char, m.group_cancels, group_starts)
+	write_cancels(w, "cancel", char, m, m.cancels, t.cancel_pick, cancel_starts)
+	write_cancels(w, "group_cancel", char, m, m.group_cancels, t.group_pick, group_starts)
 	for v, i in m.cancel_extras do db.insert(w, "cancel_extra", char, n(i), n(v))
 	for r, i in m.requirements {
 		l, p := list_of(requirement_starts, i)
-		db.insert(w, "requirement", char, n(l), n(p), n(r.id), n(r.param))
+		db.insert(w, "requirement", char, n(l), n(p), n(r.id), n(requirement_param(r)))
 	}
 	for h, i in m.hit_conditions {
 		l, p := list_of(hit_starts, i)
@@ -90,8 +94,9 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 	}
 	for x, i in m.extra_props {
 		l, p := list_of(extra_prop_starts, i)
-		db.insert(w, "extra_prop", char, n(l), n(p), n(x.unk_00), n(x.unk_02), n(x.unk_04))
+		db.insert(w, "extra_prop", char, n(l), n(p), n(x.unk_00), n(x.unk_02), n(prop_value(&t, x)))
 	}
+	write_tracking(w, char, &t)
 	write_props(w, "start_prop", char, m.start_props, start_prop_starts)
 	write_props(w, "end_prop", char, m.end_props, end_prop_starts)
 	for v, i in m.voiceclips {
@@ -114,11 +119,13 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 		for u in c.unk_2c do append(&values, n(u))
 		db.insert(w, "command_list", ..values[:])
 	}
-	// (hole side-bands-import :tags importer :sev gap) the motbin+0x140 side band table (8 records of 4 u16) is not exported; the sim reads it in 0x18ae4.
-	// (hole move-db-edits :tags importer) move rows are stored as the game has them; the rewrite's edits and the game loader's work are not applied: live flag bits, cancel options, 0xf1/0xf2 phase-test params, rides_partner (tk5decomp docs/rewrite.md Db edits, motbin2bin.py, cancels.py).
-	// (hole tracking-rows :tags importer) no facing rows (TRKR/TOVR/TFIX), move tracking or cancel tracking picks (tk5decomp tracking.py).
+	for i in 0 ..< SIDE_BANDS {
+		b := m.unk_140[i * 8:]
+		db.insert(w, "side_band", char, n(i), n(formats.be_u16(b, 0)), n(formats.be_u16(b, 2)), n(formats.be_u16(b, 4)), n(formats.be_u16(b, 6)))
+	}
 	// (hole motbin-unknown-tables :tags importer :sev polish) motbin tables 0x208..0x238 are stored as raw blobs.
-	for t in m.unknown_tables do db.insert(w, "unknown_table", char, n(t.header), n(t.count), t.data)
+	for u in m.unknown_tables do db.insert(w, "unknown_table", char, n(u.header), n(u.count), u.data)
+	return ""
 }
 
 // 0x4000: the character's container bank 0; else 0x8000: common bank; else embedded bank 0.
@@ -135,12 +142,25 @@ anim_ref :: proc(char, container_owner: string, anim: u32) -> (owner: string, id
 embedded_owner :: proc(char: string) -> string {return fmt.tprintf("%s/embedded", char)}
 
 @(private = "file")
-write_cancels :: proc(w: ^db.Writer, table, char: string, cancels: []formats.Cancel, list_starts: []bool) {
+write_cancels :: proc(w: ^db.Writer, table, char: string, m: formats.Motbin, cancels: []formats.Cancel, picks: []u16, list_starts: []bool) {
 	for c, i in cancels {
 		l, p := list_of(list_starts, i)
 		db.insert(w, table, char, n(l), n(p), n(c.command), n(c.requirements), n(c.move), n(c.unk_0a),
-			n(c.extra), n(c.window_start), n(c.window_end), n(c.start_frame), n(c.option))
+			n(c.extra), n(c.window_start), n(c.window_end), n(c.start_frame), n(cancel_option(m, c)), n(picks[i]))
 	}
+}
+
+@(private = "file")
+write_tracking :: proc(w: ^db.Writer, char: string, t: ^Tracking) {
+	for r, i in t.rows {
+		db.insert(w, "tracking_row", char, n(i), n(r.law), n(r.start), n(r.target), n(r.stock_mode),
+			n(r.gate.kind), n(r.gate.until), n(r.gate.min_distance),
+			n(r.rate.normal), n(r.rate.late), n(r.rate.air), n(r.rate.late_from), n(r.rate.frames), n(r.rate.halving), n(r.rate.by_distance),
+			n(r.limit.total), n(r.limit.sweep[0]), n(r.limit.sweep[1]), n(r.limit.sweep[2]), n(r.limit.sweep[3]),
+			n(r.end.yaw_when), n(r.end.pivot_when), n(r.end.grace), n(r.end.phase))
+	}
+	for o, i in t.overrides do db.insert(w, "tracking_override", char, n(i), n(o.row), n(o.far_row), n(o.far_source), n(o.far_angle))
+	for f, i in t.fixed do db.insert(w, "tracking_fixed", char, n(i), n(f.row), n(f.far_row), n(f.far_source), n(f.far_angle))
 }
 
 @(private = "file")
