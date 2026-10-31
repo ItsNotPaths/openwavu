@@ -7,7 +7,7 @@
 
 typedef struct sqlite3 sqlite3;
 
-// (hole sdk-sqlite :tags (sdk mech)) no SQLite build for wasm32 in the SDK, and no read-only VFS on ow_content_read.
+// (hole sdk-sqlite :tags (sdk mech)) no SQLite build for wasm32 in the SDK, no read-only VFS on ow_content_read, and ow build does not link it by itself.
 static inline sqlite3 *ow_db_open(const char *path, uint32_t path_len) {
 	return 0;
 }

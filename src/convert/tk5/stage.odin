@@ -6,6 +6,7 @@ import formats "../../formats/tk5"
 
 MM :: 1000.0
 
+// (hole efp-import :tags importer :needs fx-spec) TK5 effect data (EFP, character slot +2, stage effects) is not converted to effect defs.
 // (hole stage-collision-rows :tags importer) no wall broadphase grid (cells in the game's list order), object kinds/links or start points (sections 14/13) (tk5decomp export_collision.py, stage_start.py).
 write_stage_rows :: proc(w: ^db.Writer, id: string, s: formats.Stage) {
 	for q, i in s.quads {
@@ -31,4 +32,5 @@ write_stage_rows :: proc(w: ^db.Writer, id: string, s: formats.Stage) {
 }
 
 // File millimetres -> metres. f32(m(v) * MM) gives v back exactly.
+// (hole sim-units :tags importer :sev polish) stage rows are in metres, not the sim's millimetres; the sim would convert back.
 m :: proc(v: f32) -> db.Value {return f64(v) / MM}

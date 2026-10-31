@@ -14,3 +14,13 @@ open_pack :: proc(root: string) -> (p: Pack, ok: bool) {
 }
 
 close_pack :: proc(p: ^Pack) {}
+
+// A title pack's files: the base import (if the pack names one), then the pack's own files; same path wins.
+View :: struct {
+	base, pack: Pack,
+}
+
+// (hole content-view :tags (content titlepack) :needs (pack-open overlay-apply titlepack-format)) no file view of base import + pack files + overlays behind content_read; a pack can not ship its own database.
+open_view :: proc(base: Maybe(string), pack_root: string, overlays: []string) -> (v: View, ok: bool) {
+	return {}, false
+}

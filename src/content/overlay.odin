@@ -134,7 +134,7 @@ zip_path :: proc(name: string) -> bool {
 	return name[start:] != ".."
 }
 
-// (hole overlay-apply :tags content :needs (pack-open) :sev blocker) overlays are not applied (ATTACH, INSERT OR REPLACE, removed rows).
+// (hole overlay-apply :tags content :needs (pack-open) :sev blocker) overlays are not applied (ATTACH, INSERT OR REPLACE, removed rows), and an overlay does not name the database it edits.
 apply_overlay :: proc(p: ^Pack, zip: []byte) -> (ok: bool) {
 	return false
 }

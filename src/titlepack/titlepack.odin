@@ -27,7 +27,7 @@ Title_Pack :: struct {
 	overlays:    [][32]u8,
 }
 
-// (hole titlepack-format :tags titlepack :sev blocker) pack.toml is not read: id, version, sim/app hashes, files, mirrors, params, overlays.
+// (hole titlepack-format :tags titlepack :sev blocker) pack.toml is not read: id, version, optional base, module hashes, files, mirrors, params, overlays.
 read_titlepack :: proc(manifest: []byte, allocator := context.allocator) -> (tp: Title_Pack, ok: bool) {
 	return {}, false
 }

@@ -67,6 +67,7 @@ material :: proc(g: ^convert.Gltf, cache: ^map[u32]int, textures: Textures, pass
 		rgba, decoded := formats.decode_rgba(t, context.temp_allocator)
 		if decoded {
 			out.pbrMetallicRoughness.baseColorTexture = convert.Texture_Ref{convert.add_png(g, fmt.tprintf("%08x", hash), convert.encode_png(rgba, t.width, t.height))}
+			// (hole texture-alpha-re :tags importer) any texel alpha < 128 makes the material cut-out; some costume textures (kazuya pants) use alpha for something else, likely a colour mask, and draw see-through.
 			for i := 3; i < len(rgba); i += 4 do if rgba[i] < 128 {out.alphaMode = "MASK"; break}
 		}
 	}
@@ -85,7 +86,8 @@ material :: proc(g: ^convert.Gltf, cache: ^map[u32]int, textures: Textures, pass
 }
 
 // Joint nodes in bind pose plus the skin. Returns the root nodes.
-// (hole mop-joints :tags importer) costume joints past the skeleton (MOP, model section 13) get an identity bind under bone 0; cloth does not animate.
+// (hole helper-joint-re :tags port) TK5 SPLJNT block (section 8) and kkhelperjoint (0x1e96c4) are not decoded: twist rules and swing params (king tail, kazuya belt ends) for the helper and costume joints.
+// (hole mop-joints :tags importer :needs helper-joint-re) costume joints past the skeleton (MOP, model section 13) get an identity bind under bone 0; cloth does not animate.
 @(private = "file")
 add_skin :: proc(g: ^convert.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dynamic]int) {
 	bones := len(s.bones)
