@@ -8,8 +8,8 @@ import formats "../../formats/tk5"
 CMD_GROUP :: 0x8005
 SIDE_BANDS :: 8  // header 0x140, 4 u16 each
 
-// anim_owner: the owner of the character's anim container (shared by Kuma and Panda, ...).
-write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.Motbin) -> (err: string) {
+// anim_owner: the owner of the character's anim container (shared by Kuma and Panda, ...). moveset: index of formats.CHARACTERS.
+write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, moveset: int, m: formats.Motbin) -> (err: string) {
 	context.allocator = context.temp_allocator
 	if !check_facing_props(m) do return fmt.tprintf("%s: facing mode property 0x8072, or 0x8071 outside the extra properties", char)
 	t := seed_tracking(m, char == "xiaoyu")
@@ -57,16 +57,21 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 
 	for mv, i in m.moves {
 		owner, idx := anim_ref(char, anim_owner, mv.anim)
-		db.insert(w, "move", char, n(i), mv.name, mv.anim_name, owner, n(idx), n(mv.anim),
-			n(mv.vuln), n(mv.hit_level), n(mv.cancels), n(mv.transition), n(mv.hit_conditions),
-			opt(mv.voiceclips), opt(mv.extra_props), opt(mv.start_props), opt(mv.end_props),
-			n(live_flags(mv.flags)), n(mv.hit_category), n(mv.active_first), n(mv.active_last),
-			n(mv.unk_1a), n(mv.unk_1c), n(mv.unk_24), n(mv.unk_26), n(mv.unk_28), n(mv.unk_48),
+		hits, hits_ok := move_hits(mv, moveset)
+		if !hits_ok do return fmt.tprintf("%s move %d: a hitbox on a special slot its row leaves unwritten", char, i)
+		values := make([dynamic]db.Value)
+		append(&values, char, n(i), mv.name, mv.anim_name, owner, n(idx), n(mv.anim), n(mv.vuln), n(mv.hit_level), n(mv.cancels),
+			n(mv.transition), n(mv.unk_1a), n(mv.unk_1c >> 16), n(mv.unk_1c & 0xffff), n(mv.hit_conditions),
+			n(mv.unk_26), n(mv.unk_28 >> 16), n(mv.unk_28 & 0xffff),
+			n(mv.voiceclips), n(mv.extra_props), n(mv.start_props), n(mv.end_props),
+			n(live_flags(mv.flags)), n(mv.hit_category), n(mv.active_first), n(mv.active_last), n(mv.unk_48 >> 16), n(mv.unk_48 & 0xffff),
 			n(t.default[i].row), n(t.default[i].far_row), n(t.default[i].far_source), n(t.default[i].far_angle), n(rides_partner(mv)))
+		for pair in hits.pairs do append(&values, n(pair.end.kind), n(pair.end.index), n(pair.start.kind), n(pair.start.index))
+		append(&values, n(hits.attack_bones), n(hits.slots), n(hits.launches))
+		db.insert(w, "move", ..values[:])
 	}
 	write_cancels(w, "cancel", char, m, m.cancels, t.cancel_pick, cancel_starts)
 	write_cancels(w, "group_cancel", char, m, m.group_cancels, t.group_pick, group_starts)
-	for v, i in m.cancel_extras do db.insert(w, "cancel_extra", char, n(i), n(v))
 	for r, i in m.requirements {
 		l, p := list_of(requirement_starts, i)
 		db.insert(w, "requirement", char, n(l), n(p), n(r.id), n(requirement_param(r)))
@@ -79,8 +84,8 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 		values := make([dynamic]db.Value)
 		append(&values, char, n(i))
 		for p in r.pushbacks do append(&values, n(p))
-		for u in r.unk_1c do append(&values, n(u))
-		append(&values, n(r.vertical_pushback), n(r.unk_32),
+		for u in r.unk_1c do append(&values, n(u))  // angle 0..5, yaw 0..3
+		append(&values, n(r.vertical_pushback), n(r.unk_32),  // yaw 4, 5
 			n(r.move_standing), n(r.move_crouch), n(r.move_counter), n(r.move_crouch_counter),
 			n(r.move_left), n(r.move_left_crouch), n(r.move_right), n(r.move_right_crouch),
 			n(r.move_back), n(r.move_back_crouch), n(r.move_block), n(r.move_crouch_block),
@@ -90,11 +95,11 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 	for p, i in m.pushbacks do db.insert(w, "pushback", char, n(i), n(p.unk_00), n(p.unk_02), n(p.unk_04), n(p.unk_06), n(p.extras))
 	for v, i in m.pushback_extras {
 		l, p := list_of(pushback_extra_starts, i)
-		db.insert(w, "pushback_extra", char, n(l), n(p), n(v))
+		db.insert(w, "pushback_curve", char, n(l), n(p), n(v))
 	}
 	for x, i in m.extra_props {
 		l, p := list_of(extra_prop_starts, i)
-		db.insert(w, "extra_prop", char, n(l), n(p), n(x.unk_00), n(x.unk_02), n(prop_value(&t, x)))
+		db.insert(w, "extra_prop", char, n(l), n(p), n(x.unk_00), n(x.unk_02), n(prop_value(&t, x)), n(x.unk_04 & 0xffff))
 	}
 	write_tracking(w, char, &t)
 	write_props(w, "start_prop", char, m.start_props, start_prop_starts)
@@ -144,8 +149,10 @@ embedded_owner :: proc(char: string) -> string {return fmt.tprintf("%s/embedded"
 write_cancels :: proc(w: ^db.Writer, table, char: string, m: formats.Motbin, cancels: []formats.Cancel, picks: []u16, list_starts: []bool) {
 	for c, i in cancels {
 		l, p := list_of(list_starts, i)
-		db.insert(w, table, char, n(l), n(p), n(c.command), n(c.requirements), n(c.move), n(c.unk_0a),
-			n(c.extra), n(c.window_start), n(c.window_end), n(c.start_frame), n(cancel_option(m, c)), n(picks[i]))
+		move, group_list: db.Value = n(c.move), db.Null{}
+		if c.command >> 16 == CMD_GROUP do move, group_list = db.Null{}, n(c.move)
+		db.insert(w, table, char, n(l), n(p), n(c.command >> 16), n(c.command & 0xffff), n(c.requirements), move, group_list, n(c.unk_0a),
+			n(m.cancel_extras[c.extra]), n(c.window_start), n(c.window_end), n(c.start_frame), n(cancel_option(m, c)), n(picks[i]))
 	}
 }
 
@@ -166,7 +173,7 @@ write_tracking :: proc(w: ^db.Writer, char: string, t: ^Tracking) {
 write_props :: proc(w: ^db.Writer, table, char: string, props: []formats.Prop, list_starts: []bool) {
 	for x, i in props {
 		l, p := list_of(list_starts, i)
-		db.insert(w, table, char, n(l), n(p), n(x.requirements), n(x.unk_04))
+		db.insert(w, table, char, n(l), n(p), n(x.requirements), n(x.unk_04 >> 16), n(x.unk_04 & 0xffff))
 	}
 }
 
@@ -193,7 +200,3 @@ list_of :: proc(s: []bool, i: int) -> (list, pos: int) {
 
 @(private = "file")
 n :: proc(v: $T) -> db.Value {return i64(v)}
-
-// -1: none.
-@(private = "file")
-opt :: proc(v: i32) -> db.Value {return v < 0 ? db.Null{} : i64(v)}

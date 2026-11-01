@@ -71,7 +71,7 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 		data, unpacked := formats.unlz(packed, context.temp_allocator)
 		m, read := formats.read_motbin(data, context.temp_allocator)
 		if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
-		if err = convert.write_moveset_rows(w, c.id, owner, m); err != "" do return err
+		if err = convert.write_moveset_rows(w, c.id, owner, char_index, m); err != "" do return err
 		if m.bank_offsets[0] < len(data) do write_bank(im, convert.embedded_owner(c.id), data[m.bank_offsets[0]:])
 		if m.bank_offsets[formats.BANK_HANDS] < len(data) do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), data[m.bank_offsets[formats.BANK_HANDS]:])
 		skeleton, has_skeleton := character_skeleton(im, c)

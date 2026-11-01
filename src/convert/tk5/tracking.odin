@@ -299,8 +299,8 @@ check_facing_props :: proc(m: formats.Motbin) -> (ok: bool) {
 	return true
 }
 
-// Extra property value: 0x8071 holds the game's mode number, the db holds a row of the character table.
-prop_value :: proc(t: ^Tracking, x: formats.Extra_Prop) -> u32 {
-	if x.unk_02 != PROP_FACING_MODE do return x.unk_04
-	return u32(row_index(t, int(x.unk_04 >> 16))) << 16 | x.unk_04 & 0xffff
+// Extra property value, the high half the sim reads: 0x8071 holds the game's mode number, the db holds a row of the character table.
+prop_value :: proc(t: ^Tracking, x: formats.Extra_Prop) -> u16 {
+	value := u16(x.unk_04 >> 16)
+	return x.unk_02 == PROP_FACING_MODE ? u16(row_index(t, int(value))) : value
 }

@@ -44,6 +44,7 @@ Body_Point :: struct {
 	bone:   u8,
 	offset: [3]f32,
 }
+BODY_POINTS :: 2  // T5_BODY_POINTS
 L_HAND :: 12
 PELVIS :: 13
 
@@ -92,7 +93,7 @@ CATEGORIES := [21][]Span{
 ATTACK_BONES :: 32  // bits of move_hits.attack_bones; params 1..31
 JOINT_REQUIREMENTS :: [?]u16{0x106, 0x113}  // param is a joint of skeleton A
 
-// Body, points, gaze and hit rows of one move set. Fails on requirement params the sim can not read.
+// Body, points and gaze rows of one move set. Fails on requirement params the sim can not read.
 // head_top: head end height of the standing idle (head_top in pose.odin).
 write_stock_rows :: proc(w: ^db.Writer, char: string, moveset: int, m: formats.Motbin, head_top: f32) -> (err: string) {
 	write_body(w, char, moveset, head_top)
@@ -105,18 +106,26 @@ write_stock_rows :: proc(w: ^db.Writer, char: string, moveset: int, m: formats.M
 			return fmt.tprintf("%s: joint requirement %#x with param %d >= %d", char, r.id, r.param, BONES_A)
 		}
 	}
-	for mv, i in m.moves {
-		hitbox := hitbox_bytes(mv.hit_category)
-		for slot in 0 ..< 2 {
-			end, start, ok := hit_pair(hitbox[2 * slot], hitbox[2 * slot + 1], moveset)
-			if !ok do return fmt.tprintf("%s move %d: a hitbox on a special slot its row leaves unwritten", char, i)
-			db.insert(w, "hit_pair", char, i64(i), i64(slot), i64(end.kind), i64(end.index), i64(start.kind), i64(start.index))
-		}
-		slots := hitbox[2] != 0 ? 2 : hitbox[0] != 0 ? 1 : 0
-		launches := hitbox[0] == LAUNCH_CODE || hitbox[1] == LAUNCH_CODE || hitbox[2] == LAUNCH_CODE || hitbox[3] == LAUNCH_CODE
-		db.insert(w, "move_hits", char, i64(i), i64(attack_bones(hitbox)), i64(slots), i64(launches))
-	}
 	return ""
+}
+
+Hit_Pair :: struct {end, start: Hit_Point}
+
+Move_Hits :: struct {
+	pairs:        [2]Hit_Pair,  // by hitbox slot
+	attack_bones: u32,
+	slots:        int,
+	launches:     bool,
+}
+
+// What the sim reads of a move's hitbox bytes. False: a hitbox on a special slot its row leaves unwritten.
+move_hits :: proc(mv: formats.Move, moveset: int) -> (h: Move_Hits, ok: bool) {
+	hitbox := hitbox_bytes(mv.hit_category)
+	for &pair, slot in h.pairs do pair.end, pair.start = hit_pair(hitbox[2 * slot], hitbox[2 * slot + 1], moveset) or_return
+	h.attack_bones = attack_bones(hitbox)
+	h.slots = hitbox[2] != 0 ? 2 : hitbox[0] != 0 ? 1 : 0
+	h.launches = hitbox[0] == LAUNCH_CODE || hitbox[1] == LAUNCH_CODE || hitbox[2] == LAUNCH_CODE || hitbox[3] == LAUNCH_CODE
+	return h, true
 }
 
 // The model id of a move set's default costume (P+0x40). From 18 up it is one more (18 is Mokujin);
@@ -147,12 +156,21 @@ write_body :: proc(w: ^db.Writer, char: string, moveset: int, head_top: f32) {
 	}
 	hitscan := moveset == DEVIL_JIN ? EYE_LASER : 0
 	projectile := moveset == JINPACHI || moveset == JINPACHI_BOSS ? FIRE : 0
-	db.insert(w, "body", char, f64(cut), f64(probe.x), f64(probe.z), f64(probe.radius), f64(head_top), i64(hitscan), i64(projectile))
-	for i in 0 ..< len(hurt) do db.insert(w, "body_hurt", char, i64(i), i64(hurt[i]), i64(HURT_BONE[i]), f64(HURT_LIFT[i]))
-	for i in 0 ..< len(push) do db.insert(w, "body_push", char, i64(i), f64(push[i]), i64(PUSH_BONE[i]))
-	for p, i in body_points(moveset) {
-		db.insert(w, "body_point", char, i64(i), i64(p.bone), f64(p.offset.x), f64(p.offset.y), f64(p.offset.z))
-	}
+	body := make([dynamic]db.Value, context.temp_allocator)
+	append(&body, char)
+	for i in 0 ..< len(hurt) do append(&body, i64(hurt[i]), i64(HURT_BONE[i]), f64(HURT_LIFT[i]))
+	for i in 0 ..< len(push) do append(&body, f64(push[i]), i64(PUSH_BONE[i]))
+	append(&body, f64(cut), f64(probe.x), f64(probe.z), f64(probe.radius), f64(head_top))
+	db.insert(w, "body", ..body[:])
+
+	used := body_points(moveset)
+	points: [BODY_POINTS]Body_Point
+	copy(points[:], used)
+	row := make([dynamic]db.Value, context.temp_allocator)
+	append(&row, char, i64(len(used)))
+	for p in points do append(&row, i64(p.bone), f64(p.offset.x), f64(p.offset.y), f64(p.offset.z))
+	append(&row, i64(hitscan), i64(projectile))
+	db.insert(w, "body_points", ..row[:])
 }
 
 // Row i is special slot 6 + i (character_points of chara 4, 0xb, 0x13).
