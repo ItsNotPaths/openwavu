@@ -1,9 +1,11 @@
-// Hand banks: the type 1 banks of the fingers (data.md 6.5) and their sampler. Read-only views of caller-owned bytes.
+// Hand banks: the finger clips from .anim files (layout tk5hand, data.md 6.5) and their sampler. Views of caller-owned bytes.
 #ifndef T5_VISUAL_HAND_BANK_H
 #define T5_VISUAL_HAND_BANK_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
+#include "sim/anim.h"
 #include "sim/memory.h"
 #include "sim/vec.h"
 
@@ -12,16 +14,31 @@ enum { FINGER_JOINTS = 15 };  // 5 fingers x 3 joints: thumb, index, middle, rin
 // One local rotation per finger joint, as quaternions. They replace the bind rotation of the bone.
 typedef struct { T5Vec4 joint[FINGER_JOINTS]; } T5FingerPose;
 
+// Per frame, per joint: (axis pitch, axis yaw, angle) in radians.
+typedef float T5HandKeys[FINGER_JOINTS][3];
+
 typedef struct {
-    T5Bytes bytes;
-    uint16_t clip_count;
+    uint16_t frame_count;
+    const T5HandKeys *keys;  // NULL: no clip, every frame is zeros
+} T5HandClip;
+
+typedef struct {
+    uint32_t clip_count;
+    T5HandClip *clips;
 } T5HandBank;
 
 // The two banks of a character: the pose library (clip 0, frame i = pose i) and the gesture clips.
 typedef struct { T5HandBank poses, gestures; } T5HandBanks;
 
-// A .t5h file (tools/hands2bin.py). Returns 0 on success; the banks point into `file`.
-int t5_hand_banks_parse(T5HandBanks *banks, T5Bytes file);
+static inline bool t5_hand_joint_is_rotation(int32_t joint) { return (void)joint, true; }
+
+// Inline so the loader needs no visual code. The clip points into `file`; 0 on success.
+static inline int t5_hand_clip_parse(T5HandClip *clip, T5Bytes file) {
+    const float *keys;
+    uint16_t frames = t5_anim_file(file, "tk5hand", FINGER_JOINTS, t5_hand_joint_is_rotation, &keys);
+    *clip = frames ? (T5HandClip){frames, (const T5HandKeys *)keys} : (T5HandClip){0};
+    return frames ? 0 : -1;
+}
 
 uint16_t t5_hand_clip_frames(T5HandBank bank, uint16_t clip);  // frame count; a clip past the end reads clip 0
 // Frame floor(time) and the next mixed by the fraction (shortest arc, not normalized). A clip past the end reads clip 0.

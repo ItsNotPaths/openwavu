@@ -8,7 +8,7 @@ static const float TICK_SECONDS = 1.0f / 60.0f;
 enum { MAX_CATCH_UP = 10 };  // a longer jump of the sim frame is a seek
 
 static bool has_hands(const T5VisualFighter *visual, const T5Fighter *f) {  // fighters with hand pose data loaded
-    return f->kind == T5_KIND_FIGHTER && visual->banks.poses.bytes.data != NULL;
+    return f->kind == T5_KIND_FIGHTER && visual->banks.poses.clips != NULL;
 }
 
 static T5FingerBones finger_bones(T5Hands hands) {

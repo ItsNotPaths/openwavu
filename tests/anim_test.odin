@@ -146,7 +146,6 @@ archive_entry :: proc(a: ^Archive, index: int) -> []byte {
 	return data
 }
 
-@(private = "file")
 digest_hex :: proc(ctx: ^sha2.Context_256) -> string {
 	digest: [sha2.DIGEST_SIZE_256]byte
 	sha2.final(ctx, digest[:])

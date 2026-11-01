@@ -10,26 +10,31 @@
 // u32 channels, per channel {u8 kind, u8 components, i16 bone}, then f32 keys[frames][channels][components]
 
 enum { ANIM_VERSION = 2, HEADER_BYTES = 32, CHANNEL_BYTES = 4, KIND_POSITION = 1, KIND_AXIS_ANGLE = 3, KEY_COMPONENTS = 3 };
-static const char LAYOUT[8] = "tk5";
 
 static uint32_t read32(const uint8_t *bytes) {  // little endian
     return (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8 | (uint32_t)bytes[2] << 16 | (uint32_t)bytes[3] << 24;
 }
 
-int t5_anim_parse(T5Anim *anim, T5Bytes file) {
-    memset(anim, 0, sizeof *anim);
-    const size_t keys = HEADER_BYTES + T5_CHANNELS * CHANNEL_BYTES;
-    if (file.size < keys || memcmp(file.data, "OWAN", 4) != 0 || read32(file.data + 4) != ANIM_VERSION) return -1;
-    if (memcmp(file.data + 8, LAYOUT, sizeof LAYOUT) != 0 || read32(file.data + 28) != T5_CHANNELS) return -1;
+uint16_t t5_anim_file(T5Bytes file, const char *layout, int32_t channels, bool (*is_rotation)(int32_t), const float **keys) {
+    const size_t start = HEADER_BYTES + (size_t)channels * CHANNEL_BYTES, frame_bytes = (size_t)channels * KEY_COMPONENTS * sizeof(float);
+    if (file.size < start || memcmp(file.data, "OWAN", 4) != 0 || read32(file.data + 4) != ANIM_VERSION) return 0;
+    if (strncmp((const char *)file.data + 8, layout, 8) != 0 || read32(file.data + 28) != (uint32_t)channels) return 0;
     uint32_t frames = read32(file.data + 16);
-    if (frames == 0 || frames > UINT16_MAX || (file.size - keys) / sizeof(T5AnimKeys) < frames) return -1;
+    if (frames > UINT16_MAX || (file.size - start) / frame_bytes < frames) return 0;
     const uint8_t *channel = file.data + HEADER_BYTES;
-    for (int32_t index = 0; index < T5_CHANNELS; index++, channel += CHANNEL_BYTES) {  // the layout the samplers read
-        uint8_t kind = t5_channel_is_rotation(index) ? KIND_AXIS_ANGLE : KIND_POSITION;
-        if (channel[0] != kind || channel[1] != KEY_COMPONENTS) return -1;
+    for (int32_t index = 0; index < channels; index++, channel += CHANNEL_BYTES) {
+        uint8_t kind = is_rotation(index) ? KIND_AXIS_ANGLE : KIND_POSITION;
+        if (channel[0] != kind || channel[1] != KEY_COMPONENTS) return 0;
     }
-    *anim = (T5Anim){(uint16_t)frames, (const T5AnimKeys *)(file.data + keys)};
-    return 0;
+    *keys = (const float *)(file.data + start);
+    return (uint16_t)frames;
+}
+
+int t5_anim_parse(T5Anim *anim, T5Bytes file) {
+    const float *keys;
+    uint16_t frames = t5_anim_file(file, "tk5", T5_CHANNELS, t5_channel_is_rotation, &keys);  // the layout the samplers read
+    *anim = frames ? (T5Anim){frames, (const T5AnimKeys *)keys} : (T5Anim){0};
+    return frames ? 0 : -1;
 }
 
 void t5_anim_keys(const T5Anim *anim, T5Vec4 *out, int32_t frame, int32_t count) {
@@ -48,8 +53,7 @@ void t5_anim_keys(const T5Anim *anim, T5Vec4 *out, int32_t frame, int32_t count)
 
 static const float LERP_MIN = 1e-5f;
 
-// axis = row 2 of RotY(yaw) then RotX(pitch) on the matrix stack, angle = key z
-static void key_quat(T5Vec4 *turn, const T5Vec4 *key) {
+void t5_anim_key_turn(T5Vec4 *turn, const T5Vec4 *key) {
     T5Mat4 matrix;
     t5_mat_identity(&matrix);
     t5_mat_rotate_y(&matrix, t5_rad_to_angle_round(key->y));
@@ -79,13 +83,13 @@ void t5_anim_sample(const T5Anim *anim, float frame, T5Vec4 pose[T5_CHANNELS], b
                 continue;
             }
             T5Vec4 turn_now, turn_next;
-            key_quat(&turn_now, &keys_now[channel]);
-            key_quat(&turn_next, &keys_next[channel]);
+            t5_anim_key_turn(&turn_now, &keys_now[channel]);
+            t5_anim_key_turn(&turn_next, &keys_next[channel]);
             t5_quat_nlerp(&pose[channel], weight, &turn_now, &turn_next);  // rotations blend as turns
         }
     } else {
         for (int32_t channel = 0; channel < T5_CHANNELS; channel++) {
-            if (t5_channel_is_rotation(channel)) key_quat(&pose[channel], &keys_now[channel]);
+            if (t5_channel_is_rotation(channel)) t5_anim_key_turn(&pose[channel], &keys_now[channel]);
             else for (int axis = 0; axis < 3; axis++) pose[channel].v[axis] = keys_now[channel].v[axis];
         }
     }
@@ -103,12 +107,12 @@ void t5_anim_sample_yaw(const T5Anim *anim, float frame, T5Vec4 *turn) {
     T5Vec4 keys_now[YAW_CHANNELS], keys_next[YAW_CHANNELS], turn_now, turn_next;
     t5_anim_keys(anim, keys_now, whole_frame, YAW_CHANNELS);
     if (!(weight >= LERP_MIN)) {  // on a whole frame: no blend needed
-        key_quat(turn, &keys_now[CHANNEL_ROOT_YAW]);
+        t5_anim_key_turn(turn, &keys_now[CHANNEL_ROOT_YAW]);
         return;
     }
     t5_anim_keys(anim, keys_next, next_frame(whole_frame), YAW_CHANNELS);
-    key_quat(&turn_now, &keys_now[CHANNEL_ROOT_YAW]);
-    key_quat(&turn_next, &keys_next[CHANNEL_ROOT_YAW]);
+    t5_anim_key_turn(&turn_now, &keys_now[CHANNEL_ROOT_YAW]);
+    t5_anim_key_turn(&turn_next, &keys_next[CHANNEL_ROOT_YAW]);
     t5_quat_nlerp(turn, weight, &turn_now, &turn_next);  // blend the two yaw turns
 }
 

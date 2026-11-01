@@ -33,8 +33,12 @@ typedef struct {
 
 bool t5_anim_same(const T5Anim *first, const T5Anim *second);
 
-static inline size_t t5_anim_bank_bytes(uint32_t anim_count) { return (anim_count + 1) * sizeof(T5Anim); }  // arena bytes: the anims and a zero one
 int t5_anim_parse(T5Anim *anim, T5Bytes file);  // checks the tk5 layout; the anim points into `file`; 0 on success
+// A .anim file of this layout (at most 8 chars) and channel count, 3 components per key, rotations where is_rotation says.
+// Returns the frame count, *keys pointing into `file`; 0 when the file is not such an anim or has no frames.
+uint16_t t5_anim_file(T5Bytes file, const char *layout, int32_t channels, bool (*is_rotation)(int32_t), const float **keys);
+// A key (axis pitch, axis yaw, angle) as a turn: axis = row 2 of RotY(yaw) then RotX(pitch) on the matrix stack.
+void t5_anim_key_turn(T5Vec4 *turn, const T5Vec4 *key);
 // out[channel] = (x, y, z) keys of channels 0..count-1 at `frame`, clamped to the anim. No anim: zeros. w is not written.
 void t5_anim_keys(const T5Anim *anim, T5Vec4 *out, int32_t frame, int32_t count);
 

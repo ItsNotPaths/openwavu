@@ -477,7 +477,7 @@ const char *t5_load_skeleton(T5Skeleton *skeleton, sqlite3 *db, const char *char
     return failed;
 }
 
-enum { OWNER_BYTES = 128 };
+enum { OWNER_BYTES = 128, HAND_OWNER_BYTES = OWNER_BYTES + sizeof "/hand_gestures" };
 
 // The owners of the character's banks in fighter order: its own (the bank its moves name that is neither common nor
 // embedded), common, embedded.
@@ -506,44 +506,68 @@ static const char *bank_count(sqlite3 *db, const char *owner, uint32_t *count) {
     return NULL;
 }
 
-const char *t5_load_anims_storage(sqlite3 *db, const char *character, size_t *bytes) {
-    char owners[3][OWNER_BYTES];
-    const char *failed = bank_owners(db, character, owners);
-    *bytes = 0;
-    for (int bank = 0; bank < 3 && !failed; bank++) {
-        size_t bank_bytes;
-        failed = t5_load_anim_bank_storage(db, owners[bank], &bank_bytes);
-        *bytes += bank_bytes;
-    }
-    return failed;
-}
+// A bank's clips: one record of `size` bytes per id, read from its file by `parse`. Ids without a row stay zero; rows
+// that name one file share one record.
+typedef struct {
+    size_t size;
+    int (*parse)(void *clip, T5Bytes file);
+    const char *what;
+} ClipKind;
 
-const char *t5_load_anim_bank_storage(sqlite3 *db, const char *owner, size_t *bytes) {
+static int parse_anim(void *anim, T5Bytes file) { return t5_anim_parse(anim, file); }
+static int parse_hand_clip(void *clip, T5Bytes file) { return t5_hand_clip_parse(clip, file); }
+
+static const ClipKind ANIMS = {sizeof(T5Anim), parse_anim, "anims"};
+static const ClipKind HAND_CLIPS = {sizeof(T5HandClip), parse_hand_clip, "hand clips"};
+
+static size_t clips_bytes(uint32_t count, ClipKind kind) { return t5_arena_round(((size_t)count + 1) * kind.size); }  // and a zero one
+
+static const char *clips_storage(sqlite3 *db, const char *owner, ClipKind kind, size_t *bytes) {
     uint32_t count;
     const char *failed = bank_count(db, owner, &count);
-    *bytes = failed ? 0 : t5_arena_round(t5_anim_bank_bytes(count));
+    *bytes = failed ? 0 : clips_bytes(count, kind);
     return failed;
 }
 
-// Ids without a row stay zero anims.
-const char *t5_load_anim_bank(T5AnimBank *bank, sqlite3 *db, const char *owner, T5ReadFile read, void *context, T5Arena *arena) {
-    const char *failed = bank_count(db, owner, &bank->anim_count);
+static const char *load_clips(void **clips, uint32_t *count, ClipKind kind, sqlite3 *db, const char *owner, T5ReadFile read,
+                              void *context, T5Arena *arena) {
+    const char *failed = bank_count(db, owner, count);
     if (failed) return failed;
-    bank->anims = t5_arena_take(arena, t5_anim_bank_bytes(bank->anim_count));
-    if (!bank->anims) return fail("anims %s: arena full", owner);
-    memset(bank->anims, 0, t5_anim_bank_bytes(bank->anim_count));
+    uint8_t *records = t5_arena_take(arena, clips_bytes(*count, kind));
+    if (!records) return fail("%s %s: arena full", kind.what, owner);
+    memset(records, 0, clips_bytes(*count, kind));
+    *clips = records;
     sqlite3_stmt *rows;
     failed = prepare(db, "SELECT idx, file, (SELECT min(idx) FROM anim b WHERE b.character = a.character AND b.file = a.file) "
                          "FROM anim a WHERE character = ?1 ORDER BY idx", owner, &rows);
     while (!failed && sqlite3_step(rows) == SQLITE_ROW) {
         int64_t index = sqlite3_column_int64(rows, 0), first = sqlite3_column_int64(rows, 2);
         const char *file = (const char *)sqlite3_column_text(rows, 1);
-        if (index < 0) failed = fail("anims %s: idx %lld", owner, (long long)index);
-        else if (first < index) bank->anims[index] = bank->anims[first];  // one record: the same keys
-        else if (t5_anim_parse(&bank->anims[index], read(context, file)) != 0) failed = fail("anims %s %lld: bad file %s", owner, (long long)index, file);
+        if (index < 0) failed = fail("%s %s: idx %lld", kind.what, owner, (long long)index);
+        else if (first < index) memcpy(records + index * kind.size, records + first * kind.size, kind.size);  // one record: the same keys
+        else if (kind.parse(records + index * kind.size, read(context, file)) != 0)
+            failed = fail("%s %s %lld: bad file %s", kind.what, owner, (long long)index, file);
     }
     sqlite3_finalize(rows);
     return failed;
+}
+
+const char *t5_load_anims_storage(sqlite3 *db, const char *character, size_t *bytes) {
+    char owners[3][OWNER_BYTES];
+    const char *failed = bank_owners(db, character, owners);
+    *bytes = 0;
+    for (int bank = 0; bank < 3 && !failed; bank++) {
+        size_t bank_bytes;
+        failed = clips_storage(db, owners[bank], ANIMS, &bank_bytes);
+        *bytes += bank_bytes;
+    }
+    return failed;
+}
+
+const char *t5_load_anim_bank_storage(sqlite3 *db, const char *owner, size_t *bytes) { return clips_storage(db, owner, ANIMS, bytes); }
+
+const char *t5_load_anim_bank(T5AnimBank *bank, sqlite3 *db, const char *owner, T5ReadFile read, void *context, T5Arena *arena) {
+    return load_clips((void **)&bank->anims, &bank->anim_count, ANIMS, db, owner, read, context, arena);
 }
 
 const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena) {
@@ -551,5 +575,36 @@ const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *charac
     const char *failed = bank_owners(db, character, owners);
     T5AnimBank *banks[3] = {&files->character, &files->common, &files->embedded};
     for (int bank = 0; bank < 3 && !failed; bank++) failed = t5_load_anim_bank(banks[bank], db, owners[bank], read, context, arena);
+    return failed;
+}
+
+// The pose bank is the character's, the gestures belong to the owner of its own anim bank.
+static const char *hand_owners(sqlite3 *db, const char *character, char owners[2][HAND_OWNER_BYTES]) {
+    char banks[3][OWNER_BYTES];
+    const char *failed = bank_owners(db, character, banks);
+    snprintf(owners[0], HAND_OWNER_BYTES, "%s/hand_poses", character);
+    snprintf(owners[1], HAND_OWNER_BYTES, "%s/hand_gestures", banks[0]);
+    return failed;
+}
+
+const char *t5_load_hands_storage(sqlite3 *db, const char *character, size_t *bytes) {
+    char owners[2][HAND_OWNER_BYTES];
+    const char *failed = hand_owners(db, character, owners);
+    *bytes = 0;
+    for (int bank = 0; bank < 2 && !failed; bank++) {
+        size_t bank_bytes;
+        failed = clips_storage(db, owners[bank], HAND_CLIPS, &bank_bytes);
+        *bytes += bank_bytes;
+    }
+    return failed;
+}
+
+const char *t5_load_hands(T5HandBanks *banks, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena) {
+    char owners[2][HAND_OWNER_BYTES];
+    const char *failed = hand_owners(db, character, owners);
+    T5HandBank *bank[2] = {&banks->poses, &banks->gestures};
+    for (int k = 0; k < 2 && !failed; k++)
+        failed = load_clips((void **)&bank[k]->clips, &bank[k]->clip_count, HAND_CLIPS, db, owners[k], read, context, arena);
+    if (!failed && (!banks->poses.clip_count || !banks->gestures.clip_count)) failed = fail("hands %s: no clips", character);
     return failed;
 }
