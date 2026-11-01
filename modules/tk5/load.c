@@ -435,3 +435,44 @@ const char *t5_load_motbin(T5Motbin *motbin, sqlite3 *db, const char *character,
     for (size_t index = 0; index < TABLE_COUNT && !failed; index++) failed = load_table(db, character, &tables[index], anims, arena, motbin);
     return failed;
 }
+
+// Row columns from `first` on, as floats.
+static void read_floats(sqlite3_stmt *row, int first, float *out, int count) {
+    for (int column = 0; column < count; column++) out[column] = (float)sqlite3_column_double(row, first + column);
+}
+
+// The bones of skeleton A or B by slot: parent, translation, and for A the bind turn.
+static const char *load_bones(sqlite3 *db, const char *character, const char *sql, int32_t count, int8_t *parent,
+                              float (*translation)[3], float (*euler)[3]) {
+    sqlite3_stmt *rows;
+    const char *failed = prepare(db, sql, character, &rows);
+    while (!failed && sqlite3_step(rows) == SQLITE_ROW) {
+        int64_t slot = sqlite3_column_int64(rows, 0);
+        if (slot < 0 || slot >= count) {
+            failed = fail("%s: slot %lld", sql, (long long)slot);
+            break;
+        }
+        parent[slot] = (int8_t)sqlite3_column_int(rows, 1);
+        read_floats(rows, 2, translation[slot], 3);
+        if (euler) read_floats(rows, 5, euler[slot], 3);
+    }
+    sqlite3_finalize(rows);
+    return failed;
+}
+
+const char *t5_load_skeleton(T5Skeleton *skeleton, sqlite3 *db, const char *character) {
+    memset(skeleton, 0, sizeof *skeleton);
+    sqlite3_stmt *row;
+    const char *failed = prepare(db, "SELECT scale FROM skeleton WHERE character = ?1", character, &row);
+    if (failed) return failed;
+    if (sqlite3_step(row) == SQLITE_ROW) skeleton->scale = (float)sqlite3_column_double(row, 0);
+    else failed = fail("skeleton %s: no row", character);
+    sqlite3_finalize(row);
+    if (!failed)
+        failed = load_bones(db, character, "SELECT slot, parent, x, y, z, rx, ry, rz FROM skeleton_a WHERE character = ?1", T5_BONES_A,
+                            skeleton->parent_a, skeleton->translation, skeleton->euler);
+    if (!failed)
+        failed = load_bones(db, character, "SELECT slot, parent, x, y, z FROM skeleton_b WHERE character = ?1", T5_BONES_B,
+                            skeleton->parent_b, skeleton->translation_b, NULL);
+    return failed;
+}

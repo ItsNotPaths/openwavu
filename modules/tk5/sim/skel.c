@@ -41,13 +41,8 @@ static const int8_t SLOT_B[BON_BONES_B] = {-1, 0, 1, 2, 13, 3, 4, 5, 6, 7, 8, 9,
 // End points 22..26: parent slot, axis and ends[] entry of their offset (scaled by the bon scale)
 static const struct { int8_t parent, axis, end; } END_POINT[END_POINTS] = {{BONE_HEAD, 2, 0}, {BONE_R_FOOT, 0, 1}, {BONE_R_TOE, 1, 3}, {BONE_L_FOOT, 0, 2}, {BONE_L_TOE, 1, 4}};
 
-static void identity_locals(T5Bone *bones, int32_t count) {  // reset every bone's local matrix to no change
-    for (int32_t bone = 0; bone < count; bone++) t5_mat_identity(&bones[bone].local);
-}
-
-void t5_skeleton_load_a(T5Skeleton *skeleton, T5Rig *rig, const uint8_t *bon) {
+void t5_skeleton_load_a(T5Skeleton *skeleton, const uint8_t *bon) {
     skeleton->scale = read_float(bon + 4);  // body scale of this character
-    identity_locals(rig->bones_a, T5_BONES_A);
     memset(skeleton->translation, 0, sizeof skeleton->translation);
     memset(skeleton->euler, 0, sizeof skeleton->euler);
     for (int32_t end_point = 0; end_point < END_POINTS; end_point++) {
@@ -56,44 +51,53 @@ void t5_skeleton_load_a(T5Skeleton *skeleton, T5Rig *rig, const uint8_t *bon) {
         float offset = skeleton->scale * read_float(table(bon, BON_ENDS) + 4 * END_POINT[end_point].end);
         skeleton->parent_a[slot] = END_POINT[end_point].parent;
         skeleton->translation[slot][axis] = offset;
-        rig->bones_a[slot].local.m[3][axis] = offset;
     }
     for (int32_t record = 1; record < BON_BONES_A; record++) {  // loop through file records, skip the root record
         int32_t slot = SLOT_A[record];
         if (slot < 0) continue;  // this record has no body slot, ignore it
         skeleton->parent_a[slot] = SLOT_A[bon_parent(bon, record)];  // -1: the root record
         for (int component = 0; component < 3; component++) {  // copy the bind position and bind turn of the bone
-            skeleton->translation[slot][component] =  // kept in the skeleton and set in the rig bone
-                rig->bones_a[slot].local.m[3][component] = bon_translation(bon, record, component);
+            skeleton->translation[slot][component] = bon_translation(bon, record, component);
             skeleton->euler[slot][component] = bon_euler(bon, record, component);
         }
     }
     skeleton->parent_a[0] = -1;  // the hips have no parent bone, only the root
-    t5_mat_identity(&rig->root.local);
 }
 
-void t5_skeleton_load_b(T5Skeleton *skeleton, T5Rig *rig, const uint8_t *bon) {
-    identity_locals(rig->bones_b, T5_BONES_B);
+void t5_skeleton_load_b(T5Skeleton *skeleton, const uint8_t *bon) {
+    memset(skeleton->translation_b, 0, sizeof skeleton->translation_b);
     for (int32_t record = 1; record < BON_BONES_B; record++) {  // loop through the first records, skip the root record
         int32_t slot = SLOT_B[record];
         skeleton->parent_b[slot] = SLOT_B[bon_parent(bon, record)];  // parent bone found through the same slot table
-        for (int axis = 0; axis < 3; axis++) rig->bones_b[slot].local.m[3][axis] = bon_translation(bon, record, axis);
-        rig->bones_b[slot].local.m[3][3] = 1.0f;  // homogeneous w of the position row
+        for (int axis = 0; axis < 3; axis++) skeleton->translation_b[slot][axis] = bon_translation(bon, record, axis);
     }
     skeleton->parent_b[BONE_SPINE] = BONE_HIPS;  // B hangs the spine and the pelvis on the hips
     skeleton->parent_b[BONE_PELVIS] = BONE_HIPS;
     for (int32_t end_point = 0; end_point < END_POINTS; end_point++) {
         skeleton->parent_b[BONE_HEAD_END + end_point] = END_POINT[end_point].parent;
-        rig->bones_b[BONE_HEAD_END + end_point].local.m[3][END_POINT[end_point].axis] =  // sits this far out, scaled
+        skeleton->translation_b[BONE_HEAD_END + end_point][END_POINT[end_point].axis] =  // sits this far out, scaled
             skeleton->scale * read_float(table(bon, BON_ENDS) + 4 * END_POINT[end_point].end);
     }
 }
 
-int t5_skeleton_parse(T5Skeleton *skeleton, T5Rig *rig, T5Bytes file) {
+int t5_skeleton_parse(T5Skeleton *skeleton, T5Bytes file) {
     if (file.size <= BON_HEADER_BYTES || (file.data[0] | file.data[1] << 8) != BON_BODY) return -1;
-    t5_skeleton_load_a(skeleton, rig, file.data);
-    t5_skeleton_load_b(skeleton, rig, file.data);
+    t5_skeleton_load_a(skeleton, file.data);
+    t5_skeleton_load_b(skeleton, file.data);
     return 0;
+}
+
+static void load_locals(T5Bone *bones, const float (*translation)[3], int32_t count) {  // identity turns, bind positions
+    for (int32_t bone = 0; bone < count; bone++) {
+        t5_mat_identity(&bones[bone].local);
+        for (int axis = 0; axis < 3; axis++) bones[bone].local.m[3][axis] = translation[bone][axis];
+    }
+}
+
+void t5_rig_load(T5Rig *rig, const T5Skeleton *skeleton) {
+    load_locals(rig->bones_a, skeleton->translation, T5_BONES_A);
+    load_locals(rig->bones_b, skeleton->translation_b, T5_BONES_B);
+    t5_mat_identity(&rig->root.local);
 }
 
 // --- world matrices: world = local * parent world (VMX)

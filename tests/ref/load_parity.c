@@ -1,6 +1,6 @@
-// Loads a character from the pack database (modules/tk5/load.c) and from its .t5m file (sim/motbin.c) and prints each table
+// Loads a character from the pack database (modules/tk5/load.c) and from its sim files (.t5m, .t5b) and prints each table
 // that differs. Fields the db does not carry, because the sim never reads them, are zeroed on both sides.
-// Usage: motbin_load db character t5m character_t5a common_t5a
+// Usage: load_parity db character t5m character_t5a common_t5a t5b
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -9,6 +9,7 @@
 
 #include "load.h"
 #include "sim/anim.h"
+#include "sim/skel.h"
 #include "sqlite3.h"
 
 typedef struct {
@@ -95,8 +96,19 @@ static bool same_table(const Table *table, const T5Motbin *db, const T5Motbin *f
     return true;
 }
 
+static bool same_skeleton(sqlite3 *db, const char *character, const char *path) {
+    T5Skeleton from_db, from_file;
+    memset(&from_file, 0, sizeof from_file);
+    const char *failed = t5_load_skeleton(&from_db, db, character);
+    if (failed) return printf("%s\n", failed), false;
+    if (t5_skeleton_parse(&from_file, read_file(path)) != 0) return printf("bad skeleton file\n"), false;
+    if (memcmp(&from_db, &from_file, sizeof from_db) == 0) return true;
+    printf("skeleton differs\n");
+    return false;
+}
+
 int main(int argc, char **argv) {
-    if (argc != 6) return 2;
+    if (argc != 7) return 2;
     sqlite3 *db;
     if (sqlite3_open_v2(argv[1], &db, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK) return 2;
     T5Bytes file = read_file(argv[3]);
@@ -116,5 +128,6 @@ int main(int argc, char **argv) {
     bool same = memcmp(from_db.aliases, from_file.aliases, sizeof from_db.aliases) == 0;
     if (!same) printf("aliases differ\n");
     for (size_t index = 0; index < sizeof tables / sizeof tables[0]; index++) same &= same_table(&tables[index], &from_db, &from_file);
+    same &= same_skeleton(db, argv[2], argv[6]);
     return same ? 0 : 1;
 }

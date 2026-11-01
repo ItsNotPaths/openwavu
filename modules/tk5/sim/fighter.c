@@ -54,7 +54,8 @@ int t5_fighter_build(T5FighterData *data, const T5FighterFiles *files, T5Arena *
     if (t5_motbin_parse(&data->moves, files->moves, arena)) return -1;
     if (!data->moves.start_properties || !data->moves.hit_conditions) return -1;  // both move tables are required
     if (parse_banks(data, files, arena)) return -1;
-    if (t5_skeleton_parse(&data->skeleton, &data->bind, files->skeleton)) return -1;
+    if (t5_skeleton_parse(&data->skeleton, files->skeleton)) return -1;
+    t5_rig_load(&data->bind, &data->skeleton);
     t5_rig_bind(&data->bind, &data->skeleton);
     // The game's bank loader supplies lengths; the raw extracted move records have zero here.
     // An anim index the lists do not hold is a bad export.

@@ -21,9 +21,10 @@ typedef struct {
     int8_t parent_b[T5_BONES_B];  // parent slot of each B bone; the spine and pelvis hang on the hips
     float euler[T5_BONES_A][3];      // bind rotation, radians (m = Rx Ry Rz)
     float translation[T5_BONES_A][3];  // bind translation
+    float translation_b[T5_BONES_B][3];  // B's own bind translation (the bon values; A has bon 29, 30 at 15, 19)
 } T5Skeleton;
 
-// Bone records of one fighter. B keeps its own translations (the bon values; A has bon 29, 30 at 15, 19).
+// Bone records of one fighter.
 typedef struct {
     T5Bone root;            // the parent of A[0] and B[0]; translation = base position
     T5Bone bones_a[T5_BONES_A];
@@ -31,9 +32,11 @@ typedef struct {
 } T5Rig;
 
 // `bon` is the raw section (tools/bon2bin.py), little endian.
-void t5_skeleton_load_a(T5Skeleton *skeleton, T5Rig *rig, const uint8_t *bon);  // (tables, A records, scale)
-void t5_skeleton_load_b(T5Skeleton *skeleton, T5Rig *rig, const uint8_t *bon);  // (B records)
-int t5_skeleton_parse(T5Skeleton *skeleton, T5Rig *rig, T5Bytes file);  // both, from the bytes of a .t5b file; 0 on success
+void t5_skeleton_load_a(T5Skeleton *skeleton, const uint8_t *bon);  // (tables, A records, scale)
+void t5_skeleton_load_b(T5Skeleton *skeleton, const uint8_t *bon);  // (B records)
+int t5_skeleton_parse(T5Skeleton *skeleton, T5Bytes file);  // both, from the bytes of a .t5b file; 0 on success
+// The rig of the model load: identity turns, the bind translations, the root at the origin.
+void t5_rig_load(T5Rig *rig, const T5Skeleton *skeleton);
 
 // B takes the rotation rows of bones 0..26 of A; its translations stay.
 void t5_rig_rotations_to_b(T5Rig *rig);
