@@ -251,8 +251,9 @@ import_stage :: proc(im: ^Import, index: int) {
 	// (hole stage-break-pieces :tags importer :sev polish) section 4 (flying pieces of breakable props) is not exported.
 	file := fmt.tprintf("stages/%s.glb", id)
 	if len(meshes) > 0 && !convert.write_model(join(im.root, file), meshes[:], textures, nil, matrices[:]) do return
-	db.insert(&im.w, "stage", id, id, i64(index), file)
-	convert.write_stage_rows(&im.w, id, index, s)
+	collision, surfaces := fmt.tprintf("stages/%s.collision.glb", id), fmt.tprintf("stages/%s.surfaces", id)
+	if !convert.write_stage_collision(join(im.root, collision), join(im.root, surfaces), s) do return
+	db.insert(&im.w, "stage", id, id, i64(index), file, collision, surfaces)
 }
 
 // (hole sound-extract :tags (importer audio)) vag sound packs (entries 161..206, character slots +4/+5, stage packs) are not decoded to WAV (ffmpeg parts linked statically, ws.md).

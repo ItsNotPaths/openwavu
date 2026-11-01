@@ -7,7 +7,7 @@ import "core:strings"
 import "core:testing"
 import formats "../src/formats/tk5"
 
-// Dumps stage_collision.py's walls, grid, cells and floors and stage_start.py's start points, with float bits.
+// Dumps stage_collision.py's wall quads (kinds 3 and 9) and floors and stage_start.py's start points, with float bits.
 STAGE_DUMP :: `
 import sys, numpy as np
 sys.path.insert(0, 'tools')
@@ -21,12 +21,7 @@ for s in range(sc.COUNT):
     mho, zones = got
     print('S', s)
     for q in mho.quads:
-        print('Q', q.obj, q.link, int(q.is_wall), h(q.corners), h(q.normal))
-    print('G', mho.grid[0], mho.grid[1], h(mho.grid[2]))
-    for o in mho.objects:
-        print('O', o.kind, o.link)
-    for c in mho.cells:
-        print('C', *c)
+        print('Q', q.link, h(q.corners), h(q.normal))
     for slot in start_points(sc.stage_file(s))['slots']:
         print('T', slot['format'])
         for g in slot['groups']:
@@ -48,17 +43,10 @@ dump_stage :: proc(b: ^strings.Builder, id: int, s: formats.Stage, has: bool) {
 	}
 	fmt.sbprintf(b, "S %d\n", id)
 	for &q in s.quads {
-		fmt.sbprintf(b, "Q %d %d %d ", q.object, q.link, int(q.is_wall))
+		fmt.sbprintf(b, "Q %d ", q.link)
 		bits(b, (cast([^]f32)&q.corners)[:12])
 		strings.write_byte(b, ' ')
 		bits(b, q.normal[:])
-		strings.write_byte(b, '\n')
-	}
-	fmt.sbprintf(b, "G %d %d %08x\n", s.grid.nx, s.grid.nz, transmute(u32)s.grid.cell)
-	for o in s.objects do fmt.sbprintf(b, "O %d %d\n", o.kind, o.link)
-	for c in s.cells {
-		strings.write_byte(b, 'C')
-		for o in c do fmt.sbprintf(b, " %d", o)
 		strings.write_byte(b, '\n')
 	}
 	for slot in s.start {

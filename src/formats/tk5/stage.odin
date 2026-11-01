@@ -1,8 +1,7 @@
-// Stages: 21-section file at entry 2132 + 3*id. Walls from MHO (section 15), floor zones from
+// Stages: 21-section file at entry 2132 + 3*id. Wall quads from MHO (section 15), floor zones from
 // UNDN (section 17), start points from sections 14 and 13. Little endian, file units (mm). tk5decomp docs/stages.md.
 package tk5_formats
 
-import "core:math"
 
 STAGE_FIRST :: 2132
 STAGE_COUNT :: 38
@@ -13,7 +12,6 @@ STAGE_MHO :: 15
 STAGE_UNDN :: 17
 @(rodata)
 STAGE_START_SECTIONS := [2]int{14, 13}  // the game's object slots 0 and 1
-WALL_MIN_HEIGHT :: 50  // FUN_000384a8 drops lower quads
 
 // stages.md §2. "": no name known.
 STAGE_NAMES := [STAGE_COUNT]string{
@@ -26,22 +24,9 @@ STAGE_NAMES := [STAGE_COUNT]string{
 }
 
 Stage_Quad :: struct {
-	object:  int,  // MHO object index
 	link:    i32,  // stage object id (breakable prop), -1 = none
 	corners: [4][3]f32,
 	normal:  [3]f32,  // a wall normal points into the arena
-	is_wall: bool,    // not flat and at least WALL_MIN_HEIGHT high
-}
-
-Stage_Object :: struct {
-	kind: u32,  // 3 and 9 hold quads, 5 is the grid, 6 a floor cell
-	link: i32,
-}
-
-// The wall broadphase: nx * nz cells of `cell` mm, centred on 0.
-Stage_Grid :: struct {
-	nx, nz: int,
-	cell:   f32,
 }
 
 // A start point: position and rotation vec4 of a record.
@@ -75,10 +60,7 @@ Floor_Zone :: struct {
 
 Stage :: struct {
 	sections: [][]byte,  // all 21, raw
-	quads:    []Stage_Quad,
-	objects:  []Stage_Object,
-	grid:     Stage_Grid,
-	cells:    [][]u16,  // per grid cell (z * nx + x): object indexes in the order of the game's lists
+	quads:    []Stage_Quad,  // of object kinds 3 and 9, in object order
 	floors:   []Floor_Zone,
 	start:    [2]Start_Slot,
 }
@@ -103,12 +85,10 @@ read_mho :: proc(s: ^Stage, d: []byte, allocator := context.allocator) -> (ok: b
 	if len(d) < 0x98 do return true
 	out := make([dynamic]Stage_Quad, allocator)
 	obj_count, obj_off := int(le_u32(d, 0x34)), int(le_u32(d, 0x38))
-	s.objects = make([]Stage_Object, obj_count, allocator)
 	for i in 0 ..< obj_count {
 		o := obj_off + 0x60 * i
 		if o + 0x60 > len(d) do return false
 		kind, data, link := le_u32(d, o + 0x40), int(le_u32(d, o + 0x44)), le_i32(d, o + 0x58)
-		s.objects[i] = {kind, link}
 		if kind != 3 && kind != 9 do continue
 		head := kind == 3 ? 0x10 : 0  // 3: {.., +0x10 count, +0x20 quads}; 9: {+0 count, +0x10 quads}
 		if data + head + 4 > len(d) do return false
@@ -116,42 +96,13 @@ read_mho :: proc(s: ^Stage, d: []byte, allocator := context.allocator) -> (ok: b
 		for k in 0 ..< n {
 			q := data + head + 0x10 + 0x50 * k
 			if q + 0x50 > len(d) do return false
-			quad := Stage_Quad{object = i, link = link, normal = vec3_le(d, q + 0x40)}
+			quad := Stage_Quad{link = link, normal = vec3_le(d, q + 0x40)}
 			for &c, j in quad.corners do c = vec3_le(d, q + 0x10 * j)
-			quad.is_wall = is_wall(quad)
 			append(&out, quad)
 		}
 	}
 	s.quads = out[:]
-	if le_u32(d, 0x4c) != 0 {
-		g := int(le_u32(d, 0x50))
-		if g + 12 > len(d) do return false
-		s.grid = {int(le_u32(d, g)), int(le_u32(d, g + 4)), le_f32(d, g + 8)}
-	}
-	s.cells = read_cells(d, s.grid, allocator) or_return
 	return true
-}
-
-// MHO 0x74..0x7c: per cell {u16 n, u16 object[n]}; the offset table names the grid cell (0x1c bytes each, after
-// {nx, nz, cell}) of each list.
-@(private = "file")
-read_cells :: proc(d: []byte, grid: Stage_Grid, allocator := context.allocator) -> (cells: [][]u16, ok: bool) {
-	count, table, lists := int(le_u32(d, 0x74)), int(le_u32(d, 0x78)), int(le_u32(d, 0x7c))
-	if count != grid.nx * grid.nz || table + 4 * count > len(d) do return nil, false
-	first := int(le_u32(d, 0x50)) + 12
-	cells = make([][]u16, count, allocator)
-	for _ in 0 ..< count {
-		if lists + 2 > len(d) do return nil, false
-		n := int(le_u16(d, lists))
-		at := int(le_u32(d, table)) - first
-		cell := at / 0x1c
-		if at < 0 || at % 0x1c != 0 || cell >= count || cells[cell] != nil || lists + 2 + 2 * n > len(d) do return nil, false
-		cells[cell] = make([]u16, n, allocator)
-		for &o, k in cells[cell] do o = le_u16(d, lists + 2 + 2 * k)
-		table += 4
-		lists += 2 + 2 * n
-	}
-	return cells, true
 }
 
 START_POINT_AT :: 0x30
@@ -213,15 +164,6 @@ start_points :: proc(d: []byte, at, record: int, g: Start_Group, allocator := co
 		}
 	}
 	return points, true
-}
-
-@(private = "file")
-is_wall :: proc(q: Stage_Quad) -> bool {
-	lo, hi := q.corners[0].y, q.corners[0].y
-	for c in q.corners {
-		lo, hi = min(lo, c.y), max(hi, c.y)
-	}
-	return math.hypot(q.normal.x, q.normal.z) > 1e-3 && hi - lo >= WALL_MIN_HEIGHT
 }
 
 // Record: centre, r², flags, polygon count, record size, polygons.

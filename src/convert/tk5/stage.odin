@@ -1,54 +1,160 @@
-// Stage rows: MHO quads, objects and grid, UNDN floor zones, start points. File units (mm).
+// Stage collision: stages/<id>.collision.glb (floor polygons, wall quads, start nodes) and stages/<id>.surfaces
+// (JSON). Mesh data in file units (mm) under a root node that scales to metres. modules/tk5/sim/stage_file.c reads both.
 package tk5_convert
 
-import "../../db"
+import "core:encoding/json"
+import "core:fmt"
+import "core:math"
+import "core:os"
+import "core:slice"
+import "../../convert"
 import formats "../../formats/tk5"
 
 // (hole efp-import :tags importer :needs fx-spec) TK5 effect data (EFP, character slot +2, stage effects) is not converted to effect defs.
-Start_Skip :: struct {stage, record, instead: int}
-// The start record a stage never takes for a next round (tk5decomp harness/stock_round.c, 0x1a5c8).
-@(rodata)
-START_SKIPS := [?]Start_Skip{{5, 3, 0}, {3, 2, 1}}
 
-// index: the game's stage id.
-write_stage_rows :: proc(w: ^db.Writer, id: string, index: int, s: formats.Stage) {
-	for k in START_SKIPS do if k.stage == index do db.insert(w, "stage_start_skip", id, i64(k.record), i64(k.instead))
-	for q, i in s.quads {
-		c := q.corners
-		db.insert(w, "stage_quad", id, i64(i), i64(q.object),
-			f(c[0].x), f(c[0].y), f(c[0].z), f(c[1].x), f(c[1].y), f(c[1].z),
-			f(c[2].x), f(c[2].y), f(c[2].z), f(c[3].x), f(c[3].y), f(c[3].z),
-			f(q.normal.x), f(q.normal.y), f(q.normal.z), link(q.link), i64(q.is_wall))
-	}
-	// (hole stage-grid-rows :tags importer :needs wall-grid-drop :sev polish) stage_grid and stage_cell are only the wall broadphase; drop them and their tables once the sim tests every wall.
-	db.insert(w, "stage_grid", id, i64(s.grid.nx), i64(s.grid.nz), f(s.grid.cell))
-	for o, i in s.objects do db.insert(w, "stage_object", id, i64(i), i64(o.kind), link(o.link))
-	for c, i in s.cells do for o, k in c do db.insert(w, "stage_cell", id, i64(i), i64(k), i64(o))
-	for slot, k in s.start {
-		db.insert(w, "stage_start_slot", id, i64(k), i64(slot.pos_format))
-		for g, i in slot.groups {
-			db.insert(w, "stage_start_group", id, i64(k), i64(i), i64(g.id), i64(g.count), i64(g.per_record))
-			for p, j in g.points {
-				db.insert(w, "stage_start_point", id, i64(k), i64(i), i64(j), f(p[0]), f(p[1]), f(p[2]), f(p[3]), f(p[4]), f(p[5]), f(p[6]), f(p[7]))
-			}
-		}
-	}
-	for z, i in s.floors {
-		// (hole ground-kinds :tags importer :sev polish) floor flag bits 0x4..0x800 (ground kind) have no code_name rows.
-		db.insert(w, "stage_floor", id, i64(i), f(z.centre.x), f(z.centre.y), f(z.centre.z), f(z.radius_sq), i64(z.flags))
-		for p, j in z.polygons {
-			db.insert(w, "stage_floor_polygon", id, i64(i), i64(j), f(p.centre.x), f(p.centre.y), f(p.centre.z),
-				f(p.radius_sq), f(p.normal.x), f(p.normal.y), f(p.normal.z))
-			for pt, k in p.points {
-				db.insert(w, "stage_floor_point", id, i64(i), i64(j), i64(k), f(pt.x), f(pt.y), f(pt.z))
-			}
-		}
-	}
+Surface :: struct {
+	layers:      bit_set[0 ..< 7; u32],  // 0: the floor under the fighters, 1..6: the lists the special queries name
+	material:    int,
+	hit_event:   int,  // 0: none
+	break_power: int,
 }
 
-@(private = "file")
-f :: proc(v: f32) -> db.Value {return f64(v)}
+Surface_Row :: struct {
+	layers:      []string,
+	material:    int,
+	hit_event:   int,
+	break_power: int,
+	on_break:    []string,  // visual mesh nodes the break swaps
+}
 
-// -1: none.
+// The floor zone flags of each list (1..6).
+@(rodata)
+LIST_FLAGS := [7]u32{0, 1 << 12, 1 << 13, 1 << 15, 1 << 16, 1 << 1, 1 << 14}
+
+// The first ground flag of a zone, in this order, gives its material; none: 11, or 12 without GROUND_ROOM.
+@(rodata)
+GROUND_KINDS := [?][2]u32{{1 << 2, 1}, {1 << 3 | 1 << 4, 2}, {1 << 5, 4}, {1 << 6, 5}, {1 << 7, 6}, {1 << 8, 7}, {1 << 9, 8}, {1 << 10, 9}, {1 << 11, 10}}
+GROUND_ROOM :: 1 << 17
+
+floor_surface :: proc(flags: u32) -> (s: Surface) {
+	if flags & 1 != 0 do s.layers += {0}
+	for list in 1 ..= 6 do if flags & LIST_FLAGS[list] != 0 do s.layers += {list}
+	s.material = flags & GROUND_ROOM != 0 ? 11 : 12
+	for kind in GROUND_KINDS {
+		if flags & kind[0] == 0 do continue
+		s.material = int(kind[1])
+		break
+	}
+	return
+}
+
+// The start lists of object slot 0: side 1 and 2 are the two points of a record of group 0, the entrance group 1.
+Start_List :: struct {name: string, group, point: int}
+@(rodata)
+START_LISTS := [?]Start_List{{"side_1", 0, 0}, {"side_2", 0, 1}, {"entrance", 1, 0}}
+
+start_group :: proc(slot: formats.Start_Slot, group: int) -> (formats.Start_Group, bool) {
+	for g, i in slot.groups do if (slot.pos_format ? i : g.id) == group do return g, true
+	return {}, false
+}
+
+write_stage_collision :: proc(collision_path, surfaces_path: string, s: formats.Stage) -> (ok: bool) {
+	context.allocator = context.temp_allocator
+	surfaces: [dynamic]Surface
+	surface_index :: proc(surfaces: ^[dynamic]Surface, s: Surface) -> u16 {
+		for have, i in surfaces do if have == s do return u16(i)
+		append(surfaces, s)
+		return u16(len(surfaces) - 1)
+	}
+
+	g: convert.Gltf
+	root := convert.Node{name = "stage", scale = floats(1 / f32(MM), 1 / f32(MM), 1 / f32(MM))}
+
+	positions, normals: [dynamic][3]f32
+	surface, polygon: [dynamic]u16
+	indices: [dynamic]u32
+	polygons := 0
+	for zone in s.floors {
+		for p in zone.polygons {
+			at := surface_index(&surfaces, floor_surface(zone.flags))
+			base := u32(len(positions))
+			for point in p.points {
+				append(&positions, point)
+				append(&normals, p.normal)
+				append(&surface, at)
+				append(&polygon, u16(polygons))
+			}
+			for k in 1 ..< len(p.points) - 1 do append(&indices, base, base + u32(k), base + u32(k) + 1)
+			polygons += 1
+		}
+	}
+	if polygons > 0 do add_collision_mesh(&g, &root, "floors", positions[:], normals[:], surface[:], polygon[:], indices[:])
+
+	clear(&positions); clear(&normals); clear(&surface); clear(&indices)
+	for q in s.quads {
+		if q.link == 0 do return false  // 0 means no event
+		at := surface_index(&surfaces, Surface{hit_event = max(int(q.link), 0)})
+		base := u32(len(positions))
+		for corner in q.corners {
+			append(&positions, corner)
+			append(&normals, q.normal)
+			append(&surface, at)
+		}
+		append(&indices, base, base + 1, base + 2, base, base + 2, base + 3)
+	}
+	if len(s.quads) > 0 do add_collision_mesh(&g, &root, "walls", positions[:], normals[:], surface[:], nil, indices[:])
+	if polygons > int(max(u16)) || len(surfaces) > int(max(u16)) do return false
+
+	slot := s.start[0]
+	for list in START_LISTS {
+		group := start_group(slot, list.group) or_continue
+		if group.points == nil do continue
+		for record in 0 ..< group.count {
+			point := group.points[record * group.per_record + list.point]
+			turn := point[5]  // rotation y
+			extras := make(json.Object)
+			extras["turn"] = json.Float(turn)
+			append(&g.nodes, convert.Node{
+				name = fmt.tprintf("start.%s.%d", list.name, record), translation = floats(point[0], point[1], point[2]),
+				rotation = floats(0, math.sin(turn / 2), 0, math.cos(turn / 2)), extras = extras})
+			append(&root.children, len(g.nodes) - 1)
+		}
+	}
+
+	append(&g.nodes, root)
+	scene: convert.Scene
+	append(&scene.nodes, len(g.nodes) - 1)
+	append(&g.scenes, scene)
+	convert.write_glb(&g, collision_path) or_return
+
+	rows := make([]Surface_Row, len(surfaces))
+	for surface, i in surfaces {
+		layers: [dynamic]string
+		for layer in surface.layers do append(&layers, LAYER_NAMES[layer])
+		rows[i] = {layers[:], surface.material, surface.hit_event, surface.break_power, {}}
+	}
+	text, err := json.marshal(rows, {pretty = true})
+	return err == nil && os.write_entire_file(surfaces_path, text) == nil
+}
+
+@(rodata)
+LAYER_NAMES := [7]string{"floor", "list_1", "list_2", "list_3", "list_4", "list_5", "list_6"}
+
+// A slice literal points at the stack: the glb is written after this frame ends.
 @(private = "file")
-link :: proc(v: i32) -> db.Value {return v < 0 ? db.Null{} : i64(v)}
+floats :: proc(values: ..f32) -> []f32 {return slice.clone(values)}
+
+@(private = "file")
+add_collision_mesh :: proc(g: ^convert.Gltf, root: ^convert.Node, name: string, positions, normals: [][3]f32, surface, polygon: []u16, indices: []u32) {
+	prim := convert.Primitive{attributes = make(map[string]int)}
+	prim.attributes["POSITION"] = convert.add_accessor(g, positions, "VEC3", convert.ARRAY_BUFFER, with_bounds = true)
+	prim.attributes["_NORMAL"] = convert.add_accessor(g, normals, "VEC3", convert.ARRAY_BUFFER)  // as stored, not unit
+	prim.attributes["_SURFACE"] = convert.add_accessor(g, surface, "SCALAR", convert.ARRAY_BUFFER)
+	if polygon != nil do prim.attributes["_POLYGON"] = convert.add_accessor(g, polygon, "SCALAR", convert.ARRAY_BUFFER)
+	prim.indices = convert.add_accessor(g, indices, "SCALAR", convert.ELEMENT_ARRAY_BUFFER)
+	mesh := convert.Mesh{name = name}
+	append(&mesh.primitives, prim)
+	append(&g.meshes, mesh)
+	append(&g.nodes, convert.Node{name = name, mesh = len(g.meshes) - 1})
+	append(&root.children, len(g.nodes) - 1)
+}

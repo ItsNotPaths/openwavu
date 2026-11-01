@@ -43,6 +43,7 @@ Node :: struct {
 	translation: []f32 `json:",omitempty"`,
 	rotation:    []f32 `json:",omitempty"`,  // quaternion xyzw
 	scale:       []f32 `json:",omitempty"`,
+	extras:      json.Object `json:",omitempty"`,
 }
 Mesh :: struct {
 	name:       string `json:",omitempty"`,
@@ -229,6 +230,7 @@ destroy_gltf :: proc(g: ^Gltf, allocator := context.allocator) {
 		delete(node.translation)
 		delete(node.rotation)
 		delete(node.scale)
+		json.destroy_value(node.extras)
 	}
 	for mesh in g.meshes {
 		delete(mesh.name)

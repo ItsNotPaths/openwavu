@@ -317,13 +317,6 @@ CREATE TABLE skeleton_b (
 	PRIMARY KEY (character, slot)
 );
 
--- A start record the stage never takes for a next round: it takes `instead`. No row: none.
-CREATE TABLE stage_start_skip (
-	stage   TEXT PRIMARY KEY,
-	record  INTEGER NOT NULL,
-	instead INTEGER NOT NULL
-);
-
 -- Facing rows: how a move turns the fighter (law, target, gate, rate, limit, end). Row 0 is hold. Degrees, frames, mm.
 CREATE TABLE tracking_row (
 	character  TEXT NOT NULL,

@@ -52,9 +52,6 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect_value(t, db.step(images), db.DONE)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM move m LEFT JOIN anim a ON a.character = m.anim_owner AND a.idx = m.anim_idx WHERE a.idx IS NULL"), 0)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part p WHERE NOT EXISTS (SELECT 1 FROM costume_part c WHERE c.part = p.id)"), 0)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage_cell c LEFT JOIN stage_object o ON o.stage = c.stage AND o.idx = c.object WHERE o.idx IS NULL"), 0)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage_cell c JOIN stage_grid g ON g.stage = c.stage WHERE c.cell >= g.nx * g.nz"), 0)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage_start_skip"), 2)
 
 	data, read_err := os.read_entire_file("build/test_content/tk5/anims/kazuya/0.anim", context.temp_allocator)
 	if !testing.expect_value(t, read_err, nil) do return
