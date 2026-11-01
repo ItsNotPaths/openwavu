@@ -7,10 +7,9 @@ import "core:strings"
 import "core:testing"
 import formats "../src/formats/tk5"
 
-// Dumps stage_collision.py's walls and floors with float bits. Polygon headers are not in its Zone, so
-// the dump walks them with the same layout.
+// Dumps stage_collision.py's walls and floors with float bits.
 STAGE_DUMP :: `
-import sys, struct, numpy as np
+import sys, numpy as np
 sys.path.insert(0, 'tools')
 import stage_collision as sc
 def h(a): return ' '.join('%08x' % v for v in np.asarray(a, dtype='<f4').reshape(-1).view('<u4'))
@@ -22,15 +21,10 @@ for s in range(sc.COUNT):
     print('S', s)
     for q in mho.quads:
         print('Q', q.obj, q.link, int(q.is_wall), h(q.corners), h(q.normal))
-    d = sc.stage_file(s)[17]
-    off = struct.unpack_from('<I', d, 0x34)[0] if len(d) >= 0x38 else 0
     for z in zones:
         print('Z %d %s %016x %d' % (z.flags, h(z.centre), np.float64(z.radius).view('<u8'), len(z.polys)))
-        p = off + 0x20
         for poly in z.polys:
-            print('P', h(np.frombuffer(d, '<f4', 7, p)), h(poly))
-            p += 0x20 + 0x10 * len(poly)
-        off += struct.unpack_from('<I', d, off + 0x18)[0]
+            print('P', h(np.r_[poly.centre, poly.radius2, poly.normal]), h(poly.points))
 `
 
 bits :: proc(b: ^strings.Builder, v: []f32) {
