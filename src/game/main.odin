@@ -3,25 +3,55 @@ package game
 
 import "core:fmt"
 import "core:os"
-import "../content"
-import "../input"
+import sdl "vendor:sdl3"
 import "../render"
-import "../sim"
+import "../titlepack"
+import "../ui"
 
-// (hole app-shell :tags game :needs (render-gpu content-cache registry-verify)) no launcher (installed packs, ROM import), join path for lobby links, or system overlay (controls, video, audio, leave pack).
+VERSION :: "openwavu 0.0.0-dev"
+
+// (hole app-shell :tags game :needs (render-gpu content-cache registry-verify)) no ROM import, join path for lobby links, or system overlay (controls, video, audio, leave pack).
 // (hole app-host :tags (game wasm) :needs (module-memory render-api)) the pack's app module is not run: no instance, no frame export call, no events from host requests.
-// (hole game-loop :tags game :needs (pack-open fighter-data-load sim-step render-fighter render-stage input-pad) :sev blocker) no playable local match.
 main :: proc() {
-	pack, ok := content.open_pack("content/tk5")
+	r, ok := render.init("openwavu", 1280, 720)
 	if !ok {
-		fmt.eprintln("openwavu: no content pack; run openwavu-import first")
+		fmt.eprintln("openwavu:", sdl.GetError())
 		os.exit(1)
 	}
-	defer content.close_pack(&pack)
-	r, _ := render.init(1280, 720)
-	w := sim.create(nil, nil, {})
-	for {
-		sim.step(w, {input.poll(0), input.poll(1)})
-		render.draw_fighter(r, nil, nil)
+	defer render.destroy(&r)
+	u: ui.Ui
+	ui.init(&u, render.size(&r))
+	defer ui.destroy(&u)
+	l := Launcher{packs = titlepack.installed()}
+
+	last := sdl.GetTicksNS()
+	for !l.quit {
+		defer free_all(context.temp_allocator)
+		e: sdl.Event
+		for sdl.PollEvent(&e) {
+			sdl.ConvertEventToRenderCoordinates(r.r2d, &e)
+			#partial switch e.type {
+			case .QUIT:
+				l.quit = true
+			case .GAMEPAD_ADDED:
+				sdl.OpenGamepad(e.gdevice.which)
+			}
+			ui.handle_event(&u, e)
+		}
+		now := sdl.GetTicksNS()
+		dt := f32(now - last) / 1e9
+		last = now
+
+		ui.begin(&u, render.size(&r), dt)
+		launcher(&l, &u, &r)
+		commands := ui.end(&u)
+		render.begin_frame(&r, ui.BACKGROUND)
+		ui.draw(r.r2d, commands)
+		render.end_frame(&r)
+
+		if pack, picked := l.picked.?; picked {
+			l.picked = nil
+			play(&r, l.packs[pack])
+		}
 	}
 }

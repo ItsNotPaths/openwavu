@@ -1,0 +1,33 @@
+package game
+
+import "core:fmt"
+import sdl "vendor:sdl3"
+import "../content"
+import "../input"
+import "../render"
+import "../sim"
+import "../titlepack"
+
+// Runs a match until Escape or window close, then returns to the launcher.
+// (hole game-loop :tags game :needs (pack-open fighter-data-load sim-step render-fighter render-stage input-pad) :sev blocker) no playable local match.
+play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack) {
+	pack, ok := content.open_pack("content/tk5")
+	if !ok {
+		fmt.eprintln("openwavu: no content pack; run openwavu-import first")
+		return
+	}
+	defer content.close_pack(&pack)
+	w := sim.create(nil, nil, {})
+	for {
+		e: sdl.Event
+		for sdl.PollEvent(&e) {
+			if e.type == .QUIT || (e.type == .KEY_DOWN && e.key.key == sdl.K_ESCAPE) {
+				return
+			}
+		}
+		sim.step(w, {input.poll(0), input.poll(1)})
+		render.begin_frame(r, {0, 0, 0, 1})
+		render.draw_fighter(r, nil, nil)
+		render.end_frame(r)
+	}
+}
