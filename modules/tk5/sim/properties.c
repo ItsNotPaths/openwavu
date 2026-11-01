@@ -700,7 +700,7 @@ void t5_start_properties(T5World *w, T5Fighter *f, const T5Fighter *target) {
     if (move->start_props < 0) return;  // no start list on this move
     for (int32_t index = move->start_props;  // each entry has a requirement that must pass
         index < motbin->start_property_count; index++) {
-        const T5StartProperty *entry = &motbin->start_properties[index];
+        const T5ConditionalProperty *entry = &motbin->start_properties[index];
         const T5Requirement *requirement = &motbin->requirements[entry->requirements];
         if (requirement->id == 0) break;  // a zero requirement ends the list
         if (requirement->id == T5_REQ_END ||  // end marker requirement: always runs; else only if it holds
@@ -713,7 +713,7 @@ void t5_props_end(T5World *w, T5Fighter *f) {
     const T5Move *move = t5_move_at(w, f->move);
     if (move->end_prop < 0) return;  // no end property on this move
     const T5Motbin *motbin = t5_set(w, f->move.set);
-    const T5StartProperty *entry = &motbin->start_properties[move->end_prop];
+    const T5ConditionalProperty *entry = &motbin->end_properties[move->end_prop];
     if (!t5_requirements(w, &motbin->requirements[entry->requirements],  // the end property only runs if its requirement holds
                          f, t5_object(w, f->target))) return;
     run_both_passes(w, entry->id, entry->value, f, firing(w, f, T5_FROM_END, move->end_prop));

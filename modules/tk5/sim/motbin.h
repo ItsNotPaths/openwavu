@@ -135,7 +135,7 @@ typedef struct {
     int32_t voiceclips;  // voice clip of the move, -1 = none
     int32_t extra_props;                 // per-frame properties
     int32_t start_props;                 // conditional properties at move start
-    int32_t end_prop;                    // conditional property when the move changes
+    int32_t end_prop;                    // conditional property when the move changes (end_properties)
     uint32_t flags;  // T5_MOVE_* bits
     uint8_t hitbox[4];                   // two {code, partner} pairs of the game (the harnesses derive hit_pair, hits)
     uint16_t first_active, last_active;  // frames the hitbox is on
@@ -226,10 +226,11 @@ typedef struct {
     uint16_t padding;
 } T5Property;
 
+// An entry of a move's start list, or its end property: the property runs when the requirement holds.
 typedef struct {
     uint32_t requirements;
     uint16_t id, value;
-} T5StartProperty;
+} T5ConditionalProperty;
 
 typedef struct {
     uint32_t requirements;
@@ -272,8 +273,10 @@ typedef struct {
     int32_t pushback_curve_count;
     T5Property *properties;            // T5Move.extra_props indexes it
     int32_t property_count;
-    T5StartProperty *start_properties;
+    T5ConditionalProperty *start_properties;  // T5Move.start_props indexes it
     int32_t start_property_count;
+    T5ConditionalProperty *end_properties;    // T5Move.end_prop indexes it
+    int32_t end_property_count;
     T5HitCondition *hit_conditions;
     int32_t hit_condition_count;
     T5SideBand *side_bands;            // 8 records
