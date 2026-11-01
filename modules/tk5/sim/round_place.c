@@ -9,7 +9,6 @@
 #include "sim/stage.h"
 #include "sim/vec.h"
 
-enum { TABLE_SIDE_1 = 0, TABLE_SIDE_2 = 1, TABLE_ENTRANCE = 2 };
 static const float FALLBACK_X = 1000.0f;       // the fallback line when the stage has no start points
 static const float SIDE_DISTANCE = 2000.0f;    // side 2 stands this far from side 1, toward its table point
 
@@ -45,7 +44,7 @@ static void face_snapped(T5Fighter *f, int16_t angle) { face(f, angle, t5_angle6
 
 // Both fighters on one entrance point, facing one way (the scene starts and the match end).
 static void place_on_entrance(T5World *w) {
-    int32_t count = t5_stage_start_count(w->stage, TABLE_ENTRANCE);  // number of entrance records
+    int32_t count = w->stage->start[T5_START_ENTRANCE].count;  // number of entrance records
     if (count == 0) {  // no entrance records: fall back to the origin
         w->start_record = 0;
         for (int side = 0; side < T5_FIGHTER_COUNT; side++) {  // loop through both fighters
@@ -55,18 +54,17 @@ static void place_on_entrance(T5World *w) {
         return;
     }
     int32_t index = record_index(w, count);  // wrapped start record
-    const float *position = t5_stage_start_position(w->stage, TABLE_ENTRANCE, index);  // the entrance point for that record
-    float turn = t5_stage_start_rotation(w->stage, TABLE_ENTRANCE, index)[1];  // its turn, element 1 of the rotation
+    T5StartPoint point = w->stage->start[T5_START_ENTRANCE].points[index];  // the entrance point for that record
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
-        t5_round_stand_at(w->fighters[side], position[0], position[2]);  // stand on the point's x and z
-        face_raw(w->fighters[side], turn);  // face the point's turn
+        t5_round_stand_at(w->fighters[side], point.position.x, point.position.z);  // stand on the point's x and z
+        face_raw(w->fighters[side], point.turn);
     }
 }
 
 // Side 1 on its table point, side 2 two thousand units from it toward its own table point.
 static void place_on_lines(T5World *w) {
     T5Fighter *first_fighter = w->fighters[0], *second_fighter = w->fighters[1];
-    int32_t count = t5_stage_start_count(w->stage, TABLE_SIDE_1);  // number of side 1 records
+    int32_t count = w->stage->start[T5_START_SIDE_1].count;  // number of side 1 records
     if (count == 0) {  // no records: use the fallback line
         w->start_record = 0;
         t5_round_stand_at(first_fighter, -FALLBACK_X, 0.0f);  // side 1 at -FALLBACK_X, z 0
@@ -76,13 +74,11 @@ static void place_on_lines(T5World *w) {
         return;
     }
     int32_t index = record_index(w, count);  // wrapped start record
-    const float *first = t5_stage_start_position(w->stage, TABLE_SIDE_1, index);  // side 1 and side 2 points for that record
-    const float *second = t5_stage_start_position(w->stage, TABLE_SIDE_2, index);
-    float turn_first = t5_stage_start_rotation(w->stage, TABLE_SIDE_1, index)[1];  // each side's turn
-    float turn_second = t5_stage_start_rotation(w->stage, TABLE_SIDE_2, index)[1];
-    t5_round_stand_at(first_fighter, first[0], first[2]);  // stand side 1 on its point
-    face_raw(first_fighter, turn_first);
-    T5Vec4 from = {{first[0], 0.0f, first[2], 1.0f}}, to = {{second[0], 0.0f, second[2], 1.0f}};  // from, to: table points
+    T5StartPoint first = w->stage->start[T5_START_SIDE_1].points[index];  // side 1 and side 2 points for that record
+    T5StartPoint second = w->stage->start[T5_START_SIDE_2].points[index];
+    t5_round_stand_at(first_fighter, first.position.x, first.position.z);  // stand side 1 on its point
+    face_raw(first_fighter, first.turn);
+    T5Vec4 from = {{first.position.x, 0.0f, first.position.z, 1.0f}}, to = {{second.position.x, 0.0f, second.position.z, 1.0f}};
     T5Vec4 along, unit, step, end;
     t5_vec_subtract(&along, &to, &from);
     float length = t5_length3(along.x, along.y, along.z);
@@ -93,7 +89,7 @@ static void place_on_lines(T5World *w) {
     step.w = 0.0f;  // clear w so step is only an offset
     t5_vec_add(&end, &from, &step);  // end: side 1 point moved along step
     t5_round_stand_at(second_fighter, end.x, end.z);  // stand side 2 at end
-    face_raw(second_fighter, turn_second);
+    face_raw(second_fighter, second.turn);
 }
 
 void t5_round_place(T5World *w, T5RoundSetup setup) {
@@ -109,24 +105,22 @@ void t5_round_place(T5World *w, T5RoundSetup setup) {
 
 void t5_round_nearest_start(T5World *w) {
     const T5Fighter *first = w->fighters[0], *second = w->fighters[1];
-    int32_t count = t5_stage_start_count(w->stage, TABLE_SIDE_1);  // number of side 1 records
+    int32_t count = w->stage->start[T5_START_SIDE_1].count;  // number of side 1 records
     if (count <= 0) return;  // no records: nothing to pick
     float best = w->stage_depth;  // best distance so far, starts at stage depth
     float mid_z = (first->base_position.z + second->base_position.z) * 0.5f;  // the middle between the two fighters
     float mid_x = (first->base_position.x + second->base_position.x) * 0.5f;
     for (int32_t record = 0; record < count; record++) {  // loop through every start record
-        const float *first_start = t5_stage_start_position(w->stage, TABLE_SIDE_1, record);  // this record's two points
-        const float *second_start = t5_stage_start_position(w->stage, TABLE_SIDE_2, record);
-        float offset_z = mid_z - ((first_start[2] + second_start[2]) * 0.5f);  // gap between the two middles
-        float offset_x = mid_x - ((first_start[0] + second_start[0]) * 0.5f);
+        T5Vec3 first_start = w->stage->start[T5_START_SIDE_1].points[record].position;  // this record's two points
+        T5Vec3 second_start = w->stage->start[T5_START_SIDE_2].points[record].position;
+        float offset_z = mid_z - ((first_start.z + second_start.z) * 0.5f);  // gap between the two middles
+        float offset_x = mid_x - ((first_start.x + second_start.x) * 0.5f);
         float distance = t5_length_xz(offset_x, offset_z);  // ground distance of that gap
         if (best > distance) {  // closer than the best so far
             best = distance;
             w->start_record = record;  // this record is the best
         }
     }
-    T5StartSkip skip = w->stage->start_skip;  // the stage's skip rule
-    if (w->start_record == skip.record) w->start_record = skip.instead;  // a skipped record uses its replacement
 }
 
 void t5_round_floor_origin(T5World *w) {

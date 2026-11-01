@@ -11,16 +11,11 @@
 
 // --- walls (wall.c)
 
-typedef struct { T5Mat4 corners; T5Vec4 normal; } T5WallQuad;
-
-// A wall object (quads of type 3 or 9). `effect`: its stage object record has an effect slot, so a
-// contact counts as a stage object hit (the effect itself is not simulated).
 typedef struct {
-    const T5WallQuad *quads;
-    int32_t quad_count;
-    bool effect;
-    uint32_t id;
-} T5WallObject;
+    T5Mat4 corners;
+    T5Vec4 normal;
+    int32_t surface;  // index into T5Stage.surfaces
+} T5WallQuad;
 
 // The point of the plane (plane_normal through on_plane) that is nearest to `point`, w = 1.
 T5Vec4 t5_plane_project(T5Vec4 plane_normal, T5Vec4 on_plane, T5Vec4 point);
@@ -48,11 +43,10 @@ void t5_wall_apply(T5World *w);
 // --- floor (floor.c)
 
 typedef struct {
-    T5Vec3 centre;
-    float radius2;
-    T5Vec3 normal;
+    T5Vec3 normal;  // as stored, not unit: the plane is solved for y with it
+    int32_t surface;  // index into T5Stage.surfaces
     int32_t count;
-    T5Vec4 vertices[];
+    const T5Vec4 *vertices;
 } T5FloorPolygon;
 
 // If `position` is inside the polygon in the ground plane, the height of its plane there.

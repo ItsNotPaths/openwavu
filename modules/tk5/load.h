@@ -1,8 +1,9 @@
-// A character's move data, skeleton, anims and hand clips from the pack database (src/db/tk5/schema.sql) into the sim's structs. Init only.
+// A character's move data, skeleton, anims and hand clips, and a stage's collision, from the pack database (src/db/tk5/schema.sql) into the sim's structs. Init only.
 #ifndef T5_LOAD_H
 #define T5_LOAD_H
 
 #include "sim/fighter.h"
+#include "sim/stage.h"
 #include "visual/hand_bank.h"
 
 typedef struct sqlite3 sqlite3;
@@ -33,5 +34,8 @@ const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *charac
 // The finger pose library and gestures of the character (owners <character>/hand_poses, <its bank>/hand_gestures).
 const char *t5_load_hands_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t5_load_hands takes
 const char *t5_load_hands(T5HandBanks *banks, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena);
+// A stage's collision: the collision glb and .surfaces file of its stage row.
+const char *t5_load_stage_storage(sqlite3 *db, const char *stage, T5ReadFile read, void *context, size_t *bytes);
+const char *t5_load_stage(T5Stage *out, sqlite3 *db, const char *stage, T5ReadFile read, void *context, T5Arena *arena);
 
 #endif

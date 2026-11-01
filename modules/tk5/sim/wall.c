@@ -249,16 +249,16 @@ void t5_wall_clear(T5Fighter *f) {
 
 // Stage object hits: only the fighter side is kept. The effect slot, the pending hit table,
 // the sound and the practice stats are outside the sim.
-static void stage_hit(T5Fighter *f, const T5WallObject *object, int sphere) {
+static void stage_hit(T5Fighter *f, uint32_t event, int sphere) {
     int32_t power = (int32_t)((float)f->damage * STAGE_HIT_DAMAGE_SCALE);  // damage taken, or the stage minimum if higher
     if (power < f->stage_hit_power) power = f->stage_hit_power;
     if (power == 0) return;  // no power: the object is not hit
     int16_t used = f->stage_hit_count;
     bool fresh = true;  // fresh means this object is not in the list yet
-    for (int slot = 0; slot < used; slot++) fresh &= f->stage_hit_ids[slot] != object->id;
+    for (int slot = 0; slot < used; slot++) fresh &= f->stage_hit_ids[slot] != event;
     if ((f->stage_hit_sphere == ANY_SPHERE || f->stage_hit_sphere == sphere) &&  // first hitting sphere only,
         fresh) {  // and only a new object
-        if (used >= 0 && used < STAGE_HIT_SLOTS) f->stage_hit_ids[used] = object->id;  // remember the object if there is room
+        if (used >= 0 && used < STAGE_HIT_SLOTS) f->stage_hit_ids[used] = event;  // remember the object if there is room
         f->stage_hit_count = (int16_t)(used + 1);
         f->stage_hit_sphere = (int16_t)sphere;
         if (f->stage_hit_count > STAGE_HIT_SLOTS - 1)  // count stops one below the slots
@@ -289,40 +289,28 @@ static WallSpheres move_spheres(WallSpheres spheres, T5Vec4 offset) {
     return spheres;
 }
 
-// The wall objects near the way a sphere went since the last solve (the broadphase of the stage).
-static T5StageWalls walls_near(const T5World *w, const T5Fighter *f, T5Vec4 now, int sphere) {
-    T5Vec4 way = vec4_subtract(f->previous_sphere[sphere], now);  // how far the sphere moved since the last solve
-    float radius = sphere_radius(sphere);
-    float reach = fmaf(radius, 0.5f, t5_length_xz(way.z, way.x));  // search radius covers the whole move
-    if (radius < reach) radius = reach;
-    T5Vec3 centre = {(f->previous_sphere[sphere].x + now.x) * 0.5f,  // the middle of the move
-                     0.0f, (f->previous_sphere[sphere].z + now.z) * 0.5f};
-    return t5_stage_walls(w, centre, radius);
-}
+// The walls a sphere meets: every wall quad, none while the floor is off.
+static int32_t wall_count(const T5World *w) { return t5_floor_disabled(w) ? 0 : w->stage->wall_count; }
 
-// One pass over every quad of every near object: the sphere moves out of each quad it crosses, in order.
+// One pass over every wall quad: the sphere moves out of each quad it crosses, in order.
 typedef struct { T5Vec4 position; bool pushed; } SpherePass;
 
-static SpherePass push_out_once(const T5World *w, T5Fighter *f, T5StageWalls near, T5Vec4 position, int sphere) {
+static SpherePass push_out_once(const T5World *w, T5Fighter *f, T5Vec4 position, int sphere) {
     bool pushed = false;
-    for (int32_t near_index = 0; near_index < near.count; near_index++) {  // loop through the near wall objects
-        const T5WallObject *object = &w->stage->objects[near.object[near_index]].wall;
-        for (int32_t quad_index = 0; quad_index < object->quad_count; quad_index++) {  // loop through the quads of the object
-            T5WallHit hit = t5_wall_push(f,  // push the sphere out of this quad if it crosses it
-                &object->quads[quad_index], position, sphere, w->stage_depth);
-            if (!hit.hit) continue;  // not touching this quad
-            position = hit.position;
-            pushed = true;
-        }
+    for (int32_t wall = 0; wall < wall_count(w); wall++) {
+        T5WallHit hit = t5_wall_push(f, &w->stage->walls[wall], position, sphere, w->stage_depth);  // push out if it crosses
+        if (!hit.hit) continue;  // not touching this quad
+        position = hit.position;
+        pushed = true;
     }
     return (SpherePass){position, pushed};
 }
 
 // Passes over the walls until the sphere stands clear (WALL_SOLVE_CAP passes at most).
-static SpherePass push_out_of_walls(const T5World *w, T5Fighter *f, T5StageWalls near, T5Vec4 position, int sphere) {
+static SpherePass push_out_of_walls(const T5World *w, T5Fighter *f, T5Vec4 position, int sphere) {
     bool pushed = false;
     for (int pass = 0; pass < WALL_SOLVE_CAP; pass++) {
-        SpherePass once = push_out_once(w, f, near, position, sphere);  // one pass over all near walls
+        SpherePass once = push_out_once(w, f, position, sphere);  // one pass over all walls
         if (!once.pushed) break;  // clear of every wall: done
         position = once.position;
         pushed = true;
@@ -330,16 +318,12 @@ static SpherePass push_out_of_walls(const T5World *w, T5Fighter *f, T5StageWalls
     return (SpherePass){position, pushed};
 }
 
-// The objects with an effect that the sphere (before the push) touches count as stage object hits.
-static void note_stage_hits(const T5World *w, T5Fighter *f, T5StageWalls near, T5Vec4 position, int sphere) {
-    for (int32_t near_index = 0; near_index < near.count; near_index++) {  // loop through near objects: any quad touched
-        const T5WallObject *object = &w->stage->objects[near.object[near_index]].wall;
-        bool contact = false;
-        for (int32_t quad_index = 0; quad_index < object->quad_count; quad_index++)
-            if (t5_wall_test(f,  // check without pushing
-                    &object->quads[quad_index], position, sphere, w->stage_depth))
-                contact = true;
-        if (contact && object->effect) stage_hit(f, object, sphere);  // object does something when hit: note the hit
+// The walls with a hit event that the sphere (before the push) touches count as stage hits.
+static void note_stage_hits(const T5World *w, T5Fighter *f, T5Vec4 position, int sphere) {
+    for (int32_t wall = 0; wall < wall_count(w); wall++) {
+        const T5WallQuad *quad = &w->stage->walls[wall];
+        int32_t event = w->stage->surfaces[quad->surface].hit_event;
+        if (event && t5_wall_test(f, quad, position, sphere, w->stage_depth)) stage_hit(f, (uint32_t)event, sphere);
     }
 }
 
@@ -348,9 +332,8 @@ typedef struct { WallSpheres spheres; bool pushed; } SphereSolve;
 
 static SphereSolve solve_sphere(const T5World *w, T5Fighter *f, WallSpheres spheres, int sphere) {
     T5Vec4 now = spheres.positions[sphere];
-    T5StageWalls near = walls_near(w, f, now, sphere);  // wall objects close to this sphere's move
-    SpherePass out = push_out_of_walls(w, f, near, now, sphere);  // push the sphere out of the walls
-    if (out.pushed) note_stage_hits(w, f, near, now, sphere);  // count the objects it touched as stage hits
+    SpherePass out = push_out_of_walls(w, f, now, sphere);  // push the sphere out of the walls
+    if (out.pushed) note_stage_hits(w, f, now, sphere);  // count the walls it touched as stage hits
     average_wall_angle(f);  // settle the wall angle from the noted ones
     T5Vec4 push = vec4_subtract(out.position, now);  // the push, on the ground plane only
     push.y = 0.0f;

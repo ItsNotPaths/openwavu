@@ -25,7 +25,9 @@ static void premultiply(T5Mat4 *stack, const T5Mat4 *matrix) { t5_mat_multiply(s
 // --- floor
 
 static const float CONTACT_R2 = 100.0f;
-static const uint32_t SPECIAL_FLOOR = (uint32_t)T5_GROUND_KIND_OBJECT_FLOOR << T5_GROUND_KIND_SHIFT;
+enum { CACHE_MATERIAL_SHIFT = 24 };  // T5FloorCache.kind keeps the material in bits 24..27
+static uint32_t cache_kind(int32_t material) { return (uint32_t)material << CACHE_MATERIAL_SHIFT; }
+static bool special_floor(uint32_t kind) { return kind >> CACHE_MATERIAL_SHIFT == T5_MATERIAL_OBJECT_FLOOR; }
 enum { SPECIAL_FLOOR_LIST = 1 };  // the floor list that holds the special floor
 
 // raise the point by the floor's excess over `level`; the push keeps 0.4 of the move
@@ -58,9 +60,9 @@ bool t5_limb_floor(T5LimbState *limbs,  // keep a limb above the floor; true whe
     }
 
     T5StageHeight floor =  // floor height and kind under the probe
-        t5_stage_height(w, vec3_of(probe_at), T5_ZONE_FLOOR);
+        t5_stage_height(w, vec3_of(probe_at));
     cache->y = floor.y;
-    cache->kind = floor.kind;
+    cache->kind = cache_kind(floor.material);
     float level = cache->y + radius;  // the level the limb must stay above: floor plus radius
     T5Vec3 offset_xz = vec3_subtract(vec3_of(moved_point), limb->contact);
     bool near =  // near = within the contact distance (squared under 100) of the last contact point
@@ -86,7 +88,7 @@ bool t5_limb_floor(T5LimbState *limbs,  // keep a limb above the floor; true whe
             lift(limb, &moved_point, &start, &probe2_at.y, &probe_at.y, level2, probe2_at.y);
     }
 
-    if ((cache->kind & T5_GROUND_KIND_MASK) == SPECIAL_FLOOR) {  // if the floor under the probe is the special floor
+    if (special_floor(cache->kind)) {  // if the floor under the probe is the special floor
         float y = point->y;
         if (near && fabsf(y - limb->special_y) <= 10.0f) {  // if near and the height is within 10 of the last special floor query
             limbs->below_special[0] |= limbs->below_special[1] & bit;
@@ -384,7 +386,6 @@ void t5_limb_toe(const T5LimbRig *limb_rig, int32_t toe, const T5Vec4 *before, b
 
 // --- hip drop
 
-static bool special_floor(uint32_t kind) { return (kind & T5_GROUND_KIND_MASK) == SPECIAL_FLOOR; }
 
 // smoothed toward asin of the floor's rise over the distance from `from` to the base point at `level`
 static float drop_twist(float twist, const T5Vec4 *from, T5Vec3 base, float level, float origin_y) {
@@ -447,9 +448,9 @@ static void update_drop(const T5LimbRig *limb_rig, T5LimbBody *body) {
     // the floor under the base, the shins against the stage floor
     T5FloorCache *hips_floor = &limbs->floor[LIMB_HIPS];
     T5Vec3 base = translation(&limb_rig->rig->root.local);  // the base position
-    T5StageHeight floor = t5_stage_height(limb_rig->world, base, T5_ZONE_FLOOR);  // floor height and kind under the base
+    T5StageHeight floor = t5_stage_height(limb_rig->world, base);  // floor height and material under the base
     hips_floor->y = floor.y;
-    hips_floor->kind = floor.kind;
+    hips_floor->kind = cache_kind(floor.material);
     // highest of: the floor under the base + 140, the shins over the stage floor + 130 (upright, no state bits)
     float best = env_floor->none_y, level = env_floor->none_y;  // best and level start at the no-floor height
     raise_drop(&best, &level,  // candidate: floor under the base minus base y plus 140
@@ -483,9 +484,9 @@ void t5_limb_drop(const T5LimbRig *limb_rig, T5LimbBody *body) {
     T5HipDrop *hip = &limbs->drop;
     if (body->move->flags & 8) {  // the drop follows the floor under the anchor
         T5Vec4 anchor = {{body->anchor_x, 0.0f, body->anchor_z, 0.0f}};  // y, w: stack leftovers in the game
-        T5StageHeight floor = t5_stage_height(limb_rig->world, vec3_of(anchor), T5_ZONE_FLOOR);
+        T5StageHeight floor = t5_stage_height(limb_rig->world, vec3_of(anchor));
         hips_floor->y = hip->height = floor.y;  // drop height and cache height = the floor under the anchor
-        hips_floor->kind = floor.kind;
+        hips_floor->kind = cache_kind(floor.material);
         if (special_floor(hips_floor->kind))  // if that floor is the special floor, look up its height
             hips_floor->special_y = t5_stage_special(limb_rig->world, vec3_of(anchor), SPECIAL_FLOOR_LIST);
         return;

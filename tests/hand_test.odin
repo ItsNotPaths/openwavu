@@ -65,7 +65,7 @@ hand_clips_load_like_the_game :: proc(t: ^testing.T) {
 	f, err := os.open(TK5 + "/game/USRDIR/T55DATA1.BIN")
 	if err != nil do return
 	defer os.close(f)
-	built := build_sim_tool(HAND_DUMP, "-Ivendor/sqlite", "tests/ref/hand_dump.c", "modules/tk5/load.c", "modules/tk5/sim/anim.c",
+	built := build_sim_tool(HAND_DUMP, "-Ivendor/sqlite", "tests/ref/hand_dump.c", "modules/tk5/load.c", "modules/tk5/sim/stage_file.c", "modules/tk5/sim/anim.c",
 		"vendor/sqlite/libsqlite3.a", "-lpthread")
 	if !testing.expect(t, built, "tests/ref/hand_dump.c did not build") do return
 

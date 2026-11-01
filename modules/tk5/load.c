@@ -608,3 +608,33 @@ const char *t5_load_hands(T5HandBanks *banks, sqlite3 *db, const char *character
     if (!failed && (!banks->poses.clip_count || !banks->gestures.clip_count)) failed = fail("hands %s: no clips", character);
     return failed;
 }
+
+static const char *stage_files(sqlite3 *db, const char *stage, T5ReadFile read, void *context, T5Bytes *collision, T5Bytes *surfaces) {
+    sqlite3_stmt *row;
+    const char *failed = prepare(db, "SELECT collision, surfaces FROM stage WHERE id = ?1", stage, &row);
+    if (!failed && sqlite3_step(row) != SQLITE_ROW) failed = fail("stage %s: no row", stage);
+    if (!failed) {
+        *collision = read(context, (const char *)sqlite3_column_text(row, 0));
+        *surfaces = read(context, (const char *)sqlite3_column_text(row, 1));
+        if (!collision->size || !surfaces->size) failed = fail("stage %s: missing file", stage);
+    }
+    sqlite3_finalize(row);
+    return failed;
+}
+
+static const char *load_stage(T5Stage *out, sqlite3 *db, const char *stage, T5ReadFile read, void *context, T5Arena *arena, size_t *bytes) {
+    T5Bytes collision, surfaces;
+    const char *failed = stage_files(db, stage, read, context, &collision, &surfaces);
+    if (!failed) failed = t5_stage_parse(out, collision, surfaces, arena, bytes);
+    return failed && failed != error ? fail("stage %s: %s", stage, failed) : failed;
+}
+
+const char *t5_load_stage_storage(sqlite3 *db, const char *stage, T5ReadFile read, void *context, size_t *bytes) {
+    T5Stage unused;
+    return load_stage(&unused, db, stage, read, context, NULL, bytes);
+}
+
+const char *t5_load_stage(T5Stage *out, sqlite3 *db, const char *stage, T5ReadFile read, void *context, T5Arena *arena) {
+    size_t bytes;
+    return load_stage(out, db, stage, read, context, arena, &bytes);
+}

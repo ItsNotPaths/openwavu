@@ -14,7 +14,7 @@ LOAD_LISTS_DB :: "build/load_lists.db"
 // A grown list moves the lists after it; references by list id follow. -1 stays none, a missing list fails the load.
 @(test)
 list_ids_become_indices :: proc(t: ^testing.T) {
-	built := build_sim_tool(LOAD_LISTS, "-Ivendor/sqlite", "tests/ref/load_lists.c", "modules/tk5/load.c", "modules/tk5/sim/anim.c",
+	built := build_sim_tool(LOAD_LISTS, "-Ivendor/sqlite", "tests/ref/load_lists.c", "modules/tk5/load.c", "modules/tk5/sim/stage_file.c", "modules/tk5/sim/anim.c",
 		"vendor/sqlite/libsqlite3.a", "-lpthread")
 	if !testing.expect(t, built, "tests/ref/load_lists.c did not build") do return
 	defer os.remove(LOAD_LISTS_DB)
@@ -44,7 +44,7 @@ LOAD_ANIMS_ROOT :: "build/load_anims_pack"
 // Rows that name one file are one anim; an id without a row is a zero anim; a file that is not a tk5 .anim fails the load.
 @(test)
 anims_share_by_file :: proc(t: ^testing.T) {
-	built := build_sim_tool(LOAD_ANIMS, "-Ivendor/sqlite", "tests/ref/load_anims.c", "modules/tk5/load.c", "modules/tk5/sim/anim.c",
+	built := build_sim_tool(LOAD_ANIMS, "-Ivendor/sqlite", "tests/ref/load_anims.c", "modules/tk5/load.c", "modules/tk5/sim/stage_file.c", "modules/tk5/sim/anim.c",
 		"vendor/sqlite/libsqlite3.a", "-lpthread")
 	if !testing.expect(t, built, "tests/ref/load_anims.c did not build") do return
 	os.make_directory(LOAD_ANIMS_ROOT)
