@@ -190,7 +190,7 @@ void t5_juggle_launch(const T5World *w, T5Fighter *defender, const T5Reaction *r
     int32_t y_start = t5_fctiwz(defender->base_position.y);  // height they launch from
     t5_body_scale(w, defender);  // refresh the body scale
     T5Vec4 root[2];
-    t5_anim_sample_root(&defender->keys, t5_anim_at(w, defender->pending_move), (float)sample_at, root);
+    t5_anim_sample_root(t5_anim_at(w, defender->pending_move), (float)sample_at, root);
     t5_pose_scale_root(root, defender->scale_xz, defender->scale_xz_add, defender->scale_y);  // scale it to this fighter's body
     defender->landing_y = root[0].y + root[1].y;  // height of the root at the landing frame
     int32_t y_end = t5_fctiwz(defender->landing_y);  // height they land at

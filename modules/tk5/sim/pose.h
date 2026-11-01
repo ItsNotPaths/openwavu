@@ -10,7 +10,7 @@
 
 // Sample `anim` at f->anim_time - 1 (keep_hips: bit 0 of the anim move's flags), scale the root by f's
 // scales, and set bone0, bone1, root_offset and body_yaw.
-void t5_pose_frame(T5KeyMode *mode, T5Fighter *f, const T5Anim *anim, bool keep_hips,
+void t5_pose_frame(T5Fighter *f, const T5Anim *anim, bool keep_hips,
                    T5Vec4 pose[T5_CHANNELS]);  // steps 3..5
 
 // Body scale of f: scale_xz, scale_y and the vertical blend. A throw takes the partner's scale (0.8 / 0.2 mix); a rider

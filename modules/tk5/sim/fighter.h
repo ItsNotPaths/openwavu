@@ -402,7 +402,6 @@ struct T5Fighter {
     bool look_snap;              // (one flag in the game, cleared by the first look-at): this fighter's look-at jumps to its target
     T5ScanAhead scan_ahead;
     T5LimbDrop limb_drop;        // (one pair in the game)
-    T5KeyMode keys;
 
     // shapes, bones and limbs
     T5Vec4 wall_history[6];      // wall contact points
@@ -450,9 +449,11 @@ _Static_assert(sizeof(T5Ref) == 4, "T5Ref");
 // Sizes for tools/layout.py, which mirrors these structs.
 extern const uint32_t t5_fighter_size, t5_fighter_data_size, t5_world_size, t5_motbin_size;
 
-// The files of one fighter, caller-owned bytes. The banks keep pointers into them, so they must outlive the data.
+// The inputs of one fighter, caller-owned: the files, and the anim banks the caller built from .anim files. The data keeps
+// pointers into them, so they must outlive it.
 typedef struct {
-    T5Bytes moves, character, common, embedded, skeleton;  // embedded.size 0 = no embedded bank
+    T5Bytes moves, skeleton;
+    T5AnimBank character, common, embedded;  // embedded.anim_count 0 = no embedded bank
 } T5FighterFiles;
 
 bool t5_fighter_storage(const T5FighterFiles *files, size_t *bytes);  // arena bytes that t5_fighter_build takes

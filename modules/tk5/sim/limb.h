@@ -137,7 +137,7 @@ void t5_limb_drop(const T5LimbRig *limb_rig, T5LimbBody *body);
 
 // The limb pass of one skeleton: worlds, limb offsets and their hitbox aims, hip drop and twists, legs, toes,
 // neck, head, arms. `mode` is the key decoder mode (the aim prediction samples the anim).
-void t5_limb_pass(const T5LimbRig *limb_rig, T5LimbBody *body, T5KeyMode *mode);
+void t5_limb_pass(const T5LimbRig *limb_rig, T5LimbBody *body);
 
 // Limb init of one skeleton (round init and the teleport move property): clears the limb state, puts
 // the base on the fighter at the floor plus 1150, sets the head probe. Floors limb_env.floor.origin_y when
@@ -163,7 +163,7 @@ typedef struct {
 // the limb pass on B, then on A. `b` and `a` are the limb rigs of the two skeletons of this fighter.
 // The face and finger poses only touch A bones 51 and up and are left out.
 void t5_skel_build(T5Rig *rig, const T5Skeleton *skeleton, const T5Vec4 pose[T5_CHANNELS], const T5LimbRig *limbs_b,
-                   const T5LimbRig *limbs_a, T5LimbBody *body, T5KeyMode *mode, const T5BuildHooks *hooks);
+                   const T5LimbRig *limbs_a, T5LimbBody *body, const T5BuildHooks *hooks);
 
 // World of bone i = local * parent world (the parent of the root bones is the rig root).
 void t5_limb_world_of(const T5LimbRig *limb_rig, int32_t bone);

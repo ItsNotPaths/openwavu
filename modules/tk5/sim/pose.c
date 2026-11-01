@@ -8,8 +8,8 @@
 #include "sim/math.h"
 #include "sim/quat.h"
 
-void t5_pose_frame(T5KeyMode *mode, T5Fighter *f, const T5Anim *anim, bool keep_hips, T5Vec4 pose[T5_CHANNELS]) {
-    t5_anim_sample(mode, anim, f->anim_time - 1.0f, pose, keep_hips);
+void t5_pose_frame(T5Fighter *f, const T5Anim *anim, bool keep_hips, T5Vec4 pose[T5_CHANNELS]) {
+    t5_anim_sample(anim, f->anim_time - 1.0f, pose, keep_hips);
     t5_pose_scale_root(pose, f->scale_xz, f->scale_xz_add, f->scale_y);
     f->bone0 = vec3_of(pose[CHANNEL_ROOT]);
     f->bone1 = vec3_of(pose[CHANNEL_HIP]);

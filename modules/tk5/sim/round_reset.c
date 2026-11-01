@@ -63,7 +63,7 @@ static T5Vec4 root_at(const T5World *w, T5Fighter *f, T5Ref move, float frame) {
     if (f->kind != 0) return out;  // only fighters have a root to sample, not extras
     t5_fight_body_scale(w, f);  // measure the body as in a fight pose
     T5Vec4 root[2];
-    t5_anim_sample_root(&f->keys, t5_anim_at(w, move), frame, root);  // the root of the move at that frame
+    t5_anim_sample_root(t5_anim_at(w, move), frame, root);  // the root of the move at that frame
     t5_pose_scale_root(root, f->scale_xz, f->scale_xz_add, f->scale_y);  // scaled to the body
     float root_x = root[0].x, root_y = root[0].y, root_z = root[0].z;
     float yaw = (float)(int16_t)(0 - (uint16_t)f->move_yaw) * T5_ANGLE_TO_RAD;  // the turn of the move, in radians

@@ -1,4 +1,4 @@
-// Fighter data from the bytes of the .t5m, .t5a and .t5b files of tools/*2bin.py; move lookups.
+// Fighter data from the bytes of the .t5m and .t5b files of tools/*2bin.py and the caller's anim banks; move lookups.
 #include "sim/fighter.h"
 
 #include <stdbool.h>
@@ -17,28 +17,19 @@ void t5_fighter_clear_refs(T5Fighter *f) {
     f->hit_record = -1;  // -1 means no hit record
 }
 
-// An absent embedded bank has no bytes.
-static int32_t bank_count(T5Bytes bytes) { return bytes.size ? t5_anim_bank_count(bytes) : 0; }
+static uint32_t anim_count(const T5FighterFiles *files) {
+    return files->character.anim_count + files->common.anim_count + files->embedded.anim_count;
+}
 
 bool t5_fighter_storage(const T5FighterFiles *files, size_t *bytes) {
-    int32_t counts[3] = {bank_count(files->character), bank_count(files->common), bank_count(files->embedded)};
-    if (!t5_motbin_storage(files->moves, bytes) || counts[0] < 0 || counts[1] < 0 || counts[2] < 0)  // bad moves or banks
-        return false;
-    const T5Bytes banks[3] = {files->character, files->common, files->embedded};
-    uint32_t anims = 0;
-    for (int bank = 0; bank < 3; bank++) {  // sum storage for each bank
-        if (banks[bank].size) *bytes += t5_arena_round(t5_anim_bank_bytes((uint32_t)counts[bank]));  // absent banks take no space
-        anims += (uint32_t)counts[bank];
-    }
-    *bytes += t5_arena_round(anims * sizeof(T5Anim *)) +  // room for anim pointers
+    if (!t5_motbin_storage(files->moves, bytes)) return false;  // bad moves
+    *bytes += t5_arena_round(anim_count(files) * sizeof(T5Anim *)) +  // room for anim pointers
               t5_arena_round((size_t)t5_motbin_move_count(files->moves) * sizeof(T5Move));
     return true;
 }
 
-static int parse_banks(T5FighterData *data, const T5FighterFiles *files, T5Arena *arena) {
-    if (t5_anim_bank_parse(&data->character, files->character, arena)) return -1;
-    if (t5_anim_bank_parse(&data->common, files->common, arena)) return -1;
-    if (files->embedded.size && t5_anim_bank_parse(&data->embedded, files->embedded, arena)) return -1;  // embedded is optional
+static int list_anims(T5FighterData *data, const T5FighterFiles *files, T5Arena *arena) {
+    data->character = files->character, data->common = files->common, data->embedded = files->embedded;
     const T5AnimBank *banks[3] = {&data->character, &data->common, &data->embedded};
     for (int bank = 0; bank < 3; bank++) data->anim_count += banks[bank]->anim_count;  // total anims across banks
     data->anims = t5_arena_take(arena, data->anim_count * sizeof *data->anims);  // room for one pointer per anim
@@ -53,7 +44,7 @@ int t5_fighter_build(T5FighterData *data, const T5FighterFiles *files, T5Arena *
     memset(data, 0, sizeof *data);
     if (t5_motbin_parse(&data->moves, files->moves, arena)) return -1;
     if (!data->moves.start_properties || !data->moves.hit_conditions) return -1;  // both move tables are required
-    if (parse_banks(data, files, arena)) return -1;
+    if (list_anims(data, files, arena)) return -1;
     if (t5_skeleton_parse(&data->skeleton, files->skeleton)) return -1;
     t5_rig_load(&data->bind, &data->skeleton);
     t5_rig_bind(&data->bind, &data->skeleton);

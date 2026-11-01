@@ -33,7 +33,7 @@ static void repivot(const T5World *w, T5Fighter *f) {
         fmaf((float)f->speed, -(1.0f / CLOCK_PER_FRAME), f->anim_time_at_clock) - 1.0f;
     if (sample_time < 0.0f) sample_time = 0.0f;
     T5Vec4 root[2];
-    t5_anim_sample_root(&f->keys, t5_anim_at(w, f->anim_move), sample_time, root);  // root channels then, scaled to body size
+    t5_anim_sample_root(t5_anim_at(w, f->anim_move), sample_time, root);  // root channels then, scaled to body size
     t5_pose_scale_root(root, f->scale_xz, f->scale_xz_add, f->scale_y);
     float root_x = root[0].x + root[1].x;  // the anim's root offset on the ground plane: both root channels added
     float root_z = root[0].z + root[1].z;
@@ -122,7 +122,7 @@ void t5_pose_motion(T5World *w, T5Fighter *f, const T5MotionHooks *hooks) {
     t5_body_scale(w, f);  // scale the body, then count the scale blend down
     if (f->scale_blend > 0) f->scale_blend--;
     bool keep_hips = (t5_move_at(w, f->anim_move)->flags & T5_MOVE_KEEP_HIPS) != 0;  // some moves keep the sampled hips
-    t5_pose_frame(&f->keys, f, t5_anim_at(w, f->anim_move), keep_hips, f->pose);
+    t5_pose_frame(f, t5_anim_at(w, f->anim_move), keep_hips, f->pose);
     if (f->pivot_request != 0) repivot(w, f);  // a re-pivot was asked for
     if (hooks != NULL && hooks->producer != NULL) hooks->producer(w, f);  // the producer hook can start or stop a blend
     blend_bookkeeping(&f->blend);

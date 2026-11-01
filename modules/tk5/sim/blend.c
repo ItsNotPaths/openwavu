@@ -202,7 +202,7 @@ static BlendRun run_out(const T5World *w, const T5Fighter *f) {
 
 static void sample_scaled(const T5World *w, T5Fighter *f, T5PoseAt pose_at, T5Vec4 pose[T5_CHANNELS]) {
     bool keep_hips = (t5_move_at(w, pose_at.move)->flags & T5_MOVE_KEEP_HIPS) != 0;  // some moves keep the anim hips
-    t5_anim_sample(&f->keys, t5_anim_at(w, pose_at.move), (float)pose_at.frame, pose, keep_hips);  // sample anim at this frame
+    t5_anim_sample(t5_anim_at(w, pose_at.move), (float)pose_at.frame, pose, keep_hips);  // sample anim at this frame
     t5_pose_scale_root(pose, f->scale_xz, f->scale_xz_add, f->scale_y);  // scale the root by the fighter's size
 }
 

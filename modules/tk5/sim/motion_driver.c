@@ -84,7 +84,7 @@ void t5_motion_build(T5World *w, T5Fighter *f) {  // build one fighter's motion
     LookCall call = {w, f, limbs.skeleton_a};  // the look hook gets this fighter and the A rig
     T5BuildHooks hooks = {.blend = {t5_pose_blend, f}, .look = {look_hook, &call}};  // the blend hook and the look hook
     t5_skel_build(&f->rig, limbs.skeleton_a.skel, f->pose, &limbs.skeleton_b, &limbs.skeleton_a,  // build with the hooks
-                  &limbs.body, &f->keys, &hooks);
+                  &limbs.body, &hooks);
     t5_base_from_root(f);  // the hip drop moved the root
     copy_joints(f);  // save the joints from the new bones
     t5_wall_solve(w, f);  // find the wall contacts and the push

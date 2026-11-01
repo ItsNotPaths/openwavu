@@ -8,7 +8,6 @@
 #include <string.h>
 
 #include "load.h"
-#include "sim/anim.h"
 #include "sim/skel.h"
 #include "sqlite3.h"
 
@@ -54,9 +53,10 @@ static T5Bytes read_file(const char *path) {
     return (T5Bytes){data, size};
 }
 
+// Anims of a .t5a bank: the u16 at byte 2, as tools/motbin2bin.py reads it.
 static uint32_t bank_count(const char *path) {
-    int32_t count = t5_anim_bank_count(read_file(path));
-    return count > 0 ? (uint32_t)count : 0;
+    T5Bytes bank = read_file(path);
+    return bank.size >= 4 ? (uint32_t)(bank.data[2] | bank.data[3] << 8) : 0;
 }
 
 static const float HEAD_TOP_TOLERANCE = 0.001f;  // mm: the importer's f32 pose against tools/body.py's f64 numpy

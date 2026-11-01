@@ -509,10 +509,10 @@ static const T5Vec4 *bone_position(const T5Bone *rig_bones, int32_t bone) { retu
 
 // Bones 0..21 posed at `frame` of the anim, with A's translations, the root offset in place of bone 0's.
 // The pose goes into the shared scratch rig (the blend producer reads its translations).
-static T5Bone *predict_pose(const T5LimbRig *limb_rig, const T5LimbBody *body, T5KeyMode *mode, float frame) {
+static T5Bone *predict_pose(const T5LimbRig *limb_rig, const T5LimbBody *body, float frame) {
     T5Bone *predicted = limb_rig->scratch;
     T5Vec4 channels[T5_CHANNELS];
-    t5_anim_sample(mode, body->anim, frame, channels, true);  // sample the animation at this frame
+    t5_anim_sample(body->anim, frame, channels, true);  // sample the animation at this frame
     t5_pose_scale_root(channels, body->scale_xz, body->scale_xz_add, body->scale_y);
     for (int32_t bone = 21; bone >= 0; bone--)  // copy A's bone translations into the scratch, bones 21 down to 0
         memcpy(predicted[bone].local.m[3], limb_rig->rig->bones_a[bone].local.m[3], sizeof(Row));
@@ -531,7 +531,7 @@ static bool aims_with_limbs(uint16_t hit_level) {
 
 // On a move's first frame: where each hand or foot hitbox will be at the last active frame (predicted), raised
 // by the floor level, turned up or down by the height difference to the opponent; aim_offset[i] is the offset.
-static void predict_aims(const T5LimbRig *limb_rig, const T5LimbBody *body, T5KeyMode *mode) {
+static void predict_aims(const T5LimbRig *limb_rig, const T5LimbBody *body) {
     static const struct { uint8_t bone, base, limb; } AIM_LIMB[4] = {
         {BONE_R_HAND, BONE_R_UPPER_ARM, LIMB_R_HAND}, {BONE_L_HAND, BONE_L_UPPER_ARM, LIMB_L_HAND},
         {BONE_R_FOOT, BONE_R_THIGH, LIMB_R_FOOT}, {BONE_L_FOOT, BONE_L_THIGH, LIMB_L_FOOT},
@@ -540,7 +540,7 @@ static void predict_aims(const T5LimbRig *limb_rig, const T5LimbBody *body, T5Ke
     const T5Move *move = body->move;
     float ground_y = limb_rig->world->limb_env.floor.origin_y;
     const T5Bone *predicted =  // pose at the last active frame of the move
-        predict_pose(limb_rig, body, mode, (float)(move->last_active - 1));
+        predict_pose(limb_rig, body, (float)(move->last_active - 1));
     for (int32_t slot = 0; slot < 2; slot++) {  // loop through the two hitbox slots
         limbs->aim_on[slot] = 1;
         int32_t aim_index = 0;
@@ -623,14 +623,14 @@ static void blend_aims(const T5LimbRig *limb_rig, const T5LimbBody *body) {
     }
 }
 
-static void aim(const T5LimbRig *limb_rig, const T5LimbBody *body, T5KeyMode *mode) {
+static void aim(const T5LimbRig *limb_rig, const T5LimbBody *body) {
     if (body->move->first_active == 0 ||  // no active frames or target airborne: aims off
         body->target_airborne) {
         limb_rig->state->aim_on[0] = limb_rig->state->aim_on[1] = 0;
         return;
     }
     if (body->frame2 <= 1) {  // on the first frame of a move
-        predict_aims(limb_rig, body, mode);
+        predict_aims(limb_rig, body);
         if (t5_transition_class(body->transition) != TRANSITION_CARRY)  // unless the move came by a carry transition, stop
             return;
     }
@@ -662,7 +662,7 @@ static void worlds(const T5LimbRig *limb_rig, const int8_t *list, int32_t count)
         t5_limb_world_of(limb_rig, list[index]);
 }
 
-void t5_limb_pass(const T5LimbRig *limb_rig, T5LimbBody *body, T5KeyMode *mode) {
+void t5_limb_pass(const T5LimbRig *limb_rig, T5LimbBody *body) {
     static const int8_t BODY[] =  // bones whose worlds are updated first
         {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20};
     static const int8_t LOWER[] =  // lower body bones, toes and extra points
@@ -676,7 +676,7 @@ void t5_limb_pass(const T5LimbRig *limb_rig, T5LimbBody *body, T5KeyMode *mode) 
     if (!limb_rig->paused) {  // if the game is not paused
         for (int32_t limb_index = T5_LIMB_COUNT - 1; limb_index >= 0; limb_index--)  // every limb offset shrinks by 0.9 a frame
             t5_vec_scale(&limbs->limb[limb_index].offset, &limbs->limb[limb_index].offset, 0.9f);
-        aim(limb_rig, body, mode);  // update the hitbox aims
+        aim(limb_rig, body);  // update the hitbox aims
     }
     t5_limb_drop(limb_rig, body);  // lower the body toward the floor
 
@@ -802,12 +802,12 @@ static void run_hook(const T5RigHook *hook, T5Rig *rig) {
 }
 
 void t5_skel_build(T5Rig *rig, const T5Skeleton *skeleton, const T5Vec4 pose[T5_CHANNELS], const T5LimbRig *limbs_b,
-                   const T5LimbRig *limbs_a, T5LimbBody *body, T5KeyMode *mode, const T5BuildHooks *hooks) {
+                   const T5LimbRig *limbs_a, T5LimbBody *body, const T5BuildHooks *hooks) {
     rig->root.world = rig->root.local;  // root world = root local
     t5_skel_pose(rig->bones_a, skeleton, pose);
     run_hook(&hooks->blend, rig);  // run the blend step
     run_hook(&hooks->look, rig);  // run the look-at step
     t5_rig_rotations_to_b(rig);  // set B's rotations from A's
-    t5_limb_pass(limbs_b, body, mode);  // limb pass on B
-    t5_limb_pass(limbs_a, body, mode);  // limb pass on A
+    t5_limb_pass(limbs_b, body);  // limb pass on B
+    t5_limb_pass(limbs_a, body);  // limb pass on A
 }

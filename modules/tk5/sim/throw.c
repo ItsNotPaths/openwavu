@@ -140,7 +140,7 @@ void t5_throw_snap(const T5World *w, T5Fighter *thrower, T5Fighter *victim, bool
     }
     t5_body_scale(w, thrower);  // scale the thrower's body for the throw pair
     T5Vec4 root[2];
-    t5_anim_sample_root(&thrower->keys, t5_anim_at(w, thrower->pending_move), 0.0f, root);
+    t5_anim_sample_root(t5_anim_at(w, thrower->pending_move), 0.0f, root);
     t5_pose_scale_root(root, thrower->scale_xz, thrower->scale_xz_add, thrower->scale_y);  // scaled by the body scale
     float root_x = root[0].x, root_z = root[0].z;
     float yaw = (float)(int16_t)(0 - (uint16_t)victim->move_yaw) * T5_ANGLE_TO_RAD;  // the victim's facing, reversed, in radians

@@ -476,3 +476,80 @@ const char *t5_load_skeleton(T5Skeleton *skeleton, sqlite3 *db, const char *char
                             skeleton->parent_b, skeleton->translation_b, NULL);
     return failed;
 }
+
+enum { OWNER_BYTES = 128 };
+
+// The owners of the character's banks in fighter order: its own (the bank its moves name that is neither common nor
+// embedded), common, embedded.
+static const char *bank_owners(sqlite3 *db, const char *character, char owners[3][OWNER_BYTES]) {
+    T5AnimBases ranks = {0, 1, 2};
+    snprintf(owners[0], OWNER_BYTES, "%s", character);
+    snprintf(owners[1], OWNER_BYTES, "common");
+    snprintf(owners[2], OWNER_BYTES, "%s/embedded", character);
+    sqlite3_stmt *rows;
+    const char *failed = prepare(db, "SELECT DISTINCT anim_owner FROM move WHERE character = ?1", character, &rows);
+    while (!failed && sqlite3_step(rows) == SQLITE_ROW) {
+        const char *owner = (const char *)sqlite3_column_text(rows, 0);
+        if (owner && anim_base(owner, ranks) == ranks.character) snprintf(owners[0], OWNER_BYTES, "%s", owner);
+    }
+    sqlite3_finalize(rows);
+    return failed;
+}
+
+static const char *bank_count(sqlite3 *db, const char *owner, uint32_t *count) {
+    sqlite3_stmt *row;
+    const char *failed = prepare(db, "SELECT coalesce(max(idx) + 1, 0) FROM anim WHERE character = ?1", owner, &row);
+    if (failed) return failed;
+    sqlite3_step(row);
+    *count = (uint32_t)sqlite3_column_int(row, 0);
+    sqlite3_finalize(row);
+    return NULL;
+}
+
+const char *t5_load_anims_storage(sqlite3 *db, const char *character, size_t *bytes) {
+    char owners[3][OWNER_BYTES];
+    const char *failed = bank_owners(db, character, owners);
+    *bytes = 0;
+    for (int bank = 0; bank < 3 && !failed; bank++) {
+        size_t bank_bytes;
+        failed = t5_load_anim_bank_storage(db, owners[bank], &bank_bytes);
+        *bytes += bank_bytes;
+    }
+    return failed;
+}
+
+const char *t5_load_anim_bank_storage(sqlite3 *db, const char *owner, size_t *bytes) {
+    uint32_t count;
+    const char *failed = bank_count(db, owner, &count);
+    *bytes = failed ? 0 : t5_arena_round(t5_anim_bank_bytes(count));
+    return failed;
+}
+
+// Ids without a row stay zero anims.
+const char *t5_load_anim_bank(T5AnimBank *bank, sqlite3 *db, const char *owner, T5ReadFile read, void *context, T5Arena *arena) {
+    const char *failed = bank_count(db, owner, &bank->anim_count);
+    if (failed) return failed;
+    bank->anims = t5_arena_take(arena, t5_anim_bank_bytes(bank->anim_count));
+    if (!bank->anims) return fail("anims %s: arena full", owner);
+    memset(bank->anims, 0, t5_anim_bank_bytes(bank->anim_count));
+    sqlite3_stmt *rows;
+    failed = prepare(db, "SELECT idx, file, (SELECT min(idx) FROM anim b WHERE b.character = a.character AND b.file = a.file) "
+                         "FROM anim a WHERE character = ?1 ORDER BY idx", owner, &rows);
+    while (!failed && sqlite3_step(rows) == SQLITE_ROW) {
+        int64_t index = sqlite3_column_int64(rows, 0), first = sqlite3_column_int64(rows, 2);
+        const char *file = (const char *)sqlite3_column_text(rows, 1);
+        if (index < 0) failed = fail("anims %s: idx %lld", owner, (long long)index);
+        else if (first < index) bank->anims[index] = bank->anims[first];  // one record: the same keys
+        else if (t5_anim_parse(&bank->anims[index], read(context, file)) != 0) failed = fail("anims %s %lld: bad file %s", owner, (long long)index, file);
+    }
+    sqlite3_finalize(rows);
+    return failed;
+}
+
+const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena) {
+    char owners[3][OWNER_BYTES];
+    const char *failed = bank_owners(db, character, owners);
+    T5AnimBank *banks[3] = {&files->character, &files->common, &files->embedded};
+    for (int bank = 0; bank < 3 && !failed; bank++) failed = t5_load_anim_bank(banks[bank], db, owners[bank], read, context, arena);
+    return failed;
+}

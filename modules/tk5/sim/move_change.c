@@ -226,7 +226,7 @@ static float anim_yaw(T5World *w, T5Fighter *f, T5Ref anim_ref, float frame) {
     float sample_frame = frame - 1.0f;
     if (frame <= 0.0f) sample_frame = 0.0f;  // do not sample before the first frame
     T5Vec4 turn = {{0, 0, 0, 1}};
-    t5_anim_sample_yaw(&f->keys, t5_anim_at(w, anim_ref), sample_frame, &turn);  // sample the yaw turn of the anim
+    t5_anim_sample_yaw(t5_anim_at(w, anim_ref), sample_frame, &turn);  // sample the yaw turn of the anim
     return t5_quat_yaw(&turn);
 }
 
@@ -470,7 +470,7 @@ typedef struct { float x, z; } GroundPoint;
 // The root of anim_ref at anim_frame, scaled, turned by the move yaw (hips: with the hips translation)
 static GroundPoint turned_root(T5World *w, T5Fighter *f, T5Ref anim_ref, float anim_frame, bool hips) {
     T5Vec4 root[2];
-    t5_anim_sample_root(&f->keys, t5_anim_at(w, anim_ref), anim_frame, root);
+    t5_anim_sample_root(t5_anim_at(w, anim_ref), anim_frame, root);
     t5_pose_scale_root(root, f->scale_xz, f->scale_xz_add, f->scale_y);
     float x = root[0].x, z = root[0].z;
     if (hips) {  // with hips: add the hips translation
