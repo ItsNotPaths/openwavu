@@ -228,10 +228,10 @@ import_stage :: proc(im: ^Import, index: int) {
 	file := fmt.tprintf("stages/%s.glb", id)
 	if len(meshes) > 0 && !convert.write_model(join(im.root, file), meshes[:], textures, nil, matrices[:]) do return
 	db.insert(&im.w, "stage", id, id, i64(index), file)
-	convert.write_stage_rows(&im.w, id, s)
+	convert.write_stage_rows(&im.w, id, index, s)
 }
 
-// (hole sound-extract :tags (importer audio)) vag sound packs (entries 161..206, character slots +4/+5, stage packs) are not decoded.
+// (hole sound-extract :tags (importer audio)) vag sound packs (entries 161..206, character slots +4/+5, stage packs) are not decoded to WAV (ffmpeg parts linked statically, ws.md).
 import_sounds :: proc(im: ^Import) {}
 
 // (hole tim2-textures :tags importer :sev polish) model section 17 (TIM2) is not decoded.

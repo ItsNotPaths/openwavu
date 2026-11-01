@@ -154,6 +154,7 @@ static int32_t cell_of(float distance, float cell, int32_t count) {
 // with a sphere query: the objects of the cells that touch the circle, z rows then x, each cell in list
 // order. Duplicates drop out and the list stops at 255, floor cells (type 6) take room too. Only the wall kinds are
 // returned (the wall pass keeps types 3 and 9). The object matrices are the identity.
+// (hole wall-grid-drop :tags (tk5mod port) :sev polish) rewrite: the grid only saves time; test every wall object in object order (floor off still means no walls). Changes the push order at corners, a fraction of an inch; gate with the oracle and the scenarios.
 T5StageWalls t5_stage_walls(const T5World *w, T5Vec3 centre, float radius) {
     const T5Stage *s = w->stage;
     T5StageWalls found = {};

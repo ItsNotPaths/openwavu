@@ -9,6 +9,7 @@ import "core:slice"
 import "../../convert"
 import formats "../../formats/tk5"
 
+MM :: 1000.0  // file millimetres per glTF metre
 BODY_BONES :: 23  // animated by the 23 channels; the rest are helpers
 
 Textures :: map[u32]formats.Texture  // by hash, MIF placeholders already resolved
@@ -64,6 +65,7 @@ material :: proc(g: ^convert.Gltf, cache: ^map[u32]int, textures: Textures, pass
 	out: convert.Material
 	out.doubleSided = true
 	if t, has := textures[hash]; has {
+		// (hole texture-dds :tags (importer content) :needs titlepack-format :sev polish) DXT textures are decoded to PNG inside the glb; leaning to raw DDS files in the pack's raw content (ws.md), lossless and GPU ready.
 		rgba, decoded := formats.decode_rgba(t, context.temp_allocator)
 		if decoded {
 			out.pbrMetallicRoughness.baseColorTexture = convert.Texture_Ref{convert.add_png(g, fmt.tprintf("%08x", hash), convert.encode_png(rgba, t.width, t.height))}

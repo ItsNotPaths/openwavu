@@ -7,11 +7,12 @@ import "core:strings"
 import "core:testing"
 import formats "../src/formats/tk5"
 
-// Dumps stage_collision.py's walls and floors with float bits.
+// Dumps stage_collision.py's walls, grid, cells and floors and stage_start.py's start points, with float bits.
 STAGE_DUMP :: `
 import sys, numpy as np
 sys.path.insert(0, 'tools')
 import stage_collision as sc
+from stage_start import start_points
 def h(a): return ' '.join('%08x' % v for v in np.asarray(a, dtype='<f4').reshape(-1).view('<u4'))
 for s in range(sc.COUNT):
     got = sc.load(s)
@@ -21,6 +22,15 @@ for s in range(sc.COUNT):
     print('S', s)
     for q in mho.quads:
         print('Q', q.obj, q.link, int(q.is_wall), h(q.corners), h(q.normal))
+    print('G', mho.grid[0], mho.grid[1], h(mho.grid[2]))
+    for o in mho.objects:
+        print('O', o.kind, o.link)
+    for c in mho.cells:
+        print('C', *c)
+    for slot in start_points(sc.stage_file(s))['slots']:
+        print('T', slot['format'])
+        for g in slot['groups']:
+            print('R', g['id'], g['count'], g['per_record'], h(g['points']))
     for z in zones:
         print('Z %d %s %016x %d' % (z.flags, h(z.centre), np.float64(z.radius).view('<u8'), len(z.polys)))
         for poly in z.polys:
@@ -43,6 +53,21 @@ dump_stage :: proc(b: ^strings.Builder, id: int, s: formats.Stage, has: bool) {
 		strings.write_byte(b, ' ')
 		bits(b, q.normal[:])
 		strings.write_byte(b, '\n')
+	}
+	fmt.sbprintf(b, "G %d %d %08x\n", s.grid.nx, s.grid.nz, transmute(u32)s.grid.cell)
+	for o in s.objects do fmt.sbprintf(b, "O %d %d\n", o.kind, o.link)
+	for c in s.cells {
+		strings.write_byte(b, 'C')
+		for o in c do fmt.sbprintf(b, " %d", o)
+		strings.write_byte(b, '\n')
+	}
+	for slot in s.start {
+		fmt.sbprintf(b, "T %s\n", slot.pos_format ? "pos" : "tkpd")
+		for &g in slot.groups {
+			fmt.sbprintf(b, "R %d %d %d ", g.id, g.count, g.per_record)
+			bits(b, (cast([^]f32)raw_data(g.points))[:8 * len(g.points)])
+			strings.write_byte(b, '\n')
+		}
 	}
 	for &z in s.floors {
 		fmt.sbprintf(b, "Z %d ", z.flags)

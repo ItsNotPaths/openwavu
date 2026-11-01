@@ -271,6 +271,13 @@ CREATE TABLE skeleton_b (
 	PRIMARY KEY (character, slot)
 );
 
+-- A start record the stage never takes for a next round: it takes `instead`. No row: none.
+CREATE TABLE stage_start_skip (
+	stage   TEXT PRIMARY KEY,
+	record  INTEGER NOT NULL,
+	instead INTEGER NOT NULL
+);
+
 -- Hurtboxes: vertical cylinders on bones of skeleton B, in the order of the hit record index.
 CREATE TABLE body_hurt (
 	character TEXT NOT NULL,

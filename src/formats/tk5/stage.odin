@@ -1,5 +1,5 @@
 // Stages: 21-section file at entry 2132 + 3*id. Walls from MHO (section 15), floor zones from
-// UNDN (section 17). Little endian, file units (mm). tk5decomp docs/stages.md.
+// UNDN (section 17), start points from sections 14 and 13. Little endian, file units (mm). tk5decomp docs/stages.md.
 package tk5_formats
 
 import "core:math"
@@ -11,6 +11,8 @@ STAGE_MESHES :: 2  // container of NDP3, one MIF record each in STAGE_NODES
 STAGE_NODES :: 3
 STAGE_MHO :: 15
 STAGE_UNDN :: 17
+@(rodata)
+STAGE_START_SECTIONS := [2]int{14, 13}  // the game's object slots 0 and 1
 WALL_MIN_HEIGHT :: 50  // FUN_000384a8 drops lower quads
 
 // stages.md §2. "": no name known.
@@ -31,6 +33,32 @@ Stage_Quad :: struct {
 	is_wall: bool,    // not flat and at least WALL_MIN_HEIGHT high
 }
 
+Stage_Object :: struct {
+	kind: u32,  // 3 and 9 hold quads, 5 is the grid, 6 a floor cell
+	link: i32,
+}
+
+// The wall broadphase: nx * nz cells of `cell` mm, centred on 0.
+Stage_Grid :: struct {
+	nx, nz: int,
+	cell:   f32,
+}
+
+// A start point: position and rotation vec4 of a record.
+Start_Point :: [8]f32
+
+Start_Group :: struct {
+	id:         int,  // TKPD entry id, or the pair index of a POS section
+	count:      int,  // records
+	per_record: int,  // 1, or 2 for a double record
+	points:     []Start_Point,
+}
+
+Start_Slot :: struct {
+	pos_format: bool,  // "POS " (four pairs) or "TKPD" (entries by id)
+	groups:     []Start_Group,
+}
+
 Floor_Polygon :: struct {
 	centre:    [3]f32,
 	radius_sq: f32,
@@ -48,14 +76,19 @@ Floor_Zone :: struct {
 Stage :: struct {
 	sections: [][]byte,  // all 21, raw
 	quads:    []Stage_Quad,
+	objects:  []Stage_Object,
+	grid:     Stage_Grid,
+	cells:    [][]u16,  // per grid cell (z * nx + x): object indexes in the order of the game's lists
 	floors:   []Floor_Zone,
+	start:    [2]Start_Slot,
 }
 
 read_stage :: proc(data: []byte, allocator := context.allocator) -> (s: Stage, ok: bool) {
 	s.sections = sections(data, allocator) or_return
 	if len(s.sections) != STAGE_SECTIONS do return {}, false
-	s.quads = read_mho(s.sections[STAGE_MHO], allocator) or_return
+	read_mho(&s, s.sections[STAGE_MHO], allocator) or_return
 	s.floors = read_undn(s.sections[STAGE_UNDN], allocator) or_return
+	for &slot, k in s.start do slot = read_start(s.sections[STAGE_START_SECTIONS[k]], k, allocator) or_return
 	return s, true
 }
 
@@ -66,28 +99,120 @@ vec3_le :: proc(d: []byte, off: int) -> [3]f32 {
 
 // Object types 3 and 9 hold quads, the only types the wall solve (FUN_00039964) tests.
 @(private = "file")
-read_mho :: proc(d: []byte, allocator := context.allocator) -> (quads: []Stage_Quad, ok: bool) {
-	if len(d) < 0x98 do return nil, true
+read_mho :: proc(s: ^Stage, d: []byte, allocator := context.allocator) -> (ok: bool) {
+	if len(d) < 0x98 do return true
 	out := make([dynamic]Stage_Quad, allocator)
 	obj_count, obj_off := int(le_u32(d, 0x34)), int(le_u32(d, 0x38))
+	s.objects = make([]Stage_Object, obj_count, allocator)
 	for i in 0 ..< obj_count {
 		o := obj_off + 0x60 * i
-		if o + 0x60 > len(d) do return nil, false
+		if o + 0x60 > len(d) do return false
 		kind, data, link := le_u32(d, o + 0x40), int(le_u32(d, o + 0x44)), le_i32(d, o + 0x58)
+		s.objects[i] = {kind, link}
 		if kind != 3 && kind != 9 do continue
 		head := kind == 3 ? 0x10 : 0  // 3: {.., +0x10 count, +0x20 quads}; 9: {+0 count, +0x10 quads}
-		if data + head + 4 > len(d) do return nil, false
+		if data + head + 4 > len(d) do return false
 		n := int(le_u32(d, data + head))
 		for k in 0 ..< n {
 			q := data + head + 0x10 + 0x50 * k
-			if q + 0x50 > len(d) do return nil, false
+			if q + 0x50 > len(d) do return false
 			quad := Stage_Quad{object = i, link = link, normal = vec3_le(d, q + 0x40)}
 			for &c, j in quad.corners do c = vec3_le(d, q + 0x10 * j)
 			quad.is_wall = is_wall(quad)
 			append(&out, quad)
 		}
 	}
-	return out[:], true
+	s.quads = out[:]
+	if le_u32(d, 0x4c) != 0 {
+		g := int(le_u32(d, 0x50))
+		if g + 12 > len(d) do return false
+		s.grid = {int(le_u32(d, g)), int(le_u32(d, g + 4)), le_f32(d, g + 8)}
+	}
+	s.cells = read_cells(d, s.grid, allocator) or_return
+	return true
+}
+
+// MHO 0x74..0x7c: per cell {u16 n, u16 object[n]}; the offset table names the grid cell (0x1c bytes each, after
+// {nx, nz, cell}) of each list.
+@(private = "file")
+read_cells :: proc(d: []byte, grid: Stage_Grid, allocator := context.allocator) -> (cells: [][]u16, ok: bool) {
+	count, table, lists := int(le_u32(d, 0x74)), int(le_u32(d, 0x78)), int(le_u32(d, 0x7c))
+	if count != grid.nx * grid.nz || table + 4 * count > len(d) do return nil, false
+	first := int(le_u32(d, 0x50)) + 12
+	cells = make([][]u16, count, allocator)
+	for _ in 0 ..< count {
+		if lists + 2 > len(d) do return nil, false
+		n := int(le_u16(d, lists))
+		at := int(le_u32(d, table)) - first
+		cell := at / 0x1c
+		if at < 0 || at % 0x1c != 0 || cell >= count || cells[cell] != nil || lists + 2 + 2 * n > len(d) do return nil, false
+		cells[cell] = make([]u16, n, allocator)
+		for &o, k in cells[cell] do o = le_u16(d, lists + 2 + 2 * k)
+		table += 4
+		lists += 2 + 2 * n
+	}
+	return cells, true
+}
+
+START_POINT_AT :: 0x30
+START_SECOND_AT :: 0x90
+TKPD_DOUBLE :: 0xe0  // entry size of a double record; the others are 0x80
+TKPD_SINGLE :: 0x80
+POS_PAIRS :: 4
+POS_DOUBLE :: 0xd0   // record size of pair 0; the other pairs hold 0x70 and one point
+POS_SINGLE :: 0x70
+@(rodata)
+TKPD_IDS := [2][]u32{{0, 1, 2, 12}, {3}}  // the entry ids the game reads, per slot
+
+// Start points (tk5decomp tools/stage_start.py, docs/stages.md 5.6).
+@(private = "file")
+read_start :: proc(d: []byte, slot: int, allocator := context.allocator) -> (s: Start_Slot, ok: bool) {
+	if len(d) < 4 do return
+	groups := make([dynamic]Start_Group, allocator)
+	switch string(d[:4]) {
+	case "TKPD":
+		if len(d) < 0x10 do return
+		entries := int(le_u32(d, 0xc))
+		if 0x20 + 16 * entries > len(d) do return
+		for id in TKPD_IDS[slot] {
+			for k in 0 ..< entries {
+				e := 0x20 + 16 * k
+				if le_u32(d, e) != id do continue
+				size, count, offset := int(le_u32(d, e + 4)), int(le_u32(d, e + 8)), int(le_u32(d, e + 12))
+				if size != TKPD_DOUBLE && size != TKPD_SINGLE do return
+				g := Start_Group{int(id), count, size == TKPD_DOUBLE ? 2 : 1, nil}
+				g.points = start_points(d, offset, size, g, allocator) or_return
+				append(&groups, g)
+				break  // the game takes the first entry with the id
+			}
+		}
+	case "POS ":
+		s.pos_format = true
+		if 0x30 + 8 * POS_PAIRS > len(d) do return
+		for k in 0 ..< POS_PAIRS {
+			count, offset := int(le_u32(d, 0x30 + 8 * k)), int(le_u32(d, 0x34 + 8 * k))
+			record := k == 0 ? POS_DOUBLE : POS_SINGLE
+			g := Start_Group{k, count, k == 0 ? 2 : 1, nil}
+			if offset != 0 do g.points = start_points(d, offset, record, g, allocator) or_return
+			append(&groups, g)
+		}
+	case: return
+	}
+	s.groups = groups[:]
+	return s, true
+}
+
+@(private = "file")
+start_points :: proc(d: []byte, at, record: int, g: Start_Group, allocator := context.allocator) -> (points: []Start_Point, ok: bool) {
+	points = make([]Start_Point, g.count * g.per_record, allocator)
+	for i in 0 ..< g.count {
+		for k in 0 ..< g.per_record {
+			o := at + record * i + START_POINT_AT + (START_SECOND_AT - START_POINT_AT) * k
+			if o + 32 > len(d) do return nil, false
+			for &v, c in points[i * g.per_record + k] do v = le_f32(d, o + 4 * c)
+		}
+	}
+	return points, true
 }
 
 @(private = "file")
