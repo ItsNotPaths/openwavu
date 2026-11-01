@@ -139,7 +139,7 @@ apply_overlay :: proc(p: ^Pack, zip: []byte) -> (ok: bool) {
 	return false
 }
 
-// (hole overlay-merge :tags content :needs overlay-apply) two overlays that grow a list both move it to the end of its table and take the same new indices; no merge rule.
+// (hole overlay-merge :tags content :needs overlay-apply) two overlays that add lists can take the same new list ids; no merge rule.
 // (hole overlay-write :tags (content editor) :needs pack-open) no way to diff an edited pack into an overlay zip.
 write_overlay :: proc(base, edited: ^Pack, path: string) -> (ok: bool) {
 	return false
