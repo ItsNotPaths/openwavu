@@ -32,7 +32,7 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM character"), 36)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part WHERE slot = 'body'"), 85)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 15421)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 15445)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage"), 37)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 4)
 	images: ^db.Stmt
@@ -50,7 +50,7 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 		testing.expect(t, png_err == nil && image.width > 0 && image.height > 0, file)
 	}
 	testing.expect_value(t, db.step(images), db.DONE)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM move m LEFT JOIN anim a ON a.character = m.anim_owner AND a.idx = m.anim_idx WHERE a.idx IS NULL AND m.anim_owner NOT LIKE '%/embedded'"), 0)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM move m LEFT JOIN anim a ON a.character = m.anim_owner AND a.idx = m.anim_idx WHERE a.idx IS NULL"), 0)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part p WHERE NOT EXISTS (SELECT 1 FROM costume_part c WHERE c.part = p.id)"), 0)
 
 	data, read_err := os.read_entire_file("build/test_content/tk5/anims/kazuya/0.anim", context.temp_allocator)

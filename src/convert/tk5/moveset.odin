@@ -129,7 +129,6 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, m: formats.M
 }
 
 // 0x4000: the character's container bank 0; else 0x8000: common bank; else embedded bank 0.
-// (hole embedded-anims :tags importer) embedded bank 0 (motbin header 0x240) is not empty: dragunov, jinpachi, kuma, panda, marduk and wang have one (type 0x64, 9/7/3/3/1/1 anims), exactly the ids of the 24 moves. Nothing writes it as anims/<char>/embedded yet: call write_bank with data[m.bank_offsets[0]:] after write_moveset_rows (make_dir must make the nested owner).
 anim_ref :: proc(char, container_owner: string, anim: u32) -> (owner: string, idx: int) {
 	idx = int(anim & 0x3fff)
 	switch {

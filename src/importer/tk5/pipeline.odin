@@ -72,6 +72,7 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 		m, read := formats.read_motbin(data, context.temp_allocator)
 		if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
 		if err = convert.write_moveset_rows(w, c.id, owner, m); err != "" do return err
+		if m.bank_offsets[0] < len(data) do write_bank(im, convert.embedded_owner(c.id), data[m.bank_offsets[0]:])
 		top, measured := idle_head_top(im, c, m, data)
 		if !measured do return fmt.tprintf("%s: standing idle did not read", c.id)
 		if err = convert.write_stock_rows(w, c.id, char_index, m, top); err != "" do return err
@@ -175,7 +176,7 @@ idle_head_top :: proc(im: ^Import, c: formats.Character, m: formats.Motbin, data
 // Every anim of a body bank as anims/<owner>/<idx>.anim.
 write_bank :: proc(im: ^Import, owner: string, data: []byte) {
 	bank, ok := formats.read_bank(data)
-	if !ok do return
+	if !ok || bank.count == 0 do return
 	dir := join(im.root, "anims", owner)
 	if !make_dir(dir) do return
 	for i in 0 ..< bank.count {
