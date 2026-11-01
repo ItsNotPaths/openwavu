@@ -18,6 +18,23 @@ read_table :: proc() -> (table: []formats.Entry, ok: bool) {
 	return formats.read_file_table(eboot, build)
 }
 
+// A C tool over the synced sim (tests/ref), linked with the sim's math.
+build_sim_tool :: proc(out: string, sources: ..string) -> bool {
+	sim :: "modules/tk5/sim/"
+	command := make([dynamic]string, context.temp_allocator)
+	append(&command, "cc", "-std=c23", "-fwrapv", "-ffp-contract=off", "-Imodules/tk5", "-o", out, sim + "math.c", sim + "quat.c", sim + "vec.c")
+	append(&command, ..sources)
+	append(&command, "-lm")
+	state, _, _, err := os.process_exec({command = command[:]}, context.temp_allocator)
+	return err == nil && state.exit_code == 0
+}
+
+// The tool's output for one file; nil when it fails.
+run_sim_tool :: proc(tool, file: string) -> []byte {
+	state, stdout, _, err := os.process_exec({command = {tool, file}}, context.temp_allocator)
+	return err == nil && state.exit_code == 0 ? stdout : nil
+}
+
 // The archive entry, as t55.py extracts it.
 reference_entry :: proc(index: int) -> (data: []byte, ok: bool) {
 	matches, _ := filepath.glob(fmt.tprintf(TK5 + "/extract/%04d.*", index), context.temp_allocator)

@@ -21,6 +21,6 @@ draw_fighter :: proc(r: ^Renderer, parts: []Model, bones: []matrix[4, 4]f32) {}
 // (hole render-stage :tags render :needs (render-gpu glb-loader)) stages are not drawn; _DRWOFF_ meshes must start hidden.
 draw_stage :: proc(r: ^Renderer, stage: Model) {}
 
-// (hole hand-pose :tags render :needs (render-fighter visual-view hand-anims face-anims)) the visual skeleton from ow_visual_view (fingers, face, eyes, head tilt over the hitbox skeleton) is not drawn; only the sim pose is.
+// (hole hand-pose :tags render :needs (render-fighter visual-view face-anims)) the visual skeleton from ow_visual_view (fingers, face, eyes, head tilt over the hitbox skeleton) is not drawn; only the sim pose is.
 // (hole render-api :tags (render sdk) :needs render-gpu) the app module has no host draw API: a 2D draw list, 3D fighter (loadout, anim), mesh and stage primitives, body slot swaps, material params.
 draw_list :: proc(r: ^Renderer, commands: []byte) {}

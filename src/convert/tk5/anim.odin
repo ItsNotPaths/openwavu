@@ -30,3 +30,19 @@ write_anim :: proc(path: string, a: formats.Anim) -> (ok: bool) {
 		values        = slice.reinterpret([]f32, a.values),
 	})
 }
+
+// Finger anims: one hand's 15 joints, root joint first; either hand plays them, so no bone.
+HAND_CHANNELS := [formats.HAND_JOINTS]convert.Anim_Channel{0 ..< formats.HAND_JOINTS = {.Spherical_Axis_Angle, 3, -1}}
+
+write_hand_anim :: proc(path: string, frames: []formats.Hand_Frame) -> (ok: bool) {
+	raw := slice.reinterpret([]i16, frames)
+	values := make([]f32, len(raw), context.temp_allocator)
+	for v, i in raw do values[i] = f32(v) * formats.ANGLE
+	return convert.write_anim(path, {
+		layout   = "tk5hand",
+		frames   = len(frames),
+		fps      = FPS,
+		channels = HAND_CHANNELS[:],
+		values   = values,
+	})
+}

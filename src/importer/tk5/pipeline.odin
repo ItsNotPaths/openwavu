@@ -73,6 +73,7 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 		if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
 		if err = convert.write_moveset_rows(w, c.id, owner, m); err != "" do return err
 		if m.bank_offsets[0] < len(data) do write_bank(im, convert.embedded_owner(c.id), data[m.bank_offsets[0]:])
+		if m.bank_offsets[formats.BANK_HANDS] < len(data) do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), data[m.bank_offsets[formats.BANK_HANDS]:])
 		skeleton, has_skeleton := character_skeleton(im, c)
 		if !has_skeleton do return fmt.tprintf("%s: skeleton did not read", c.id)
 		convert.write_skeleton_rows(w, c.id, skeleton)
@@ -94,11 +95,11 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 		if owner == c.id {
 			container := read_entry(im.archive, c.container) or_else nil
 			sections, _ := formats.sections(container, context.temp_allocator)
-			// (hole hand-anims :tags importer) container sections 1..5 hold type-1 banks (hands, maybe faces); hand banks are not decoded to .anim (layout tk5hand).
-			// (hole face-anims :tags importer :needs hand-anims) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
+			// (hole face-anims :tags importer) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
 			// (hole intro-re :tags importer) intros, win poses and outros are not located: motbin moves or separate data, and where their camera tracks live. Leads: move properties 0x8001..0x8008 (camera, dropped by the sim), the type-1 anim sections 1..5 (tk5decomp docs/data.md), the flashback angles, the fight camera 0x75724 (for sdk-camera params only).
 			// (hole camera-anims :tags importer :needs intro-re) camera tracks are not imported (.anim layout tk5cam: position, target, roll, fov).
 			if len(sections) > 0 do write_bank(im, owner, sections[0])
+			if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
 		}
 	}
 	return ""
@@ -190,6 +191,20 @@ write_bank :: proc(im: ^Import, owner: string, data: []byte) {
 		if !decoded do continue
 		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
 		if convert.write_anim(join(im.root, file), a) do db.insert(&im.w, "anim", owner, i64(i), i64(a.frames), file)
+	}
+}
+
+// Every clip of a finger bank as anims/<owner>/<idx>.anim. The pose bank's clip 0 is the pose library: frame i = pose i.
+write_hand_bank :: proc(im: ^Import, owner: string, data: []byte) {
+	bank, ok := formats.read_hand_bank(data)
+	if !ok do return
+	dir := join(im.root, "anims", owner)
+	if !make_dir(dir) do return
+	for i in 0 ..< bank.count {
+		frames, decoded := formats.read_hand_clip(bank, i, context.temp_allocator)
+		if !decoded do continue
+		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
+		if convert.write_hand_anim(join(im.root, file), frames) do db.insert(&im.w, "anim", owner, i64(i), i64(len(frames)), file)
 	}
 }
 

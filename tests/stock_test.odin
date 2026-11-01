@@ -58,7 +58,7 @@ stock_rows_match_sim_files :: proc(t: ^testing.T) {
 	h: ^db.Sqlite
 	if !testing.expect(t, db.open_v2(STOCK_DB, &h, db.OPEN_READWRITE, nil) == db.OK) do return
 	defer db.close_v2(h)
-	dumper_ok := build_skeleton_dump()
+	dumper_ok := build_sim_tool(SKELETON_DUMP, "tests/ref/skeleton_dump.c", "modules/tk5/sim/skel.c")
 	testing.expect(t, dumper_ok, "tests/ref/skeleton_dump.c did not build")
 	for name in MOTBIN_NAMES {
 		defer free_all(context.temp_allocator)
@@ -105,21 +105,9 @@ stock_rows_match_sim_files :: proc(t: ^testing.T) {
 
 SKELETON_DUMP :: "build/skeleton_dump"
 
-@(private = "file")
-build_skeleton_dump :: proc() -> bool {
-	sim :: "modules/tk5/sim/"
-	state, _, _, err := os.process_exec({command = {"cc", "-std=c23", "-fwrapv", "-ffp-contract=off", "-Imodules/tk5", "-o", SKELETON_DUMP,
-		"tests/ref/skeleton_dump.c", sim + "skel.c", sim + "math.c", sim + "quat.c", sim + "vec.c", "-lm"}}, context.temp_allocator)
-	return err == nil && state.exit_code == 0
-}
-
 // What the sim's loader builds from the character's .t5b (tests/ref/skeleton_dump.c).
 @(private = "file")
-sim_skeleton :: proc(name: string) -> []byte {
-	file := fmt.tprintf(TK5 + "/data/%s.t5b", name)
-	state, stdout, _, err := os.process_exec({command = {SKELETON_DUMP, file}}, context.temp_allocator)
-	return err == nil && state.exit_code == 0 ? stdout : nil
-}
+sim_skeleton :: proc(name: string) -> []byte {return run_sim_tool(SKELETON_DUMP, fmt.tprintf(TK5 + "/data/%s.t5b", name))}
 
 @(private = "file")
 skeleton_rows :: proc(h: ^db.Sqlite, char: string) -> []byte {

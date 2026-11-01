@@ -32,7 +32,7 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM character"), 36)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part WHERE slot = 'body'"), 85)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 15445)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 17556)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage"), 37)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 4)
 	images: ^db.Stmt
