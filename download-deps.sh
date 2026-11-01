@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Dependencies into vendor/: wasmtime's C API and the SQLite amalgamation. Delete a vendor/ folder to refetch it.
+# Dependencies into vendor/: wasmtime's C API, the SQLite amalgamation and Clay (UI layout) with its Odin binding. Delete a vendor/ folder to refetch it.
 set -euo pipefail
 cd "$(dirname "$0")"
 WASMTIME=v49.0.2
 SQLITE=3530400 # 3.53.4
 SQLITE_SHA3=628a44cfe82c66aed1ccbbe85a562d2e33ebe64b3288981ed76285612227934e
+CLAY=v0.14
 mkdir -p vendor
 
 if [ ! -d vendor/wasmtime ]; then
@@ -34,4 +35,13 @@ if [ ! -f vendor/sqlite/sqlite3.c ]; then
 	mkdir -p vendor/sqlite
 	cp "$deps_dir/sqlite-amalgamation-$SQLITE/sqlite3.c" "$deps_dir/sqlite-amalgamation-$SQLITE/sqlite3.h" vendor/sqlite/
 	echo "vendor/sqlite: $SQLITE"
+fi
+
+if [ ! -f vendor/clay/clay.h ]; then
+	clay_dir=$(mktemp -d)
+	curl -fL --retry 3 "https://github.com/nicbarker/clay/archive/refs/tags/$CLAY.tar.gz" | tar xz -C "$clay_dir" --strip-components=1
+	mkdir -p vendor/clay
+	cp "$clay_dir/clay.h" "$clay_dir/bindings/odin/clay-odin/clay.odin" vendor/clay/
+	rm -rf "$clay_dir"
+	echo "vendor/clay: $CLAY"
 fi
