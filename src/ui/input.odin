@@ -1,5 +1,6 @@
 package ui
 
+import "core:strings"
 import sdl "vendor:sdl3"
 
 // Folds one SDL event into the frame's input.
@@ -21,7 +22,18 @@ handle_event :: proc(ui: ^Ui, e: sdl.Event) {
 		}
 	case .MOUSE_WHEEL:
 		input.wheel += {e.wheel.x, e.wheel.y}
+	case .TEXT_INPUT:
+		if ui.typing.id.id != 0 {
+			append(&ui.typing.edits, strings.clone_from_cstring(e.text.text, context.temp_allocator))
+		}
 	case .KEY_DOWN:
+		// While typing, keys edit the text and never navigate.
+		if ui.typing.id.id != 0 {
+			if key, ok := edit_key(e.key.key, e.key.mod).?; ok {
+				append(&ui.typing.edits, key)
+			}
+			return
+		}
 		press(input, key_action(e.key.key))
 	case .GAMEPAD_BUTTON_DOWN:
 		press(input, pad_action(sdl.GamepadButton(e.gbutton.button)))

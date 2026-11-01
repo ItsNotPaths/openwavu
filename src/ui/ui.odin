@@ -2,6 +2,7 @@
 package ui
 
 import "core:math"
+import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
 
 Nav :: enum u8 {
@@ -25,7 +26,11 @@ Input :: struct {
 }
 
 Ui :: struct {
+	renderer:  ^sdl.Renderer,
+	textures:  Textures,
+	motion:    map[u32]f32,
 	input:     Input,
+	typing:    Typing,
 	size:      [2]f32,
 	dt:        f32,
 	focus:     clay.ElementId,
@@ -37,7 +42,9 @@ Widget_State :: struct {
 	hovered, focused, clicked: bool,
 }
 
-init :: proc(ui: ^Ui, size: [2]f32) {
+init :: proc(ui: ^Ui, renderer: ^sdl.Renderer, size: [2]f32) {
+	ui.renderer = renderer
+	ui.textures = bake(renderer)
 	ui.memory = make([]u8, clay.MinMemorySize())
 	arena := clay.CreateArenaWithCapacityAndMemory(uint(len(ui.memory)), raw_data(ui.memory))
 	clay.Initialize(arena, {size.x, size.y}, {handler = clay_error})
@@ -45,6 +52,9 @@ init :: proc(ui: ^Ui, size: [2]f32) {
 }
 
 destroy :: proc(ui: ^Ui) {
+	unbake(ui.textures)
+	delete(ui.motion)
+	delete(ui.typing.edits)
 	delete(ui.focusable)
 	delete(ui.memory)
 }
@@ -62,6 +72,7 @@ begin :: proc(ui: ^Ui, size: [2]f32, dt: f32) {
 end :: proc(ui: ^Ui) -> clay.ClayArray(clay.RenderCommand) {
 	commands := clay.EndLayout()
 	navigate(ui)
+	end_typing(ui)
 	pad := ui.input.pad
 	ui.input = {mouse = ui.input.mouse, mouse_down = ui.input.mouse_down, pad = pad}
 	return commands
@@ -81,9 +92,12 @@ interact :: proc(ui: ^Ui, id: clay.ElementId, nav := true) -> (s: Widget_State) 
 	return
 }
 
-// Eases v toward target; rate is roughly 1/seconds to get most of the way.
-approach :: proc(v: ^f32, target, rate, dt: f32) {
-	v^ += (target - v^) * (1 - math.exp(-rate * dt))
+// Eases a value kept per id toward target, for lifts and slides. rate is roughly 3/seconds to settle.
+ease :: proc(ui: ^Ui, id: clay.ElementId, target, rate: f32) -> f32 {
+	v := ui.motion[id.id]
+	v += (target - v) * (1 - math.exp(-rate * ui.dt))
+	ui.motion[id.id] = v
+	return v
 }
 
 // Spatial nav: move focus to the nearest focusable box in the pressed direction.
