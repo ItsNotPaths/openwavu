@@ -73,7 +73,10 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 		if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
 		if err = convert.write_moveset_rows(w, c.id, owner, m); err != "" do return err
 		if m.bank_offsets[0] < len(data) do write_bank(im, convert.embedded_owner(c.id), data[m.bank_offsets[0]:])
-		top, measured := idle_head_top(im, c, m, data)
+		skeleton, has_skeleton := character_skeleton(im, c)
+		if !has_skeleton do return fmt.tprintf("%s: skeleton did not read", c.id)
+		convert.write_skeleton_rows(w, c.id, skeleton)
+		top, measured := idle_head_top(im, c, m, data, &skeleton)
 		if !measured do return fmt.tprintf("%s: standing idle did not read", c.id)
 		if err = convert.write_stock_rows(w, c.id, char_index, m, top); err != "" do return err
 
@@ -134,7 +137,6 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 	for b, i in skeleton.bones {
 		name := i < len(SKELETON_NAMES) ? SKELETON_NAMES[i] : fmt.tprintf("helper_%d", i)
 		standard: db.Value = i < len(SKELETON_NAMES) ? SKELETON_NAMES[i] : db.Null{}
-		// (hole skeleton-bind-rows :tags importer) bones have no bind values (bon offsets, head end); the sim parses the raw bon (tk5decomp bon2bin.py, skel.c).
 		db.insert(&im.w, "bone", parts[0], i64(i), i64(b.parent), name, standard)
 	}
 	return true
@@ -149,13 +151,17 @@ largest_skeleton :: proc(sections: [][]byte) -> (skeleton: formats.Skeleton) {
 	return
 }
 
-// Head end height in the standing idle (alias 1), on the skeleton of the first costume. data: the unpacked motbin.
-idle_head_top :: proc(im: ^Import, c: formats.Character, m: formats.Motbin, data: []byte) -> (top: f32, ok: bool) {
+// The sim's skeleton: the one of the first costume.
+character_skeleton :: proc(im: ^Import, c: formats.Character) -> (s: convert.Sim_Skeleton, ok: bool) {
 	model := read_entry(im.archive, c.container + formats.GROUP_MODEL) or_return
 	sections := formats.sections(model, context.temp_allocator) or_return
-	skeleton := largest_skeleton(sections)
+	return convert.sim_skeleton(largest_skeleton(sections))
+}
+
+// Head end height in the standing idle (alias 1). data: the unpacked motbin.
+idle_head_top :: proc(im: ^Import, c: formats.Character, m: formats.Motbin, data: []byte, skeleton: ^convert.Sim_Skeleton) -> (top: f32, ok: bool) {
 	move := int(m.aliases[convert.IDLE_STAND_ALIAS])
-	if len(skeleton.bones) == 0 || move >= len(m.moves) do return
+	if move >= len(m.moves) do return
 	anim := m.moves[move].anim
 	bank_data: []byte
 	switch {

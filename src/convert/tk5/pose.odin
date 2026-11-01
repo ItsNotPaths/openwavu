@@ -13,29 +13,13 @@ Vec4 :: [4]f32
 
 IDLE_STAND_ALIAS :: 1
 
-// Skeleton A slots (sim bones.h): 0..21 body bones, 22 the head end point.
-@(private = "file")
-BONE_SPINE :: 1
 @(private = "file")
 BONE_CHEST :: 2
-@(private = "file")
-BONE_HEAD :: 4
-@(private = "file")
-BONE_PELVIS :: 13
-@(private = "file")
-BONE_R_TOE :: 17
-@(private = "file")
-BONE_L_TOE :: 21
-@(private = "file")
-BONE_HEAD_END :: 22
 @(private = "file")
 POSE_BONES :: 22
 @(private = "file")
 CHANNEL_TRUNK_POINT :: 6
 
-// bon record -> body slot (skel.c SLOT_A, first 23 records; the rest are helpers past the head end)
-@(private = "file", rodata)
-SLOT_A := [23]i8{-1, 0, 1, 2, 13, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 17, 21}
 // body slot of channels 3..22 (skel.c CHANNEL_SLOT)
 @(private = "file", rodata)
 CHANNEL_SLOT := [formats.CHANNELS]i8{-1, -1, -1, 0, 1, 13, -1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20}
@@ -45,39 +29,16 @@ TRUNK_SIDE :: f32(130)
 @(private = "file")
 TRUNK_UP :: f32(400)
 
-@(private = "file")
-Skeleton_A :: struct {
-	parent:      [BONE_HEAD_END + 1]i8,
-	euler:       [BONE_HEAD_END + 1][3]f32,
-	translation: [BONE_HEAD_END + 1][3]f32,
-}
-
 // Height of the head end point in the standing idle, mm: the mean over the loop of the sim's pose without the look-at
 // (tk5decomp tools/body.py head_top). The root takes the root and hip channels times the bon scale, as body.py does.
-head_top :: proc(bon: formats.Skeleton, idle: formats.Anim) -> f32 {
-	skeleton := skeleton_a(bon)
+head_top :: proc(skeleton: ^Sim_Skeleton, idle: formats.Anim) -> f32 {
 	sum: f64
-	for keys in idle.values do sum += f64(head_end_height(&skeleton, bon.scale, keys))
+	for keys in idle.values do sum += f64(head_end_height(skeleton, keys))
 	return f32(sum / f64(len(idle.values)))
 }
 
-// skel.c t5_skeleton_load_a, the slots up to the head end.
 @(private = "file")
-skeleton_a :: proc(bon: formats.Skeleton) -> (s: Skeleton_A) {
-	s.parent[BONE_HEAD_END] = BONE_HEAD
-	s.translation[BONE_HEAD_END][2] = bon.scale * bon.ends[0]
-	for record in 1 ..< min(len(SLOT_A), len(bon.bones)) {
-		slot := SLOT_A[record]
-		s.parent[slot] = SLOT_A[bon.bones[record].parent]
-		s.translation[slot] = bon.bones[record].translation
-		s.euler[slot] = bon.bones[record].euler
-	}
-	s.parent[0] = -1
-	return
-}
-
-@(private = "file")
-head_end_height :: proc(s: ^Skeleton_A, scale: f32, keys: [formats.CHANNELS][3]f32) -> f32 {
+head_end_height :: proc(s: ^Sim_Skeleton, keys: [formats.CHANNELS][3]f32) -> f32 {
 	locals: [BONE_HEAD_END + 1]Mat4
 	for &local, bone in locals {  // t5_rig_bind
 		local = euler_xyz(identity(), s.euler[bone])
@@ -86,10 +47,10 @@ head_end_height :: proc(s: ^Skeleton_A, scale: f32, keys: [formats.CHANNELS][3]f
 	pose := sample(keys)
 	skel_pose(&locals, s, pose)
 	root := identity()
-	root[3][1] = (keys[0][1] + keys[1][1]) * scale
+	root[3][1] = (keys[0][1] + keys[1][1]) * s.scale
 	worlds: [BONE_HEAD_END + 1]Mat4
 	for bone in 0 ..= BONE_HEAD_END {  // t5_skel_world_a, then the head end
-		parent := s.parent[bone] >= 0 ? worlds[s.parent[bone]] : root
+		parent := s.parent_a[bone] >= 0 ? worlds[s.parent_a[bone]] : root
 		worlds[bone] = multiply(parent, locals[bone])
 	}
 	return worlds[BONE_HEAD_END][3][1]
@@ -122,7 +83,7 @@ key_quat :: proc(key: Vec4) -> Vec4 {
 
 // skel.c t5_skel_pose
 @(private = "file")
-skel_pose :: proc(locals: ^[BONE_HEAD_END + 1]Mat4, s: ^Skeleton_A, pose: [formats.CHANNELS]Vec4) {
+skel_pose :: proc(locals: ^[BONE_HEAD_END + 1]Mat4, s: ^Sim_Skeleton, pose: [formats.CHANNELS]Vec4) {
 	for channel in 3 ..< formats.CHANNELS do if CHANNEL_SLOT[channel] >= 0 do quat_to_mat(&locals[CHANNEL_SLOT[channel]], pose[channel])
 	locals[BONE_CHEST] = euler_xyz(locals[BONE_CHEST], s.euler[BONE_CHEST])
 	spine_and_chest(locals, pose[CHANNEL_TRUNK_POINT][0])

@@ -247,6 +247,30 @@ CREATE TABLE body (
 	projectile      INTEGER NOT NULL   -- row of the sim's projectile list, 0: none
 );
 
+-- The sim's two skeletons by body slot (skel.c): A 0..21 body bones, 22..26 end points, then helpers;
+-- B 0..26 with its own translations, turns from A. Parent -1: the root.
+CREATE TABLE skeleton (
+	character TEXT PRIMARY KEY,
+	scale     REAL NOT NULL  -- bon scale
+);
+
+CREATE TABLE skeleton_a (
+	character TEXT NOT NULL,
+	slot      INTEGER NOT NULL,
+	parent    INTEGER NOT NULL,
+	x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
+	rx REAL NOT NULL, ry REAL NOT NULL, rz REAL NOT NULL,  -- bind turn, m = Rx Ry Rz
+	PRIMARY KEY (character, slot)
+);
+
+CREATE TABLE skeleton_b (
+	character TEXT NOT NULL,
+	slot      INTEGER NOT NULL,
+	parent    INTEGER NOT NULL,
+	x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
+	PRIMARY KEY (character, slot)
+);
+
 -- Hurtboxes: vertical cylinders on bones of skeleton B, in the order of the hit record index.
 CREATE TABLE body_hurt (
 	character TEXT NOT NULL,

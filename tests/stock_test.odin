@@ -45,7 +45,10 @@ stock_rows_match_sim_files :: proc(t: ^testing.T) {
 		m, read := formats.read_motbin(data, context.temp_allocator)
 		if !testing.expect(t, unpacked && read, name) do continue
 		testing.expect_value(t, convert.write_moveset_rows(&w, name, formats.container_owner(characters[i].container), m), "")
-		top, measured := tk5.idle_head_top(&im, characters[i], m, data)
+		skeleton, has_skeleton := tk5.character_skeleton(&im, characters[i])
+		if !testing.expect(t, has_skeleton, name) do continue
+		convert.write_skeleton_rows(&w, name, skeleton)
+		top, measured := tk5.idle_head_top(&im, characters[i], m, data, &skeleton)
 		testing.expect(t, measured, name)
 		testing.expect_value(t, convert.write_stock_rows(&w, name, i, m, top), "")
 	}
@@ -55,6 +58,8 @@ stock_rows_match_sim_files :: proc(t: ^testing.T) {
 	h: ^db.Sqlite
 	if !testing.expect(t, db.open_v2(STOCK_DB, &h, db.OPEN_READWRITE, nil) == db.OK) do return
 	defer db.close_v2(h)
+	dumper_ok := build_skeleton_dump()
+	testing.expect(t, dumper_ok, "tests/ref/skeleton_dump.c did not build")
 	for name in MOTBIN_NAMES {
 		defer free_all(context.temp_allocator)
 		file, read_err := os.read_entire_file(fmt.tprintf(TK5 + "/data/%s.t5m", name), context.temp_allocator)
@@ -93,8 +98,36 @@ stock_rows_match_sim_files :: proc(t: ^testing.T) {
 		check(t, name, "CANC pick", field(tag(file, "CANC"), CANCEL_SIZE, CANCEL_PICK, 2), rows(h, name, "SELECT tracking_pick FROM cancel WHERE character = ? ORDER BY list, pos", pack_u16))
 		check(t, name, "GRPC pick", field(tag(file, "GRPC"), CANCEL_SIZE, CANCEL_PICK, 2), rows(h, name, "SELECT tracking_pick FROM group_cancel WHERE character = ? ORDER BY list, pos", pack_u16))
 		check(t, name, "XPRP", tag(file, "XPRP"), rows(h, name, "SELECT unk_00, unk_02, unk_04 >> 16, unk_04 & 65535 FROM extra_prop WHERE character = ? ORDER BY list, pos", pack_u16x4))
+		if dumper_ok do check(t, name, "skeleton", sim_skeleton(name), skeleton_rows(h, name))
 		check(t, name, "HITS", tag(file, "HITS"), rows(h, name, "SELECT attack_bones, slots, launches FROM move_hits WHERE character = ? ORDER BY move", pack_move_hits))
 	}
+}
+
+SKELETON_DUMP :: "build/skeleton_dump"
+
+@(private = "file")
+build_skeleton_dump :: proc() -> bool {
+	sim :: "modules/tk5/sim/"
+	state, _, _, err := os.process_exec({command = {"cc", "-std=c23", "-fwrapv", "-ffp-contract=off", "-Imodules/tk5", "-o", SKELETON_DUMP,
+		"tests/ref/skeleton_dump.c", sim + "skel.c", sim + "math.c", sim + "quat.c", sim + "vec.c", "-lm"}}, context.temp_allocator)
+	return err == nil && state.exit_code == 0
+}
+
+// What the sim's loader builds from the character's .t5b (tests/ref/skeleton_dump.c).
+@(private = "file")
+sim_skeleton :: proc(name: string) -> []byte {
+	file := fmt.tprintf(TK5 + "/data/%s.t5b", name)
+	state, stdout, _, err := os.process_exec({command = {SKELETON_DUMP, file}}, context.temp_allocator)
+	return err == nil && state.exit_code == 0 ? stdout : nil
+}
+
+@(private = "file")
+skeleton_rows :: proc(h: ^db.Sqlite, char: string) -> []byte {
+	out := make([dynamic]byte, context.temp_allocator)
+	append(&out, ..rows(h, char, "SELECT scale FROM skeleton WHERE character = ?", pack_f32))
+	append(&out, ..rows(h, char, "SELECT parent, x, y, z, rx, ry, rz FROM skeleton_a WHERE character = ? ORDER BY slot", pack_bone))
+	append(&out, ..rows(h, char, "SELECT parent, x, y, z FROM skeleton_b WHERE character = ? ORDER BY slot", pack_bone))
+	return out[:]
 }
 
 @(private = "file")
@@ -173,6 +206,10 @@ pack_gaze :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {put_f32(out, column_f32(s, 
 pack_hit_pair :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {for c in i32(0) ..< 4 do put(out, 1, column_u32(s, c))}
 @(private = "file")
 pack_move_hits :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {put(out, 4, column_u32(s, 0)); put(out, 1, column_u32(s, 1)); put(out, 1, column_u32(s, 2)); pad(out, 2)}
+@(private = "file")
+pack_f32 :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {put_f32(out, column_f32(s, 0))}
+@(private = "file")
+pack_bone :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {put(out, 1, column_u32(s, 0)); for c in i32(1) ..< db.column_count(s) do put_f32(out, column_f32(s, c))}
 @(private = "file")
 pack_floats :: proc(s: ^db.Stmt, out: ^[dynamic]byte) {for c in i32(0) ..< 5 do put_f32(out, column_f32(s, c))}
 

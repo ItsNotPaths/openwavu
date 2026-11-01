@@ -30,6 +30,7 @@ foreign sqlite {
 	bind_double :: proc(stmt: ^Stmt, i: c.int, v: f64) -> c.int ---
 	bind_text :: proc(stmt: ^Stmt, i: c.int, v: [^]u8, n: c.int, destructor: rawptr) -> c.int ---
 	bind_blob :: proc(stmt: ^Stmt, i: c.int, v: rawptr, n: c.int, destructor: rawptr) -> c.int ---
+	column_count :: proc(stmt: ^Stmt) -> c.int ---
 	column_int64 :: proc(stmt: ^Stmt, i: c.int) -> i64 ---
 	column_double :: proc(stmt: ^Stmt, i: c.int) -> f64 ---
 	column_text :: proc(stmt: ^Stmt, i: c.int) -> cstring ---
