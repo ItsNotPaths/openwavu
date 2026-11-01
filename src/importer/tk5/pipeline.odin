@@ -180,17 +180,26 @@ idle_head_top :: proc(im: ^Import, c: formats.Character, m: formats.Motbin, data
 	return convert.head_top(skeleton, idle), true
 }
 
-// Every anim of a body bank as anims/<owner>/<idx>.anim.
+// Every anim of a body bank as anims/<owner>/<idx>.anim. Ids that share a record share the file of the first one.
 write_bank :: proc(im: ^Import, owner: string, data: []byte) {
 	bank, ok := formats.read_bank(data)
 	if !ok || bank.count == 0 do return
 	dir := join(im.root, "anims", owner)
 	if !make_dir(dir) do return
+	Written :: struct {file: string, frames: int}
+	written := make(map[int]Written, context.temp_allocator)  // by record start
 	for i in 0 ..< bank.count {
+		start := formats.anim_start(bank, i)
+		if w, shared := written[start]; shared {
+			db.insert(&im.w, "anim", owner, i64(i), i64(w.frames), w.file)
+			continue
+		}
 		a, decoded := formats.read_anim(bank, i, context.temp_allocator)
 		if !decoded do continue
 		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
-		if convert.write_anim(join(im.root, file), a) do db.insert(&im.w, "anim", owner, i64(i), i64(a.frames), file)
+		if !convert.write_anim(join(im.root, file), a) do continue
+		written[start] = {file, a.frames}
+		db.insert(&im.w, "anim", owner, i64(i), i64(a.frames), file)
 	}
 }
 

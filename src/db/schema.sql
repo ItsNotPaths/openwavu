@@ -56,7 +56,7 @@ CREATE TABLE costume_part (
 	FOREIGN KEY (character, costume) REFERENCES costume(character, id)
 );
 
-CREATE TABLE anim (
+CREATE TABLE anim (  -- rows with the same file are one anim: the game compares them by record
 	character TEXT NOT NULL,  -- bank owner: a character, <char>/embedded, or common
 	idx       INTEGER NOT NULL,
 	frames    INTEGER NOT NULL,

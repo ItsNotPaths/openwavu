@@ -34,9 +34,12 @@ read_bank :: proc(data: []byte) -> (bank: Anim_Bank, ok: bool) {
 	return {data, count, offsets}, true
 }
 
+// Where anim `index` starts in the bank (bit 0 is a flag). Ids with the same start are one record: the game compares them.
+anim_start :: proc(bank: Anim_Bank, index: int) -> int {return int(le_u32(bank.data, bank.offsets + 4 * index) &~ 1)}
+
 read_anim :: proc(bank: Anim_Bank, index: int, allocator := context.allocator) -> (a: Anim, ok: bool) {
 	if index < 0 || index >= bank.count do return {}, false
-	start := int(le_u32(bank.data, bank.offsets + 4 * index) &~ 1)
+	start := anim_start(bank, index)
 	if start + ANIM_BLOCKS > len(bank.data) do return {}, false
 	h := bank.data[start:]
 	a.frames = int(le_u16(h, 0))
