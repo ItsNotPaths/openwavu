@@ -20,9 +20,10 @@ main :: proc() {
 	}
 	defer render.destroy(&r)
 	u: ui.Ui
-	ui.init(&u, render.size(&r))
+	ui.init(&u, r.r2d, render.size(&r))
 	defer ui.destroy(&u)
 	l := Launcher{packs = titlepack.installed()}
+	defer launcher_destroy(&l)
 
 	last := sdl.GetTicksNS()
 	for !l.quit {
@@ -45,12 +46,12 @@ main :: proc() {
 		ui.begin(&u, render.size(&r), dt)
 		launcher(&l, &u, &r)
 		commands := ui.end(&u)
-		render.begin_frame(&r, ui.BACKGROUND)
-		ui.draw(r.r2d, commands)
+		render.begin_frame(&r, ui.color(ui.BACKGROUND))
+		ui.draw(&u, commands)
 		render.end_frame(&r)
 
-		if pack, picked := l.picked.?; picked {
-			l.picked = nil
+		if pack, picked := l.play.?; picked {
+			l.play = nil
 			play(&r, l.packs[pack])
 		}
 	}

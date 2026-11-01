@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:strings"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
 import "../render"
@@ -8,36 +9,149 @@ import "../titlepack"
 import "../ui"
 
 Launcher :: struct {
-	packs:     []titlepack.Title_Pack,
-	picked:    Maybe(int),
-	bar_shown: f32,
-	quit:      bool,
+	packs:    []titlepack.Title_Pack,
+	selected: union {
+		Install_Screen,
+		int,  // an installed pack
+	},
+	source:   Install_Source,
+	browser:  Browser,
+	url:      strings.Builder,
+	search_installed, search_store: strings.Builder,
+	play:     Maybe(int),
+	quit:     bool,
 }
 
+Install_Screen :: struct {}
+
+launcher_destroy :: proc(l: ^Launcher) {
+	browser_destroy(&l.browser)
+	strings.builder_destroy(&l.url)
+	strings.builder_destroy(&l.search_installed)
+	strings.builder_destroy(&l.search_store)
+}
+
+Install_Source :: enum u8 {
+	None,
+	Game_Files,
+	Url,
+}
+
+// Installed packs left, the store right, whatever is selected in the middle; columns have no panel.
+// (hole launcher-backdrop :tags game :needs pack-front) the spotlight always shows; a picked pack's front backgrounds should replace it.
 launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
-	if clay.UI()({id = clay.ID("Root"), layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}}}) {
-		pack_grid(l, u)
+	if clay.UI()({
+		id = clay.ID("Root"),
+		layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}},
+		custom = ui.painted(ui.Spotlight{}),
+	}) {
+		installed_column(l, u)
+		center(l, u)
+		store_column(l, u)
 		top_bar(l, u, r)
+	}
+}
+
+installed_column :: proc(l: ^Launcher, u: ^ui.Ui) {
+	if clay.UI()(side_column()) {
+		column_head(u, "INSTALLED", clay.ID("SearchInstalled"), &l.search_installed)
+		if clay.UI()(slot_list(clay.ID("InstalledList"))) {
+			for pack, i in l.packs {
+				if !matches(pack.id, strings.to_string(l.search_installed)) {
+					continue
+				}
+				picked, is_pack := l.selected.(int)
+				if ui.slot(u, clay.ID("Pack", u32(i)), pack.id, nil, is_pack && picked == i) {
+					l.selected = i
+				}
+			}
+			_, installing := l.selected.(Install_Screen)
+			if ui.add_slot(u, clay.ID("Add"), installing) {
+				l.selected = Install_Screen{}
+			}
+		}
+	}
+}
+
+// (hole store-list :tags (game net) :needs registry-verify) the store column lists nothing; no pack listing from the master server.
+store_column :: proc(l: ^Launcher, u: ^ui.Ui) {
+	if clay.UI()(side_column()) {
+		column_head(u, "STORE", clay.ID("SearchStore"), &l.search_store)
+		if clay.UI()(slot_list(clay.ID("StoreList"))) {}
+	}
+}
+
+center :: proc(l: ^Launcher, u: ^ui.Ui) {
+	if clay.UI()({id = clay.ID("Center"), layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}}}) {
+		switch pick in l.selected {
+		case Install_Screen:
+			install_screen(l, u)
+		case int:
+			pack_page(l, u, pick)
+		}
+	}
+}
+
+install_screen :: proc(l: ^Launcher, u: ^ui.Ui) {
+	if clay.UI()({
+		layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}, padding = {48, 48, 40, 40}, childGap = 20, layoutDirection = .TopToBottom},
+	}) {
+		ui.label("Install a pack", ui.TITLE_SIZE, engraved = true)
+		if clay.UI()(ui.row(18, {.Left, .Top})) {
+			if ui.card(u, clay.ID("FromGameFiles"), "Game files", "Build packs from your own TK5 import. Needs the game files on disk.", l.source == .Game_Files) {
+				l.source = .Game_Files
+			}
+			if ui.card(u, clay.ID("FromUrl"), "URL", "A direct pack.tar link. Not reviewed. Offline play only.", l.source == .Url) {
+				l.source = .Url
+			}
+		}
+		switch l.source {
+		case .None:
+		case .Game_Files:
+			browser(&l.browser, u)
+		case .Url:
+			if clay.UI()(ui.row(8)) {
+				submitted := ui.field(u, clay.ID("Url"), &l.url, "https://.../pack.tar")
+				if ui.button(u, clay.ID("Download"), "Download") || submitted {
+					install_pack()
+				}
+			}
+			ui.label("URL packs run code nobody reviewed. They never show a front and can't join online play.", tint = ui.WARN)
+		}
+	}
+}
+
+// (hole pack-front :tags (game titlepack) :needs titlepack-installed) a picked pack shows only its name and Play: its front.txt is not read or drawn.
+pack_page :: proc(l: ^Launcher, u: ^ui.Ui, pack: int) {
+	if clay.UI()({
+		layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}, childGap = 10, childAlignment = {.Center, .Center}, layoutDirection = .TopToBottom},
+	}) {
+		ui.label(l.packs[pack].id, 26, engraved = true)
+		if ui.button(u, clay.ID("Play"), "Play") {
+			l.play = pack
+		}
 	}
 }
 
 // Slides in when the mouse is near the top edge.
 top_bar :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
-	near := !u.input.pad && u.input.mouse.y < ui.BAR_HEIGHT * 1.5
-	ui.approach(&l.bar_shown, near ? 1 : 0, 12, u.dt)
+	id := clay.ID("TopBar")
+	near := !u.input.pad && u.input.mouse.y < ui.BAR_REVEAL
+	shown := ui.ease(u, id, near ? 1 : 0, ui.BAR_RATE)
 	if clay.UI()({
-		id = clay.ID("TopBar"),
+		id = id,
 		layout = {
 			sizing = {clay.SizingFixed(u.size.x), clay.SizingFixed(ui.BAR_HEIGHT)},
 			padding = {16, 4, 0, 0},
+			childGap = 4,
 			childAlignment = {.Left, .Center},
 		},
-		backgroundColor = ui.BAR_FILL,
-		floating = {attachTo = .Root, offset = {0, (l.bar_shown - 1) * ui.BAR_HEIGHT}, zIndex = 1},
+		custom = ui.painted(ui.Bar{}),
+		floating = {attachTo = .Root, offset = {0, (shown - 1) * (ui.BAR_HEIGHT + 12)}, zIndex = 1},
 	}) {
-		ui.label(VERSION, color = ui.TEXT_DIM)
+		ui.label(VERSION, tint = ui.TEXT_DIM)
 		if clay.UI()({floating = {attachTo = .Parent, attachment = {.CenterCenter, .CenterCenter}}}) {
-			ui.label(clock())
+			ui.label(clock(), engraved = true)
 		}
 		ui.spacer()
 		// (hole launcher-settings :tags game :sev gap) the settings button opens nothing.
@@ -51,28 +165,27 @@ top_bar :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 	}
 }
 
-// Installed packs as square tiles, wrapped into rows, then the install tile.
-pack_grid :: proc(l: ^Launcher, u: ^ui.Ui) {
-	columns := max(1, int((u.size.x - 2 * ui.PAGE_PAD + ui.TILE_GAP) / (ui.TILE_SIZE + ui.TILE_GAP)))
-	count := len(l.packs) + 1
-	if clay.UI()(ui.scroll(clay.ID("Packs"), ui.PAGE_PAD, ui.TILE_GAP)) {
-		for first := 0; first < count; first += columns {
-			if clay.UI()(ui.row(ui.TILE_GAP)) {
-				for i in first ..< min(first + columns, count) {
-					if i == len(l.packs) {
-						if ui.tile(u, clay.ID("Install"), "+ Install") {
-							install_pack()
-						}
-					} else if ui.tile(u, clay.ID("Pack", u32(i)), l.packs[i].id) {
-						l.picked = i
-					}
-				}
-			}
-		}
+side_column :: proc() -> clay.ElementDeclaration {
+	return {layout = {sizing = {clay.SizingFixed(ui.COLUMN_WIDTH), clay.SizingGrow({})}, layoutDirection = .TopToBottom}}
+}
+
+column_head :: proc(u: ^ui.Ui, title: string, search: clay.ElementId, text: ^strings.Builder) {
+	if clay.UI()({layout = {sizing = {width = clay.SizingGrow({})}, padding = {16, 16, 16, 12}, childGap = 8, layoutDirection = .TopToBottom}}) {
+		ui.label(title, ui.COLUMN_SIZE, ui.TITLE)
+		ui.field(u, search, text, "Search")
 	}
 }
 
-// (hole titlepack-install :tags (titlepack game) :needs titlepack-format) the install tile does nothing: no file picker, no verify, no copy into the packs folder.
+slot_list :: proc(id: clay.ElementId) -> clay.ElementDeclaration {
+	return ui.scroll(id, {16, 16, 6, 24}, ui.SLOT_GAP)
+}
+
+// Case-blind substring match; an empty search matches everything.
+matches :: proc(name, search: string) -> bool {
+	return strings.contains(strings.to_lower(name, context.temp_allocator), strings.to_lower(search, context.temp_allocator))
+}
+
+// (hole titlepack-install :tags (titlepack game) :needs titlepack-format) install does nothing: no file picker, no URL download, no verify, no copy into the packs folder.
 install_pack :: proc() {}
 
 clock :: proc() -> string {

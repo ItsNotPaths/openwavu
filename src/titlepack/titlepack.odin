@@ -51,3 +51,8 @@ resolve_params :: proc(declared: []Param, layers: []map[string]Param_Set) -> (fi
 lobby_hash :: proc(manifest_hash: [32]u8, final: map[string]f64) -> (hash: [32]u8) {
 	return {}
 }
+
+// (hole titlepack-synth :tags (titlepack importer) :needs titlepack-format) the importer's output is not packed into a stock title pack: no tar writer, no pack.toml.
+stock_pack :: proc(import_dir, out_path: string) -> (ok: bool) {
+	return false
+}
