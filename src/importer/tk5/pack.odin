@@ -10,7 +10,7 @@ PACK_ID :: "tekken5dr"
 STOCK_PACK :: PACK_ID + ".tar"
 TITLE :: "Tekken 5: Dark Resurrection"
 
-// (hole stock-modules :tags (importer tk5mod) :needs module-build) the stock pack's gameplay.wasm and app.wasm are empty modules; the ones built from modules/tk5 are not embedded in openwavu.
+// (hole stock-modules :tags (importer tk5mod) :needs module-build) the stock pack's gameplay.wasm, gamerender.wasm and app.wasm are empty modules; the ones built from modules/tk5 are not embedded in openwavu.
 EMPTY_MODULE :: "\x00asm\x01\x00\x00\x00"
 
 // The game's stock title pack: packs_dir/tekken5dr.tar. inputs are recorded so an openwavu update can rebuild it.
@@ -55,6 +55,7 @@ write_pack_files :: proc(stage: string, inputs: []string) -> (err: string) {
 		{"pack.toml", strings.to_string(toml)},
 		{"front.txt", fmt.tprintfln("title %s", TITLE)},
 		{"gameplay.wasm", EMPTY_MODULE},
+		{"gamerender.wasm", EMPTY_MODULE},
 		{"app.wasm", EMPTY_MODULE},
 	}
 	for f in files {

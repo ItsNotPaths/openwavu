@@ -73,7 +73,7 @@ check_stock_tar :: proc(t: ^testing.T) {
 	index, ok := titlepack.read_tar(data)
 	if !testing.expect(t, ok, "stock pack did not read") do return
 	defer titlepack.destroy_tar(index)
-	for path in ([]string{"pack.toml", "front.txt", "gameplay.wasm", "app.wasm", "tk5.db", "ui/pic1.png", "anims/kazuya/0.anim"}) {
+	for path in ([]string{"pack.toml", "front.txt", "gameplay.wasm", "gamerender.wasm", "app.wasm", "tk5.db", "ui/pic1.png", "anims/kazuya/0.anim"}) {
 		entry, has := index[path]
 		if !testing.expect(t, has, path) do continue
 		file, _ := os.read_entire_file(fmt.tprintf("build/test_packs/tekken5dr/%s", path), context.temp_allocator)

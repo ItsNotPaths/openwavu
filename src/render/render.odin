@@ -1,4 +1,4 @@
-// SDL3 GPU renderer: parts posed from the sim's bone matrices, stage scenes.
+// SDL3 GPU renderer: draws the 3D scene the app module sends (docs/app.md).
 // 2D (menus, UI) goes through an SDL_Renderer on the same GPU device.
 package render
 
@@ -8,9 +8,12 @@ Renderer :: struct {
 	window: ^sdl.Window,
 	gpu:    ^sdl.GPUDevice,
 	r2d:    ^sdl.Renderer,
+	scene:  Scene,  // the last scene the app sent; kept until the next one
 }
 
 Model :: struct {}
+
+Scene :: struct {}
 
 init :: proc(title: cstring, width, height: i32) -> (r: Renderer, ok: bool) {
 	if !sdl.Init({.VIDEO, .GAMEPAD}) {
@@ -62,12 +65,12 @@ load_glb :: proc(r: ^Renderer, path: string) -> (m: Model, ok: bool) {
 	return {}, false
 }
 
-// (hole render-fighter :tags render :needs (render-gpu glb-loader world-memory)) fighters are not drawn from the bone matrices in the world.
-draw_fighter :: proc(r: ^Renderer, parts: []Model, bones: []matrix[4, 4]f32) {}
+// The whole scene of one frame, from ow_scene_submit; replaces the last one.
+// (hole scene-api :tags (render sdk)) the host does not copy a submitted scene or resolve its asset ids and node id strings.
+scene_submit :: proc(r: ^Renderer, scene: []byte) {}
 
-// (hole render-stage :tags render :needs (render-gpu glb-loader)) stages are not drawn; _DRWOFF_ meshes must start hidden.
-draw_stage :: proc(r: ^Renderer, stage: Model) {}
-
-// (hole hand-pose :tags render :needs (render-fighter visual-view face-anims)) the visual skeleton from ow_visual_view (fingers, face, eyes, head tilt over the hitbox skeleton) is not drawn; only the sim pose is.
-// (hole render-api :tags (render sdk) :needs render-gpu) the app module has no host draw API: a 2D draw list, 3D fighter (loadout, anim), mesh and stage primitives, body slot swaps, material params.
-draw_list :: proc(r: ^Renderer, commands: []byte) {}
+// alpha: how far the display is between the last two sim ticks.
+// (hole render-fighter :tags render :needs (render-gpu glb-loader scene-api)) skinned scene nodes are not drawn from their bones (position, rotation, scale).
+// (hole render-stage :tags render :needs (render-gpu glb-loader scene-api)) mesh scene nodes are not drawn; hidden sub-meshes and _DRWOFF_ meshes are not skipped.
+// (hole scene-blend :tags render :needs scene-api) no blending between the scenes of the last two sim ticks: nodes matched by id, bones, camera, clip times, fx ages; no-blend flag, gameplay class and the fps setting.
+draw_scene :: proc(r: ^Renderer, alpha: f32) {}

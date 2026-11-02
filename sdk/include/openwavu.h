@@ -1,6 +1,6 @@
-// openwavu module SDK: the host imports (net, saves, content, input, audio, render, fx, rand, params,
-// events) and the exports of the gameplay and app modules. The gameplay module has two parts: the sim
-// (deterministic, rolled back) and the visual (display-only fighter animation, outside the snapshot). Each module owns its memory.
+// openwavu module SDK: the host imports (net, saves, content, input, scene, rand, params, events) and the
+// exports of sim and presentation modules. Presentation modules also call allowlisted SDL3 functions directly.
+// The pack's entry module (pack.toml main) runs the others and starts matches (docs/app.md). Each module owns its memory.
 // Strings are OwStr views (length + bytes, no NUL); they cross the import boundary as (pointer, length)
 // into the calling module's memory.
 #ifndef OPENWAVU_H
@@ -51,12 +51,13 @@ enum {
 // Both peers report; the server cross-checks. Ignored during resimulation.
 OW_IMPORT(event) void ow_event(uint32_t kind, int32_t a, int32_t b);
 
-// (hole cue-api :tags (sdk sim) :needs world-memory) no ow_cue import (fx, sound, voice, camera) and no host table that matches cues by (frame, key) across rollback and replay seeks.
-
-// Host imports, app only.
+// Host imports, presentation modules.
 
 // The sim view of the last frame; returns its length.
 OW_IMPORT(view) int32_t ow_view(void *buf, uint32_t cap);
+// The whole 3D scene of this frame; the host keeps it until the next one (docs/app.md).
+// (hole scene-api :tags (render sdk)) no OwScene layout (version, camera, lights, fog, nodes, fx entries), no ow_scene_submit or ow_asset import.
+OW_IMPORT(scene_submit) void ow_scene_submit(const void *scene, uint32_t size);
 
 // Sim exports. Inside rollback: the host snapshots [ow_sim_state, + ow_sim_state_size) plus globals.
 
@@ -68,23 +69,29 @@ OW_EXPORT(ow_sim_state_size) uint32_t ow_sim_state_size(void);
 OW_EXPORT(ow_sim_view) const void *ow_sim_view(void);
 OW_EXPORT(ow_sim_view_size) uint32_t ow_sim_view_size(void);
 
-// Visual exports. Outside rollback: once per displayed frame, after any resimulation and the newest sim step.
-// Reads the sim view only; never writes sim state.
+// A bot for one side: its pad bits for the next tick, like a player pressing buttons. Called once per real tick,
+// never in a resimulation; its state is outside the snapshot.
+OW_EXPORT(ow_bot_pad) uint32_t ow_bot_pad(uint32_t side);
 
-OW_EXPORT(ow_visual_init) int32_t ow_visual_init(void);
-OW_EXPORT(ow_visual_step) void ow_visual_step(float dt);
-OW_EXPORT(ow_visual_reset) void ow_visual_reset(void);  // replay seek: start fresh from the current view
-// The posed visual skeletons, for the renderer.
-// (hole visual-view :tags (sdk render) :needs render-api) the layout of the visual view (bone matrices per fighter) is not fixed.
-OW_EXPORT(ow_visual_view) const void *ow_visual_view(void);
-OW_EXPORT(ow_visual_view_size) uint32_t ow_visual_view_size(void);
+// Host imports, entry module only. The host sends state, the entry module sends intents.
 
-// App exports. Outside rollback, once per rendered frame.
+// The host's state, copied in each frame: connection, server list, lobby, match state and result.
+// (hole host-view :tags (sdk game) :needs app-host) no host view layout and no ow_host_view import.
+OW_IMPORT(host_view) int32_t ow_host_view(void *buf, uint32_t cap);
+// An offline match of a pack.toml mode. bot_sides: bit per side played by ow_bot_pad.
+// (hole match-local :tags (sdk game) :needs (app-host pack-modes)) the host does not start a mode's sim and presenter with loadouts and bot sides, give the presenter the scene, or hand back to the entry module at the end.
+OW_IMPORT(match_local) int32_t ow_match_local(const char *mode, uint32_t mode_len, uint32_t bot_sides,
+	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len);
+// (hole app-modules :tags (sdk game wasm) :needs app-host) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.
+// (hole lobby-intents :tags (sdk net) :needs (host-view server-lobby)) no server refresh, lobby join, create, leave, or ready with a loadout.
+// (hole save-imports :tags (sdk game) :needs app-host) no ow_save_read or ow_save_write on the pack save (docs/packs.md).
 
-OW_EXPORT(ow_app_init) int32_t ow_app_init(void);
-OW_EXPORT(ow_app_frame) void ow_app_frame(float dt);
-// A host event: a lobby list, a join result, a match end. kind and its data are not fixed yet.
-// (hole app-events :tags (sdk game) :needs app-host) host events to the app have no kinds or payload format.
-OW_EXPORT(ow_app_event) void ow_app_event(uint32_t kind, int32_t a, int32_t b);
+// Presentation exports. Outside rollback, once per rendered frame.
+
+OW_EXPORT(ow_init) int32_t ow_init(void);
+// cmdbuf: the frame's GPU command buffer id; the host draws the scene and the 2D renderer after this returns.
+OW_EXPORT(ow_frame) void ow_frame(float dt, uint32_t cmdbuf);
+// (hole app-events :tags (sdk game) :needs app-host) events to presentation modules have no kinds or payload format: filtered SDL key, mouse and text events, messages from ow_module_send.
+OW_EXPORT(ow_on_event) void ow_on_event(uint32_t kind, const void *data, uint32_t size);
 
 #endif

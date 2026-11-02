@@ -1,6 +1,5 @@
-// Stock TK5 app: menus and HUD. Outside rollback; reads the sim view.
+// Stock TK5 entry module (app.wasm): the menus. Reads the host view, sends intents.
 #include "openwavu.h"
 
-// (hole mod-ui :tags tk5mod :needs (render-api sim-view) :sev gap) no stock HUD: health, timer, round marks.
-// (hole mod-menus :tags tk5mod :needs (sdk-ui app-host) :sev gap) no stock menus: main menu, server and lobby lists, character select, customization.
+// (hole mod-menus :tags tk5mod :needs (sdk-ui host-view match-local) :sev gap) no stock menus: main menu, character select vs the CPU; later server and lobby lists, customization.
 OW_EXPORT(ow_ui_step) void ow_ui_step(void) {}

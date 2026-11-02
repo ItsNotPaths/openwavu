@@ -9,7 +9,7 @@ import "../sim"
 import "../titlepack"
 
 // Runs a match until Escape or window close, then returns to the launcher.
-// (hole game-loop :tags game :needs (pack-open fighter-data-load sim-step render-fighter render-stage input-pad) :sev blocker) no playable local match.
+// (hole game-loop :tags game :needs (pack-open fighter-data-load sim-step render-fighter render-stage input-pad mod-scene mod-ui mod-menus match-local bot-input stock-modules) :sev blocker) no offline match vs the CPU in the stock pack, started from its menus.
 play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack) {
 	pack, ok := content.open_pack("packs/tekken5dr.tar")
 	if !ok {
@@ -25,9 +25,11 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack) {
 				return
 			}
 		}
+		// (hole fixed-step :tags game :needs sim-step) the sim steps once per displayed frame; no fixed 60 Hz step with the display at the user's fps and input latched into the next tick.
+		// (hole bot-input :tags game :needs (cpu-bot sim-step)) a bot side's pad does not come from ow_bot_pad.
 		sim.step(w, {input.poll(0), input.poll(1)})
 		render.begin_frame(r, {0, 0, 0, 1})
-		render.draw_fighter(r, nil, nil)
+		render.draw_scene(r, 1)
 		render.end_frame(r)
 	}
 }

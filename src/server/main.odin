@@ -1,4 +1,5 @@
-// openwavu-server: hosts lobbies that run title packs. It has no game data and runs no pack code.
+// openwavu-server: a daemon and CLI that hosts lobbies of title packs. Relay mode runs no pack code; authority mode
+// runs only a mode's sim module and the files it reads.
 package server
 
 import "core:fmt"

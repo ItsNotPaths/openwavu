@@ -1,15 +1,6 @@
-// Host fx: plays effect defs (sprites, meshes, ribbons, bursts at visual bones). The app spawns directly, the sim through cues.
+// Host fx: draws the fx entries of the scene (effect def, anchor, age, seed). The app builds the entries; the host keeps no fx state.
 package render
 
-Fx :: distinct u32
-
-Fx_Attach :: struct {
-	fighter, bone: i32,  // fighter -1: world position
-	position:      [3]f32,
-}
-
 // (hole fx-spec :tags (render content)) no effect def schema (elements, curves, inputs; ws.md Decisions), drafted from what TK5 EFP uses.
-// (hole fx-api :tags (render sdk) :needs (render-gpu cue-api fx-spec visual-view)) no ow_fx_spawn/param/kill; effects are not played or attached to visual bones.
-fx_spawn :: proc(r: ^Renderer, def: u32, at: Fx_Attach, frame: u32, key: u32) -> Fx {
-	return 0
-}
+// (hole fx-draw :tags render :needs (render-gpu fx-spec scene-api)) fx entries are not drawn: no effect def played at an age and seed, at a node bone or a world point.
+draw_fx :: proc(r: ^Renderer) {}

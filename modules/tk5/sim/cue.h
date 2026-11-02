@@ -39,6 +39,7 @@ typedef struct {
 } T5Cue;
 
 // A null cue sends nothing.
+// (hole cue-ring :tags (tk5mod sim)) cues go to a callback; no ring of the last N frames' cues (frame, counter, cue) in the sim state for the view.
 typedef struct {
     void (*cue)(void *context, T5Cue cue);  // called once per cue sent
     void *context;

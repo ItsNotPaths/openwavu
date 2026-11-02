@@ -19,7 +19,6 @@ create :: proc(module: ^wasm.Module, params: map[string]f64, loadouts: [2][]byte
 }
 
 // (hole sim-step :tags sim :needs world-memory :sev blocker) the host does not call the gameplay module's sim step export each frame.
-// (hole visual-step :tags sim :needs sim-step) the host does not call ow_visual_step once per displayed frame after the sim step, nor ow_visual_reset on a replay seek.
 step :: proc(w: ^World, inputs: [2]Input) {}
 
 // (hole module-snapshot :tags (sim net) :needs (world-memory snapshot-range) :sev blocker) no save/restore of the gameplay module's exported mutable range plus its globals.
@@ -31,8 +30,8 @@ restore :: proc(w: ^World, buf: []byte) -> (ok: bool) {
 	return false
 }
 
-// The view the app reads: the sim's ow_view export, copied into the app module each frame.
-// (hole sim-view :tags (sim game) :needs (world-memory app-host)) the sim view is not copied into the app module.
+// The view presentation modules read: the sim's ow_sim_view export, copied in each frame.
+// (hole sim-view :tags (sim game) :needs (world-memory app-host)) the sim view is not copied into the match presenter.
 view :: proc(w: ^World) -> []byte {
 	return nil
 }

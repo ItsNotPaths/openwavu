@@ -21,9 +21,17 @@ Param_Set :: struct {
 	min, max: f64,
 }
 
+// A match mode: the sim module and the presentation module that draws it.
+Mode :: struct {
+	name, sim, presenter: string,
+}
+
 Title_Pack :: struct {
 	path:              string,  // the tar
 	id, name, version: string,
+	// (hole pack-modes :tags titlepack) pack.toml main (the entry module) and [modes.*] are not read, and the stock pack does not write them.
+	main:              string,
+	modes:             []Mode,
 	// (hole pack-base :tags titlepack) bases are not checked; a pack whose base the player lacks, or has at another version, fails inside the sim, not at join.
 	bases:             []string,  // pack ids, bottom first; a stock pack has none
 }

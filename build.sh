@@ -33,7 +33,7 @@ if [ ! -f build/libow_input.a ] || [ sdk/include/ow_input.h -nt build/libow_inpu
 	ar rcs build/libow_input.a build/ow_input.o
 fi
 odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict-style
-# (hole module-build :tags (wasm tk5mod) :needs ow-cli) the stock gameplay.wasm and app.wasm are not built from modules/tk5 with ow build; the TK5 core needs -fwrapv -ffp-contract=off -fno-fast-math there too.
+# (hole module-build :tags (wasm tk5mod) :needs ow-cli) the stock gameplay.wasm, gamerender.wasm and app.wasm are not built from modules/tk5 with ow build; the TK5 core needs -fwrapv -ffp-contract=off -fno-fast-math there too.
 odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/sdl3_ttf"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style

@@ -1,5 +1,5 @@
-// TK5 fx helper (SDK): maps move effect data to keyed ow_fx_spawn calls from the sim.
+// Stock TK5 presenter (gamerender.wasm): turns the fx cues in the view's cue ring into scene fx entries. Outside rollback.
 #include "openwavu.h"
 
-// (hole mod-effects :tags tk5mod :needs (fx-api efp-import) :sev gap) moves do not spawn the imported TK5 effects through cues.
+// (hole mod-effects :tags tk5mod :needs (fx-draw efp-import cue-ring mod-scene) :sev gap) no fx entries from cues: effect def per property, anchor, age, seed from the cue counter.
 OW_EXPORT(ow_effects_step) void ow_effects_step(void) {}
