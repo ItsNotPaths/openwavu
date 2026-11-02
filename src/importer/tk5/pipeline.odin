@@ -40,8 +40,8 @@ Progress :: struct {
 	done, total: int,
 }
 
-// One step per character and stage, one for the rest, one for the pack file.
-PROGRESS_STEPS :: len(formats.CHARACTERS) + formats.STAGE_COUNT + 2
+// One step per character, stage, 2D art entry and font, one for the select renders, one for the rest, one for the pack file.
+PROGRESS_STEPS :: len(formats.CHARACTERS) + formats.STAGE_COUNT + len(formats.ART_ENTRIES) + len(formats.FONTS) + 3
 
 // Archive -> the stock pack's files under root.
 run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string) {
@@ -338,6 +338,7 @@ import_images :: proc(im: ^Import) {
 		if err == nil do write_image(im, name, data)
 	}
 	for art in formats.ART_ENTRIES {
+		defer step(im)
 		defer free_all(context.temp_allocator)
 		data := read_entry(im.archive, art.index) or_continue
 		parts, is_container := formats.sections(data, context.temp_allocator)
@@ -354,6 +355,7 @@ import_images :: proc(im: ^Import) {
 		for section, i in parts do write_art(im, fmt.tprintf("%s/%03d", art.name, i), section)
 	}
 	for font in formats.FONTS {
+		defer step(im)
 		defer free_all(context.temp_allocator)
 		data := read_entry(im.archive, font.index) or_continue
 		parts := formats.sections(data, context.temp_allocator) or_continue
@@ -372,6 +374,7 @@ import_images :: proc(im: ^Import) {
 			}
 		}
 	}
+	defer step(im)
 	if !make_dir(join(im.root, "ui", "select_renders")) do return
 	for render, i in formats.SELECT_RENDERS {
 		defer free_all(context.temp_allocator)
