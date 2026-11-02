@@ -59,11 +59,19 @@ OW_IMPORT(view) int32_t ow_view(void *buf, uint32_t cap);
 // (hole scene-api :tags (render sdk)) no OwScene layout (version, camera, lights, fog, nodes, fx entries), no ow_scene_submit or ow_asset import.
 OW_IMPORT(scene_submit) void ow_scene_submit(const void *scene, uint32_t size);
 
+// A pad word: what one player holds this frame, the same in every Tekken. The client maps physical buttons to the four
+// game buttons and cancels opposite directions per axis before the sim sees it. Directions are screen directions.
+enum {
+	OW_PAD_UP = 1 << 0, OW_PAD_DOWN = 1 << 1, OW_PAD_LEFT = 1 << 2, OW_PAD_RIGHT = 1 << 3,
+	OW_PAD_BUTTON_SHIFT = 4,  // game button n is bit OW_PAD_BUTTON_SHIFT + n - 1
+	OW_PAD_BUTTON_1 = 1 << 4, OW_PAD_BUTTON_2 = 1 << 5, OW_PAD_BUTTON_3 = 1 << 6, OW_PAD_BUTTON_4 = 1 << 7,
+	OW_PAD_START = 1 << 8,
+};
+
 // Sim exports. Inside rollback: the host snapshots [ow_sim_state, + ow_sim_state_size) plus globals.
 
 OW_EXPORT(ow_sim_init) int32_t ow_sim_init(void);  // 0 = ok; reads params, loadouts and content
-// Pads are Tekken pad bits, the same in every Tekken.
-OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1);
+OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1);  // OW_PAD_* words
 OW_EXPORT(ow_sim_state) void *ow_sim_state(void);
 OW_EXPORT(ow_sim_state_size) uint32_t ow_sim_state_size(void);
 OW_EXPORT(ow_sim_view) const void *ow_sim_view(void);
@@ -78,10 +86,11 @@ OW_EXPORT(ow_bot_pad) uint32_t ow_bot_pad(uint32_t side);
 // The host's state, copied in each frame: connection, server list, lobby, match state and result.
 // (hole host-view :tags (sdk game) :needs app-host) no host view layout and no ow_host_view import.
 OW_IMPORT(host_view) int32_t ow_host_view(void *buf, uint32_t cap);
-// An offline match of a pack.toml mode. bot_sides: bit per side played by ow_bot_pad.
-// (hole match-local :tags (sdk game) :needs (app-host pack-modes)) the host does not start a mode's sim and presenter with loadouts and bot sides, give the presenter the scene, or hand back to the entry module at the end.
+// An offline match of a pack.toml mode. bot_sides: bit per side played by ow_bot_pad. params: values for params the
+// modules declare, as a lobby host sets them: `name=value` pairs split by spaces ("stage=3 rounds=5").
+// (hole match-local :tags (sdk game) :needs app-host) the host does not start a mode's sim and presenter with loadouts and bot sides, give the presenter the scene, or hand back to the entry module at the end.
 OW_IMPORT(match_local) int32_t ow_match_local(const char *mode, uint32_t mode_len, uint32_t bot_sides,
-	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len);
+	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len, const char *params, uint32_t params_len);
 // (hole app-modules :tags (sdk game wasm) :needs app-host) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.
 // (hole lobby-intents :tags (sdk net) :needs (host-view server-lobby)) no server refresh, lobby join, create, leave, or ready with a loadout.
 // (hole save-imports :tags (sdk game) :needs app-host) no ow_save_read or ow_save_write on the pack save (docs/packs.md).
