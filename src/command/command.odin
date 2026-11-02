@@ -45,37 +45,57 @@ Input :: struct {
 	step_count:         u8, // 0: no input
 	window:             u16, // {…}N; one step with window 0 is tested on this frame only
 	open, close, start: u16, // @open..close >start
+	words:              u8, // the game's words after the timing: bit i is word i
 }
 
-@(default_calling_convention = "c", link_prefix = "ow_input_")
+// A game's names by bit, each list nil-terminated. No button may be a direction.
+Names :: struct {
+	buttons, words: []cstring,
+}
+
+@(private = "file")
+C_Names :: struct {
+	buttons, words: [^]cstring,
+}
+
+@(private = "file")
+Printer :: proc "c" (input: ^Input, names: ^C_Names, out: [^]u8, room: u32) -> u32
+
+@(default_calling_convention = "c")
 foreign lib {
 	@(private = "file", link_name = "ow_input_parse")
-	c_parse :: proc(text: [^]u8, length: u32, buttons: [^]cstring, out: ^Input) -> cstring ---
+	c_parse :: proc(text: [^]u8, length: u32, names: ^C_Names, out: ^Input) -> cstring ---
 	@(private = "file", link_name = "ow_input_text")
-	c_text :: proc(input: ^Input, buttons: [^]cstring, out: [^]u8, room: u32) -> u32 ---
+	c_text :: proc(input: ^Input, names: ^C_Names, out: [^]u8, room: u32) -> u32 ---
 	@(private = "file", link_name = "ow_input_notation")
-	c_notation :: proc(input: ^Input, buttons: [^]cstring, out: [^]u8, room: u32) -> u32 ---
+	c_notation :: proc(input: ^Input, names: ^C_Names, out: [^]u8, room: u32) -> u32 ---
 }
 
-// buttons: the game's button names by bit, nil-terminated. failed is "" when the text parses.
-parse :: proc(text: string, buttons: []cstring) -> (input: Input, failed: string) {
-	failed = string(c_parse(raw_data(text), u32(len(text)), raw_data(buttons), &input))
+// failed is "" when the text parses.
+parse :: proc(text: string, names: Names) -> (input: Input, failed: string) {
+	c := c_names(names)
+	failed = string(c_parse(raw_data(text), u32(len(text)), &c, &input))
 	return
 }
 
 // The exact text of an input, in the temp allocator.
-print :: proc(input: Input, buttons: []cstring) -> string {
-	return call_printer(c_text, input, buttons)
+print :: proc(input: Input, names: Names) -> string {
+	return call_printer(c_text, input, names)
 }
 
 // The plain notation players use (f,f+1+2), in the temp allocator. For reading only.
-notation :: proc(input: Input, buttons: []cstring) -> string {
-	return call_printer(c_notation, input, buttons)
+notation :: proc(input: Input, names: Names) -> string {
+	return call_printer(c_notation, input, names)
 }
 
 @(private = "file")
-call_printer :: proc(printer: proc "c" (input: ^Input, buttons: [^]cstring, out: [^]u8, room: u32) -> u32, input: Input, buttons: []cstring) -> string {
-	input := input
+c_names :: proc(names: Names) -> C_Names {
+	return {raw_data(names.buttons), raw_data(names.words)}
+}
+
+@(private = "file")
+call_printer :: proc(printer: Printer, input: Input, names: Names) -> string {
+	input, c := input, c_names(names)
 	out := make([]u8, 1024, context.temp_allocator)
-	return string(out[:printer(&input, raw_data(buttons), raw_data(out), u32(len(out)))])
+	return string(out[:printer(&input, &c, raw_data(out), u32(len(out)))])
 }

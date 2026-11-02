@@ -3,7 +3,7 @@ package tests
 import "core:testing"
 import "../src/command"
 
-TK5_BUTTONS := []cstring{"1", "2", "3", "4", nil}
+TK5_NAMES := command.Names{{"1", "2", "3", "4", nil}, {"unlock", nil}}
 
 // The stock examples of docs/commands.md print back as they were written.
 @(test)
@@ -25,11 +25,12 @@ stock_commands_print_as_written :: proc(t: ^testing.T) {
 		"^*@1..255>1",
 		"*b/n+!3@1..255>1",
 		"!*~@1..255>1",
+		"@1..255>1 unlock",
 	}
 	for text in texts {
-		input, failed := command.parse(text, TK5_BUTTONS)
+		input, failed := command.parse(text, TK5_NAMES)
 		if !testing.expect_value(t, failed, "") do continue
-		testing.expect_value(t, command.print(input, TK5_BUTTONS), text)
+		testing.expect_value(t, command.print(input, TK5_NAMES), text)
 	}
 }
 
@@ -37,7 +38,7 @@ stock_commands_print_as_written :: proc(t: ^testing.T) {
 @(test)
 commands_mean_what_the_spec_says :: proc(t: ^testing.T) {
 	step :: proc(t: ^testing.T, text: string) -> command.Step {
-		input, failed := command.parse(text, TK5_BUTTONS)
+		input, failed := command.parse(text, TK5_NAMES)
 		testing.expect_value(t, failed, "")
 		return input.steps[0]
 	}
@@ -50,11 +51,11 @@ commands_mean_what_the_spec_says :: proc(t: ^testing.T) {
 	testing.expect_value(t, step(t, "1/2@1..1>1"), command.Step{press = 0b11, press_mode = .Any})
 	testing.expect_value(t, step(t, "2~+!1@1..1>1"), command.Step{held = 0b10, not_held = 0b01})
 
-	sequence, _ := command.parse("{ n+1+2+3+4 }1 @ 1 .. 2 > 3", TK5_BUTTONS)
+	sequence, _ := command.parse("{ n+1+2+3+4 }1 @ 1 .. 2 > 3", TK5_NAMES)
 	testing.expect_value(t, sequence.step_count, 1)
 	testing.expect_value(t, sequence.window, 1)
 	testing.expect_value(t, [3]u16{sequence.open, sequence.close, sequence.start}, [3]u16{1, 2, 3})
-	strict, _ := command.parse("{f,n:f}20@1..1>1", TK5_BUTTONS)
+	strict, _ := command.parse("{f,n:f}20@1..1>1", TK5_NAMES)
 	testing.expect_value(t, [3]bool{strict.steps[0].strict, strict.steps[1].strict, strict.steps[2].strict}, [3]bool{false, false, true})
 }
 
@@ -69,9 +70,10 @@ broken_commands_say_what_is_wrong :: proc(t: ^testing.T) {
 		"{f,n,f,n,f,n,f,n,f,n,f,n,f,n,f,n,f}20@1..1>1",
 		"{f,n@1..1>1",
 		"{f,,f}20@1..1>1",
+		"f@1..1>1 stop",
 	}
 	for text in texts {
-		_, failed := command.parse(text, TK5_BUTTONS)
+		_, failed := command.parse(text, TK5_NAMES)
 		testing.expectf(t, failed != "", "%q parsed", text)
 	}
 }
@@ -89,8 +91,8 @@ plain_notation_reads_like_a_move_list :: proc(t: ^testing.T) {
 		{"@50..255>50", ""},
 	}
 	for c in cases {
-		input, failed := command.parse(c[0], TK5_BUTTONS)
+		input, failed := command.parse(c[0], TK5_NAMES)
 		if !testing.expect_value(t, failed, "") do continue
-		testing.expect_value(t, command.notation(input, TK5_BUTTONS), c[1])
+		testing.expect_value(t, command.notation(input, TK5_NAMES), c[1])
 	}
 }

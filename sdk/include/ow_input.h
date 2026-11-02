@@ -39,18 +39,24 @@ typedef struct {
     uint16_t window;      // {…}N; one step with window 0 is tested on this frame only
     uint16_t open, close; // @open..close, frames of the current move
     uint16_t start;       // >start, frame of the next move
+    uint8_t words;        // the game's words after the timing: bit i is word i
 } OwInput;
 
-// buttons: the game's button names by bit, NULL-terminated; no name may be a direction.
+// A game's names, each list by bit and NULL-terminated (words may be NULL: none). No button may be a direction.
+typedef struct {
+    const char *const *buttons;
+    const char *const *words;
+} OwInputNames;
+
 // Returns NULL, or what is wrong with the text.
-const char *ow_input_parse(const char *text, uint32_t length, const char *const *buttons, OwInput *out);
+const char *ow_input_parse(const char *text, uint32_t length, const OwInputNames *names, OwInput *out);
 
 // The exact text of an input; returns its length, or 0 when it does not fit.
-uint32_t ow_input_text(const OwInput *input, const char *const *buttons, char *out, uint32_t room);
+uint32_t ow_input_text(const OwInput *input, const OwInputNames *names, char *out, uint32_t room);
 
 // The plain notation players use (f,f+1+2), for reading only: no frames, no {…}1, ':' as ',', and no `n` that leads,
 // trails or only separates two steps of the same directions.
-uint32_t ow_input_notation(const OwInput *input, const char *const *buttons, char *out, uint32_t room);
+uint32_t ow_input_notation(const OwInput *input, const OwInputNames *names, char *out, uint32_t room);
 
 #ifdef OW_INPUT_IMPLEMENTATION
 
@@ -225,7 +231,7 @@ static const char *ow_read_step(OwReader *r, OwInputStep *step) {
     return failed;
 }
 
-const char *ow_input_parse(const char *text, uint32_t length, const char *const *buttons, OwInput *out) {
+const char *ow_input_parse(const char *text, uint32_t length, const OwInputNames *names, OwInput *out) {
     char compact[OW_INPUT_TEXT];  // spaces mean nothing
     uint32_t count = 0;
     for (uint32_t i = 0; i < length; i++) {
@@ -233,7 +239,7 @@ const char *ow_input_parse(const char *text, uint32_t length, const char *const 
         if (count == OW_INPUT_TEXT) return "the text is too long";
         compact[count++] = text[i];
     }
-    OwReader r = {compact, compact + count, buttons};
+    OwReader r = {compact, compact + count, names->buttons};
     *out = (OwInput){0};
     const char *failed = NULL;
     if (ow_peek(&r, 0) == '{' && !ow_same_frame_ahead(&r)) {
@@ -258,7 +264,8 @@ const char *ow_input_parse(const char *text, uint32_t length, const char *const 
     if ((failed = ow_read_number(&r, &out->close))) return failed;
     if (!ow_take(&r, '>')) return "> is missing";
     if ((failed = ow_read_number(&r, &out->start))) return failed;
-    if (r.at != r.end) return "text follows the start frame";
+    for (int32_t word; r.at != r.end; out->words |= (uint8_t)(1 << word))
+        if (!names->words || !ow_take_name(&r, names->words, &word)) return "an unknown word follows the timing";
     return NULL;
 }
 
@@ -365,13 +372,13 @@ static void ow_put_step(OwWriter *w, const OwInputStep *step, const char *const 
     }
 }
 
-uint32_t ow_input_text(const OwInput *input, const char *const *buttons, char *out, uint32_t room) {
+uint32_t ow_input_text(const OwInput *input, const OwInputNames *names, char *out, uint32_t room) {
     OwWriter w = {out, room, 0};
     bool sequence = input->step_count > 1 || input->window;
     if (sequence) ow_put(&w, "{");
     for (int32_t i = 0; i < input->step_count; i++) {
         if (i) ow_put(&w, input->steps[i].strict ? ":" : ",");
-        ow_put_step(&w, &input->steps[i], buttons, false);
+        ow_put_step(&w, &input->steps[i], names->buttons, false);
     }
     if (sequence) {
         ow_put(&w, "}");
@@ -383,6 +390,11 @@ uint32_t ow_input_text(const OwInput *input, const char *const *buttons, char *o
     ow_put_number(&w, input->close);
     ow_put(&w, ">");
     ow_put_number(&w, input->start);
+    for (int32_t i = 0; names->words && names->words[i]; i++) {
+        if (!(input->words & (1 << i))) continue;
+        ow_put(&w, " ");
+        ow_put(&w, names->words[i]);
+    }
     return w.length < room ? (out[w.length] = 0, w.length) : 0;
 }
 
@@ -390,7 +402,7 @@ static bool ow_bare_neutral(const OwInputStep *step) {
     return step->directions == OW_DIR_N && !step->tap && !step->press && !step->held && !step->not_held && !step->summary;
 }
 
-uint32_t ow_input_notation(const OwInput *input, const char *const *buttons, char *out, uint32_t room) {
+uint32_t ow_input_notation(const OwInput *input, const OwInputNames *names, char *out, uint32_t room) {
     OwWriter w = {out, room, 0};
     const OwInputStep *steps = input->steps;
     int32_t last = input->step_count - 1;
@@ -399,7 +411,7 @@ uint32_t ow_input_notation(const OwInput *input, const char *const *buttons, cha
         bool separator = i > 0 && i < last && steps[i - 1].directions == steps[i + 1].directions;
         if (ow_bare_neutral(&steps[i]) && (i == 0 || i == last || separator)) continue;
         if (!first) ow_put(&w, ",");
-        ow_put_step(&w, &steps[i], buttons, true);
+        ow_put_step(&w, &steps[i], names->buttons, true);
         first = false;
     }
     return w.length < room ? (out[w.length] = 0, w.length) : 0;
