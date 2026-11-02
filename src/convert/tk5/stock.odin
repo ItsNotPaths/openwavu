@@ -293,6 +293,26 @@ rides_partner :: proc(mv: formats.Move) -> bool {
 	return false
 }
 
+// Codes whose param names a row (modules/tk5/sim/requirements.c, properties.c).
+CODE_REFS :: [?]struct {first, last: u16, ref: string}{
+	{123, 123, "move_pool"}, {218, 218, "move_pool"},  // the opponent's move is in a pool
+	{296, 296, "move_pool"}, {302, 302, "move_pool"}, {308, 308, "move_pool"},  // pool and facing
+	{314, 314, "move_pool"}, {320, 320, "move_pool"}, {326, 326, "move_pool"},
+	{0x8000 + 113, 0x8000 + 113, "tracking_row"},  // tracking
+	{0x8000 + 148, 0x8000 + 149, "move"},  // force move, in place
+	{0x8000 + 156, 0x8000 + 156, "move"},  // overwrite move
+	{0x8000 + 158, 0x8000 + 158, "move"},  // alternate move
+	{0x8000 + 163, 0x8000 + 163, "pushback"},
+	{0x8000 + 168, 0x8000 + 168, "pushback"},  // target pushback
+	{0x8000 + 173, 0x8000 + 173, "pushback"},  // hitscan start: its path
+	{0x8000 + 175, 0x8000 + 175, "pushback"},  // projectile start: its path
+	{0x8000 + 263, 0x8000 + 295, "move"},  // alias set
+}
+
+write_code_refs :: proc(w: ^db.Writer) {
+	for r in CODE_REFS do for code in r.first ..= r.last do db.insert(w, "code_ref", i64(code), r.ref)
+}
+
 REQUIREMENT_END :: 0x147
 REQ_FLOW_STATE :: 0xf1
 REQ_FLOW_NEXT :: 0xf2

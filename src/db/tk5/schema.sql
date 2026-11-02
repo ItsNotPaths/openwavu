@@ -37,7 +37,7 @@ CREATE TABLE move (
 	cancels        INTEGER NOT NULL,  -- cancel list
 	next_move      INTEGER NOT NULL,  -- the move it goes to when it ends
 	end_yaw        INTEGER NOT NULL,
-	compare_id     INTEGER NOT NULL,
+	compare_id     INTEGER NOT NULL,  -- (hole compare-ids :tags (importer tk5mod)) its own number space (requirements, move pools, throws): a mod that needs a new move identity picks a number and can collide with another mod.
 	push_speed     INTEGER NOT NULL,
 	hit_conditions INTEGER NOT NULL,  -- hit_condition list
 	window_start   INTEGER NOT NULL,
@@ -71,6 +71,8 @@ CREATE TABLE move (
 );
 
 -- command_code 0x8000 ends a list; 0x8005 enters group_list, 0x8006 returns; 0x8007 + n reads input_sequence n.
+-- (hole cancel-refs :tags (importer tk5mod)) tracking_pick (1 + idx) and command_code 0x8007 + n pack references into numbers; they need tracking_override and input_sequence reference columns, or a mod's text-keyed rows can not be named.
+-- (hole command-syntax :tags (importer content) :needs (cancel-refs compare-ids mod-anims)) commands are game bits (command_code, command_buttons); no cross-game command syntax yet. Designed by the user after the db reference work.
 CREATE TABLE cancel (
 	character       TEXT NOT NULL,
 	list            INTEGER NOT NULL,
@@ -110,6 +112,13 @@ CREATE TABLE group_cancel (
 );
 
 -- id 0x147 ends a list.
+-- Codes whose param names a row: a requirement's param, a property's value. The loader resolves them like any reference,
+-- so a mod can name its own rows by text key. Requirement ids are below 0x8000, property ids from 0x8000 on.
+CREATE TABLE code_ref (
+	code INTEGER PRIMARY KEY,
+	ref  TEXT NOT NULL  -- the table the param names: move, pushback, tracking_row, move_pool (a list)
+);
+
 CREATE TABLE requirement (
 	character TEXT NOT NULL,
 	list      INTEGER NOT NULL,

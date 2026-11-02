@@ -15,6 +15,7 @@ typedef enum : uint8_t {
     KIND_FLOAT,
     KIND_LIST,   // a list id of table `list`, stored as the index of the list's first row; -1 stays -1
     KIND_ROW,    // a row of indexed table `list`: a number is the index as it is, a text key (a mod's row) is looked up
+    KIND_CODED,  // a param; when its code (the u16 field at `code`) is in code_ref, a reference to that table
     KIND_ANIM,   // two columns, anim_owner and anim_idx, stored as the index in the fighter's anim list
 } Kind;
 
@@ -24,6 +25,7 @@ typedef struct {
     size_t count, stride;  // array elements
     Kind kind;
     const char *list;  // KIND_LIST, KIND_ROW: the table referenced
+    size_t code;       // KIND_CODED: offset of the code field, which comes earlier in the record
 } Field;
 
 #define MEMBER(type, path) (((type *)0)->path)
@@ -41,6 +43,8 @@ typedef struct {
     {name, offsetof(type, array[0] path), sizeof MEMBER(type, array[0] path),                                               \
      sizeof MEMBER(type, array) / sizeof MEMBER(type, array[0]), sizeof MEMBER(type, array[0]), KIND_OF(type, array[0] path), NULL}
 #define ARRAY(type, array) ARRAY_AS(type, array, , #array)
+#define CODED(type, member, code_member) \
+    {#member, offsetof(type, member), sizeof MEMBER(type, member), 1, 0, KIND_CODED, NULL, offsetof(type, code_member)}
 #define VALUE(type, name) {name, 0, sizeof(type), 1, 0, KIND_INT, NULL}  // a table of plain integers
 #define ANIM(type, member) {NULL, offsetof(type, member), sizeof MEMBER(type, member), 1, 0, KIND_ANIM, NULL}
 
@@ -94,7 +98,7 @@ static const Field cancel_fields[] = {
 
 static const Field requirement_fields[] = {
     FIELD(T5Requirement, id),
-    FIELD(T5Requirement, param),
+    CODED(T5Requirement, param, id),
 };
 
 static const Field input_sequence_fields[] = {
@@ -108,7 +112,7 @@ static const Field command_fields[] = {
     FIELD(T5Command, buttons),
 };
 
-static const Field move_pool_fields[] = {{"move", 0, sizeof(uint16_t), 1, 0, KIND_ROW, "move"}};
+static const Field move_pool_fields[] = {VALUE(uint16_t, "move")};  // compare ids, not move rows
 
 static const Field pushback_fields[] = {
     FIELD(T5Pushback, frames),
@@ -122,13 +126,13 @@ static const Field pushback_curve_fields[] = {VALUE(uint16_t, "value")};
 static const Field property_fields[] = {
     FIELD(T5Property, when),
     FIELD(T5Property, id),
-    FIELD(T5Property, value),
+    CODED(T5Property, value, id),
 };
 
 static const Field conditional_property_fields[] = {
     LIST(T5ConditionalProperty, requirements, "requirement"),
     FIELD(T5ConditionalProperty, id),
-    FIELD(T5ConditionalProperty, value),
+    CODED(T5ConditionalProperty, value, id),
 };
 
 static const Field hit_condition_fields[] = {
@@ -209,7 +213,6 @@ static const Field gaze_fields[] = {
     FIELD_AS(T5Gaze, head_turn.bits, "head_turn"),
 };
 
-// (hole code-refs :tags (tk5mod content)) references packed into game codes take numbers only, so a mod's text-keyed rows can not be named there: cancel tracking_pick (1 + idx), command 0x8007+n (input sequences), move ids in property values and requirement params, and anim_idx (a mod can not add anims).
 // Keys are the game's numbers for stock rows and text (`<pack>/<name>`) for rows a mod adds. SQLite orders every
 // number before every text, so stock rows keep the game's layout and mod rows follow, sorted by key.
 typedef enum : uint8_t {
@@ -376,6 +379,78 @@ static const char *resolve(sqlite3_stmt *row, int column, const Field *field, co
     return fail("%s: no %s list %lld", field->column, field->list, (long long)*value);
 }
 
+// code_ref: the codes whose param names a row, by code, each with the keys of the table it names.
+typedef struct {
+    int64_t code;
+    int32_t target;
+} CodeRef;
+
+typedef struct {
+    CodeRef *refs;
+    int32_t count;
+    struct {
+        Field field;  // KIND_LIST or KIND_ROW of the table, for resolve
+        Lists keys;
+    } targets[8];
+    int32_t target_count;
+} CodeRefs;
+
+static void free_code_refs(CodeRefs *codes) {
+    for (int32_t index = 0; index < codes->target_count; index++) {
+        free((char *)codes->targets[index].field.list);
+        free_lists(&codes->targets[index].keys);
+    }
+    free(codes->refs);
+}
+
+static const char *add_target(sqlite3 *db, const char *character, const char *table, CodeRefs *codes, int32_t *target) {
+    for (*target = 0; *target < codes->target_count; (*target)++)
+        if (strcmp(codes->targets[*target].field.list, table) == 0) return NULL;
+    if (codes->target_count == sizeof codes->targets / sizeof codes->targets[0]) return fail("code_ref: too many tables");
+    sqlite3_stmt *statement;
+    const char *failed = prepare(db, "SELECT count(*) FROM pragma_table_info(?1) WHERE name = 'list'", table, &statement);
+    if (failed) return failed;
+    sqlite3_step(statement);
+    bool list = sqlite3_column_int(statement, 0) > 0;
+    sqlite3_finalize(statement);
+    char *name = strdup(table);
+    if (!name) return fail("out of memory");
+    codes->targets[*target].field = (Field){"param", .kind = list ? KIND_LIST : KIND_ROW, .list = name};
+    codes->target_count++;
+    return read_lists(db, character, table, list ? "list" : "idx", &codes->targets[*target].keys);
+}
+
+static const char *read_code_refs(sqlite3 *db, const char *character, CodeRefs *codes) {
+    sqlite3_stmt *rows;
+    const char *failed = prepare(db, "SELECT code, ref FROM code_ref ORDER BY code", character, &rows);
+    for (int32_t room = 0; !failed && sqlite3_step(rows) == SQLITE_ROW;) {
+        if (codes->count == room) {
+            room = room ? 2 * room : 64;
+            CodeRef *grown = realloc(codes->refs, (size_t)room * sizeof *grown);
+            if (!grown) {
+                failed = fail("out of memory");
+                break;
+            }
+            codes->refs = grown;
+        }
+        CodeRef *ref = &codes->refs[codes->count++];
+        ref->code = sqlite3_column_int64(rows, 0);
+        failed = add_target(db, character, (const char *)sqlite3_column_text(rows, 1), codes, &ref->target);
+    }
+    sqlite3_finalize(rows);
+    return failed;
+}
+
+static const CodeRef *code_ref(const CodeRefs *codes, int64_t code) {
+    int32_t low = 0, high = codes->count;
+    while (low < high) {
+        int32_t middle = (low + high) / 2;
+        if (codes->refs[middle].code < code) low = middle + 1;
+        else high = middle;
+    }
+    return low < codes->count && codes->refs[low].code == code ? &codes->refs[low] : NULL;
+}
+
 static uint32_t anim_base(const char *owner, T5AnimBases anims) {
     static const char embedded[] = "/embedded";
     size_t length = strlen(owner);
@@ -399,7 +474,8 @@ static void build_select(const Table *table, char *sql, size_t room) {
     snprintf(sql + used, room - used, " FROM %s WHERE character = ?1%s", table->name, ORDER_BY[table->rows]);
 }
 
-static const char *copy_row(sqlite3_stmt *row, const Table *table, const Lists *lists, T5AnimBases anims, uint8_t *record) {
+static const char *copy_row(sqlite3_stmt *row, const Table *table, const Lists *lists, const CodeRefs *codes, T5AnimBases anims,
+                            uint8_t *record) {
     int column = 0;
     for (size_t index = 0; index < table->field_count; index++) {
         const Field *field = &table->fields[index];
@@ -418,9 +494,19 @@ static const char *copy_row(sqlite3_stmt *row, const Table *table, const Lists *
                 continue;
             }
             int64_t value = sqlite3_column_int64(row, column);
-            if (field->kind == KIND_LIST || field->kind == KIND_ROW) {
-                const char *failed = resolve(row, column, field, &lists[index], &value);
+            const Field *reference = field->kind == KIND_LIST || field->kind == KIND_ROW ? field : NULL;
+            const Lists *keys = &lists[index];
+            if (field->kind == KIND_CODED) {
+                uint16_t code;
+                memcpy(&code, record + field->code, sizeof code);
+                const CodeRef *ref = code_ref(codes, code);
+                if (ref) reference = &codes->targets[ref->target].field, keys = &codes->targets[ref->target].keys;
+            }
+            if (reference) {
+                const char *failed = resolve(row, column, reference, keys, &value);
                 if (failed) return fail("%s.%s", table->name, failed);
+            } else if (sqlite3_column_type(row, column) == SQLITE_TEXT) {
+                return fail("%s.%s: text in a number column", table->name, field->column);
             }
             memcpy(at, &value, field->size);  // little endian: the low bytes
         }
@@ -428,8 +514,8 @@ static const char *copy_row(sqlite3_stmt *row, const Table *table, const Lists *
     return NULL;
 }
 
-static const char *load_table(sqlite3 *db, const char *character, const Table *table, T5AnimBases anims, T5Arena *arena,
-                              T5Motbin *motbin) {
+static const char *load_table(sqlite3 *db, const char *character, const Table *table, const CodeRefs *codes, T5AnimBases anims,
+                              T5Arena *arena, T5Motbin *motbin) {
     int32_t count;
     const char *failed = count_rows(db, character, table, &count);
     if (failed) return failed;
@@ -449,7 +535,7 @@ static const char *load_table(sqlite3 *db, const char *character, const Table *t
     sqlite3_stmt *rows = NULL;
     if (!failed) failed = prepare(db, sql, character, &rows);
     for (int32_t row = 0; !failed && row < count && sqlite3_step(rows) == SQLITE_ROW; row++)
-        failed = copy_row(rows, table, lists, anims, items + (size_t)row * table->size);
+        failed = copy_row(rows, table, lists, codes, anims, items + (size_t)row * table->size);
     sqlite3_finalize(rows);
     for (size_t index = 0; index < table->field_count; index++) free_lists(&lists[index]);
     return failed;
@@ -475,7 +561,11 @@ static const char *load_aliases(sqlite3 *db, const char *character, T5Motbin *mo
 const char *t5_load_motbin(T5Motbin *motbin, sqlite3 *db, const char *character, T5AnimBases anims, T5Arena *arena) {
     memset(motbin, 0, sizeof *motbin);
     const char *failed = load_aliases(db, character, motbin);
-    for (size_t index = 0; index < TABLE_COUNT && !failed; index++) failed = load_table(db, character, &tables[index], anims, arena, motbin);
+    CodeRefs codes = {0};
+    if (!failed) failed = read_code_refs(db, character, &codes);
+    for (size_t index = 0; index < TABLE_COUNT && !failed; index++)
+        failed = load_table(db, character, &tables[index], &codes, anims, arena, motbin);
+    free_code_refs(&codes);
     return failed;
 }
 

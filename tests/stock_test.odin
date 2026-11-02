@@ -24,6 +24,7 @@ db_loads_like_sim_files :: proc(t: ^testing.T) {
 	characters := formats.CHARACTERS
 	w, create_err := db.create(STOCK_DB, TK5_SCHEMA)
 	if !testing.expect_value(t, create_err, "") do return
+	convert.write_code_refs(&w)
 	for name, i in MOTBIN_NAMES {
 		defer free_all(context.temp_allocator)
 		packed, _ := tk5.read_entry(im.archive, formats.MOTBIN_FIRST + 2 * i)
