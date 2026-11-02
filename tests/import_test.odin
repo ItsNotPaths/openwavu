@@ -36,6 +36,7 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select/*'"), 240)  // unlit menu entries
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_lit/*'"), 240)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_renders/*'"), 54)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id IN ('select_renders/paul_right', 'select_renders/paul_left', 'select_renders/xiaoyu_left')"), 3)
 	all_images: ^db.Stmt
 	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT file FROM image", -1, &all_images, nil), db.OK) do return
 	defer db.finalize(all_images)

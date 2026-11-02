@@ -355,11 +355,11 @@ import_images :: proc(im: ^Import) {
 		for section, i in parts do write_art(im, fmt.tprintf("%s/%03d", art.name, i), section)
 	}
 	if !make_dir(join(im.root, "ui", "select_renders")) do return
-	for index in formats.SELECT_RENDERS_FIRST ..< formats.SELECT_RENDERS_END {
+	for render, i in formats.SELECT_RENDERS {
 		defer free_all(context.temp_allocator)
-		data := read_entry(im.archive, index) or_continue
+		data := read_entry(im.archive, formats.SELECT_RENDERS_FIRST + i) or_continue
 		section := formats.unlz(data, context.temp_allocator) or_continue
-		write_art(im, fmt.tprintf("select_renders/%02d", index - formats.SELECT_RENDERS_FIRST), section)
+		write_art(im, fmt.tprintf("select_renders/%s_%s", render.fighter, render.faces_left ? "left" : "right"), section)
 	}
 }
 

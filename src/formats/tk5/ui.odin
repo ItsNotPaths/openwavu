@@ -18,7 +18,24 @@ ART_ENTRIES :: [?]Art_Entry{
 	{280, "arcade_vs", true}, {281, "loading_screens", true}, {282, "pacman", true}, {283, "replay", true},
 }
 
-// One 1008x1080 character select render per entry.
-// (hole render-names :tags importer :sev polish) renders are named by entry; which fighter (and which are mirrored pairs) is not mapped.
+// One 1008x1080 character select render per entry from 1474, named by eye. Mokujin has no character row.
 SELECT_RENDERS_FIRST :: 1474
-SELECT_RENDERS_END :: 1528
+
+Select_Render :: struct {
+	fighter:    string,
+	faces_left: bool,  // else right; most fighters have one of each
+}
+
+SELECT_RENDERS :: [?]Select_Render{
+	{"paul", false}, {"paul", true}, {"law", false}, {"law", true}, {"lei", false},
+	{"king", false}, {"king", true}, {"yoshimitsu", false}, {"nina", false}, {"hwoarang", false},
+	{"xiaoyu", true}, {"christie", false}, {"jin", false}, {"jin", true}, {"julia", false},
+	{"kuma", false}, {"panda", false}, {"bryan", true}, {"bryan", false}, {"heihachi", false},
+	{"heihachi", true}, {"kazuya", false}, {"kazuya", true}, {"lee", false}, {"lee", true},
+	{"steve", false}, {"steve", true}, {"marduk", false}, {"marduk", true}, {"mokujin", false},
+	{"eddy", false}, {"eddy", true}, {"jack5", true}, {"jack5", false}, {"roger", false},
+	{"anna", false}, {"wang", false}, {"wang", true}, {"ganryu", false}, {"asuka", false},
+	{"bruce", false}, {"baek", false}, {"baek", true}, {"devil_jin", false}, {"devil_jin", true},
+	{"raven", false}, {"raven", true}, {"feng", false}, {"armor_king", true}, {"armor_king", false},
+	{"lili", false}, {"dragunov", false}, {"dragunov", true}, {"jinpachi", false},
+}
