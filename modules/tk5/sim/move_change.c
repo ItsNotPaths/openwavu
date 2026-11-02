@@ -642,7 +642,7 @@ static int16_t turn_length(const T5Move *old_move, const T5Move *new_move) {
 // Codes that clear the scripted turn after they set the tracking.
 static bool code_clears_turn(uint8_t code) {
     return (code >= MOTION_HOMING_FIRST && code <= 13) || code == MOTION_SWEEP || code == MOTION_SWEEP_LAST
-        || (code >= MOTION_HOLD_FIRST && code < MOTION_CODE_END);
+        || (code >= MOTION_CHASE_FIRST && code < MOTION_CODE_END);
 }
 
 static void approach(T5Fighter *f, const T5Move *new_move, T5FacingState free) {

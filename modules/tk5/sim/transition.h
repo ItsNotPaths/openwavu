@@ -46,7 +46,7 @@ enum : uint8_t {
     MOTION_HIT_LEFT = 30,
     MOTION_HIT_RIGHT = 31,
     MOTION_HIT_TO_TARGET = 32,         // the front pushback, aimed from the target angle
-    MOTION_HOLD_FIRST = 45,            // 45..55 keep their tracking and clear the turn
+    MOTION_CHASE_FIRST = 45,           // 45..54 home on the opponent at set rates, 55 faces the stage centre; all clear the turn
     MOTION_CODE_END = 56,
 };
 
