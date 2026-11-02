@@ -260,6 +260,7 @@ import_stage :: proc(im: ^Import, index: int) {
 import_sounds :: proc(im: ^Import) {}
 
 // (hole tim2-textures :tags importer :sev polish) model section 17 (TIM2) is not decoded.
+// (hole ui-images :tags (importer titlepack) :needs tim2-textures) only entries 33..36 (two logos, Panda and Kuma renders) are pulled; the rest of the game's 2D art is not found or dumped into ui/.
 import_images :: proc(im: ^Import) {
 	for index in 33 ..< 37 {
 		defer free_all(context.temp_allocator)

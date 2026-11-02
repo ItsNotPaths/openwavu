@@ -52,7 +52,7 @@ lobby_hash :: proc(manifest_hash: [32]u8, final: map[string]f64) -> (hash: [32]u
 	return {}
 }
 
-// (hole titlepack-synth :tags (titlepack importer) :needs titlepack-format) the importer's output is not packed into a stock title pack: no tar writer, no pack.toml.
+// (hole titlepack-synth :tags (titlepack importer) :needs (titlepack-format ui-images)) the importer does not write the stock pack .tar (game data, ui/ images, openwavu's wasm modules, pack.toml); openwavu updates do not rebuild it.
 stock_pack :: proc(import_dir, out_path: string) -> (ok: bool) {
 	return false
 }
