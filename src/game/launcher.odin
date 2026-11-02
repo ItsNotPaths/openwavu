@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:os"
 import "core:strings"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
@@ -16,6 +17,8 @@ Launcher :: struct {
 		Front_Preview,
 	},
 	front:    Front_View,
+	popup:    Popup,
+	settings: Settings,
 	source:   Install_Source,
 	browser:  Browser,
 	importer: Import_Job,
@@ -61,6 +64,10 @@ launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 	}
 	if path != "" && path != l.front.path do front_open(&l.front, u, path, file)
 	showing_front := path != "" && l.front.err == ""
+	clicked_away := u.input.mouse_pressed && !clay.PointerOver(clay.ID("Popup")) && !clay.PointerOver(clay.ID("Settings"))  // Settings toggles it itself
+	if l.popup.open && (u.input.back || clicked_away) {
+		l.popup.open = false
+	}
 	if clay.UI()({
 		id = clay.ID("Root"),
 		layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}},
@@ -70,6 +77,7 @@ launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 		center(l, u)
 		store_column(l, u)
 		top_bar(l, u, r)
+		if popup(l, u) do remove_pack(l)
 	}
 }
 
@@ -155,7 +163,10 @@ pack_page :: proc(l: ^Launcher, u: ^ui.Ui, name: string, pack: Maybe(int)) {
 		switch action {
 		case .Play: l.play = pack
 		case .Url: _ = sdl.OpenURL(strings.clone_to_cstring(target, context.temp_allocator))
-		case .None, .Install, .Uninstall, .Credits, .Toggle:
+		case .Install: l.popup = {.Install, true}
+		case .Uninstall: l.popup = {.Uninstall, true}
+		case .Credits: l.popup = {.Credits, true}
+		case .None, .Toggle:
 		}
 		return
 	}
@@ -191,8 +202,9 @@ top_bar :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 			ui.label(clock(), engraved = true, face = .Display)
 		}
 		ui.spacer()
-		// (hole launcher-settings :tags game :sev gap) the settings button opens nothing.
-		ui.button(u, clay.ID("Settings"), "Settings", ui.BAR_BUTTON, nav = false)
+		if ui.button(u, clay.ID("Settings"), "Settings", ui.BAR_BUTTON, nav = false) {
+			l.popup = {.Settings, !(l.popup.open && l.popup.mode == .Settings)}
+		}
 		if ui.button(u, clay.ID("Fullscreen"), "[ ]", ui.BAR_BUTTON, nav = false) {
 			render.toggle_fullscreen(r)
 		}
@@ -220,6 +232,19 @@ slot_list :: proc(u: ^ui.Ui, id: clay.ElementId) -> clay.ElementDeclaration {
 // Case-blind substring match; an empty search matches everything.
 matches :: proc(name, search: string) -> bool {
 	return strings.contains(strings.to_lower(name, context.temp_allocator), strings.to_lower(search, context.temp_allocator))
+}
+
+// Deletes the picked pack's tar; its front is closed first, since it maps the file.
+remove_pack :: proc(l: ^Launcher) {
+	pick, is_pack := l.selected.(int)
+	if !is_pack do return
+	path := strings.clone(l.packs[pick].path, context.temp_allocator)
+	front_close(&l.front)
+	_ = os.remove(path)
+	titlepack.destroy_installed(l.packs)
+	l.packs = titlepack.installed()
+	l.selected = nil
+	l.popup.open = false
 }
 
 // (hole titlepack-install :tags (titlepack game)) install does nothing: no file picker, no URL download, no verify, no copy into the packs folder.

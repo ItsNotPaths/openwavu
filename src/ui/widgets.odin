@@ -25,6 +25,18 @@ button :: proc(ui: ^Ui, id: clay.ElementId, text: string, style := BUTTON, nav :
 	return s.clicked
 }
 
+// A value between two raised arrow buttons; an arrow at its end greys out. Returns -1, 0 or 1.
+stepper :: proc(ui: ^Ui, id: clay.ElementId, text: string, can_down, can_up: bool) -> (step: int) {
+	if clay.UI()(row(6)) {
+		if button(ui, clay.ID("StepDown", id.id), "<", can_down ? BUTTON : OFF_BUTTON) && can_down do step = -1
+		if clay.UI()({layout = {sizing = {width = clay.SizingFixed(STEPPER_VALUE_WIDTH)}, childAlignment = {.Center, .Center}}}) {
+			label(text, face = .Display)
+		}
+		if button(ui, clay.ID("StepUp", id.id), ">", can_up ? BUTTON : OFF_BUTTON) && can_up do step = 1
+	}
+	return
+}
+
 // A raised card with a heading and a line of text; the whole card is the button.
 card :: proc(ui: ^Ui, id: clay.ElementId, heading, text: string, selected := false) -> bool {
 	s := interact(ui, id)

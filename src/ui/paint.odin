@@ -14,6 +14,7 @@ Paint :: union {
 	Window,
 	Plate,
 	Bar,
+	Tray,
 	Spotlight,
 	Field,
 	Backdrop,
@@ -42,6 +43,9 @@ Plate :: struct {
 }
 
 Bar :: struct {}
+
+// The screen-bottom popup, the top bar's counterpart: its light line sits under its top edge.
+Tray :: struct {}
 
 // A text field's recessed face; caret is its x inside the field, or < 0 for none.
 Field :: struct {
@@ -95,11 +99,19 @@ paint :: proc(ui: ^Ui, rect: sdl.FRect, p: Paint) {
 	case Front_Button:
 		front_button_paint(ui, rect, p)
 	case Bar:
-		steel(ui, rect, {face = .Raised})
-		line := sdl.FRect{rect.x, rect.y + rect.h - 4, rect.w, 1}
-		soft(ui.renderer, line, 6, lit_color(0.7))
-		fill(ui.renderer, line, lit_color(0.7))
+		lit_steel(ui, rect, rect.y + rect.h - 4)
+	case Tray:
+		lit_steel(ui, rect, rect.y + 4)
 	}
+}
+
+// Raised steel with the LED light line across it at line_y.
+@(private)
+lit_steel :: proc(ui: ^Ui, rect: sdl.FRect, line_y: f32) {
+	steel(ui, rect, {face = .Raised})
+	line := sdl.FRect{rect.x, line_y, rect.w, 1}
+	soft(ui.renderer, line, 6, lit_color(0.7))
+	fill(ui.renderer, line, lit_color(0.7))
 }
 
 @(private)

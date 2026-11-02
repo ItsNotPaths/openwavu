@@ -30,7 +30,7 @@ main :: proc() {
 	}
 	defer ui.destroy(&u)
 	// (hole stock-rebuild :tags (game importer)) the stock pack is not rebuilt when its pack.toml version differs from this openwavu's importer; the [import] inputs are recorded for it.
-	l := Launcher{packs = titlepack.installed()}
+	l := Launcher{packs = titlepack.installed(), settings = {frame_cap = FRAME_CAPS[0]}}
 	if len(os.args) >= 3 && os.args[1] == "--front" {
 		l.selected = Front_Preview{os.args[2], len(os.args) > 3 ? os.args[3] : ""}
 	}
@@ -60,6 +60,8 @@ main :: proc() {
 		render.begin_frame(&r, ui.color(ui.BACKGROUND))
 		ui.draw(&u, commands)
 		render.end_frame(&r)
+		budget := u64(1e9) / u64(l.settings.frame_cap)
+		if spent := sdl.GetTicksNS() - now; spent < budget do sdl.DelayPrecise(budget - spent)
 
 		if pack, picked := l.play.?; picked {
 			l.play = nil

@@ -12,8 +12,6 @@ import "../ui"
 // A pack's front, read when its slot is picked (docs/launcher.md, Fronts).
 // (hole front-font :tags (game titlepack)) page font= is read but not used; fronts draw in the launcher font.
 // (hole front-load-speed :tags game :sev polish) opening a front decodes every image on the UI thread (~0.7 s for the stock front, debug build).
-// (hole front-credits :tags game) the credits button does nothing: no screen-bottom popup yet.
-// (hole front-install :tags (game titlepack) :needs titlepack-install) install should open the screen-bottom popup with a version pick (latest first); uninstall removes nothing.
 Front_View :: struct {
 	path:          string,                   // the tar or folder it came from
 	file:          string,                   // the front file on disk in place of the pack's; "" for the pack's
@@ -164,8 +162,7 @@ element :: proc(v: ^Front_View, u: ^ui.Ui, e: titlepack.Element, index: u32, sca
 			text := e.text
 			#partial switch e.action {
 			case .Install:
-				off = installed || !v.can_uninstall
-				if installed do text = "Installed"
+				off = !v.can_uninstall
 			case .Uninstall:
 				off = !installed
 			}
