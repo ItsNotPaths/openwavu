@@ -19,3 +19,19 @@ texture_dds :: proc(t: formats.Texture, allocator := context.allocator) -> (dds:
 	}
 	return dds, cutout, true
 }
+
+// NTP3 or TIM2 section -> one PNG per picture, in order; nil for a picture that does not decode.
+art_pngs :: proc(section: []byte, allocator := context.allocator) -> (pngs: [][]byte, ok: bool) {
+	if textures, is_ntp3 := formats.read_ntp3(section, context.temp_allocator); is_ntp3 {
+		pngs = make([][]byte, len(textures), allocator)
+		for t, i in textures {
+			rgba := formats.decode_rgba(t, context.temp_allocator) or_continue
+			pngs[i] = convert.encode_png(rgba, t.width, t.height, allocator)
+		}
+		return pngs, true
+	}
+	pictures := formats.read_tim2(section, context.temp_allocator) or_return
+	pngs = make([][]byte, len(pictures), allocator)
+	for p, i in pictures do pngs[i] = convert.encode_png(p.rgba, p.width, p.height, allocator)
+	return pngs, true
+}

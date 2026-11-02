@@ -32,7 +32,18 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part WHERE slot = 'body'"), 85)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 17556)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage"), 37)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 8)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 1773)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select/*'"), 240)  // unlit menu entries
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_lit/*'"), 240)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_renders/*'"), 54)
+	all_images: ^db.Stmt
+	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT file FROM image", -1, &all_images, nil), db.OK) do return
+	defer db.finalize(all_images)
+	for db.step(all_images) == db.ROW {
+		file := string(db.column_text(all_images, 0))
+		data, read_err := os.read_entire_file(fmt.tprintf("build/test_packs/tekken5dr/%s", file), context.temp_allocator)
+		if !testing.expect(t, read_err == nil && len(data) > 8 && string(data[:4]) == "\x89PNG", file) do break
+	}
 	images: ^db.Stmt
 	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT id, file FROM image WHERE id GLOB '[0-9]*' ORDER BY id", -1, &images, nil), db.OK) do return
 	defer db.finalize(images)

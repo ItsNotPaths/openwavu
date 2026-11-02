@@ -324,7 +324,9 @@ import_stage :: proc(im: ^Import, index: int) {
 import_sounds :: proc(im: ^Import) {}
 
 // (hole tim2-textures :tags importer :sev polish) model section 17 (TIM2) is not decoded.
-// (hole ui-images :tags (importer titlepack) :needs tim2-textures) only entries 33..36 (two logos, Panda and Kuma renders) and the PS3 menu art next to PARAM.SFO are pulled; the rest of the game's 2D art is not found or dumped into ui/.
+// (hole font-glyphs :tags (importer titlepack)) font pages (font1..4) are images only; their NFH glyph tables are not read.
+// (hole menu-layouts :tags (importer tk5mod)) a screen's SWG layout is copied as is, not decoded; its third block is dropped.
+// The PNGs in the archive, the PS3 menu art next to PARAM.SFO, every 2D art entry and the select renders.
 import_images :: proc(im: ^Import) {
 	for index in 33 ..< 37 {
 		defer free_all(context.temp_allocator)
@@ -336,6 +338,35 @@ import_images :: proc(im: ^Import) {
 		data, err := os.read_entire_file(join(im.game.dir, fmt.tprintf("%s.PNG", strings.to_upper(name, context.temp_allocator))), context.temp_allocator)
 		if err == nil do write_image(im, name, data)
 	}
+	for art in formats.ART_ENTRIES {
+		defer free_all(context.temp_allocator)
+		data := read_entry(im.archive, art.index) or_continue
+		parts, is_container := formats.sections(data, context.temp_allocator)
+		if !is_container {
+			data = formats.unlz(data, context.temp_allocator) or_continue
+			parts = formats.sections(data, context.temp_allocator) or_continue
+		}
+		if !make_dir(join(im.root, "ui", art.name)) do continue
+		if art.screen {
+			if len(parts) < 2 do continue
+			_ = os.write_entire_file(join(im.root, "ui", art.name, "layout.swg"), parts[0])
+			parts = formats.sections(parts[1], context.temp_allocator) or_continue
+		}
+		for section, i in parts do write_art(im, fmt.tprintf("%s/%03d", art.name, i), section)
+	}
+	if !make_dir(join(im.root, "ui", "select_renders")) do return
+	for index in formats.SELECT_RENDERS_FIRST ..< formats.SELECT_RENDERS_END {
+		defer free_all(context.temp_allocator)
+		data := read_entry(im.archive, index) or_continue
+		section := formats.unlz(data, context.temp_allocator) or_continue
+		write_art(im, fmt.tprintf("select_renders/%02d", index - formats.SELECT_RENDERS_FIRST), section)
+	}
+}
+
+// A texture section as ui/<id>.png, more pictures as <id>_1, <id>_2. Other sections (fonts' NFH) are skipped.
+write_art :: proc(im: ^Import, id: string, section: []byte) {
+	pngs, _ := convert.art_pngs(section, context.temp_allocator)
+	for png, k in pngs do if png != nil do write_image(im, k == 0 ? id : fmt.tprintf("%s_%d", id, k), png)
 }
 
 write_image :: proc(im: ^Import, id: string, png: []byte) {
