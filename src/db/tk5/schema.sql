@@ -73,9 +73,64 @@ CREATE TABLE move (
 );
 CREATE INDEX move_character ON move(character);
 
--- input: the command, its timing and words as text (docs/commands.md); bit 18 of extradata is the word unlock. The cancel
--- options are not stored: the loader computes them, as the game does. kind: NULL for a cancel; end ends the list, group
--- enters group_list, return goes back after the group row; their input is timing only.
+-- How a cancel starts its move (modules/tk5/sim/transition.h): which frame (transition), how the fighter re-aligns
+-- (start_align) and what turns it after (motion, the stock tracking of tools/tracking.py). no_move in all three: a
+-- matched entry starts nothing and falls to the list's end.
+CREATE TABLE transition (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO transition VALUES
+	('start', 0),     -- frame 1
+	('carry', 1),     -- the next frame of the old move (frame 1 when the new move's active frames are past)
+	('param', 2),     -- the frame start_param names
+	('end', 3),       -- the last frame, playing backward
+	('back', 4),      -- the frame before, playing backward
+	('next', 5),      -- the next frame
+	('thrower', 6),   -- frame 1; the thrower's side of a throw, linked to the opponent
+	('thrown', 7),    -- frame 1; the victim of a throw
+	('juggle', 8),    -- the frame the reaction asks for; the launch starts
+	('pass', 9),      -- as start, but the entry does not end the cancel scan
+	('no_move', 15);
+
+CREATE TABLE start_align (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);  -- to_*: facing and move yaw, yaw_to_*: move yaw only
+INSERT INTO start_align VALUES
+	('keep', 0), ('keep_root', 1), ('yaw_to_facing', 2), ('yaw_to_facing_root', 3), ('to_opponent', 4), ('yaw_to_opponent', 5),
+	('yaw_to_opponent_or_reference', 6), ('to_reference', 7), ('yaw_to_reference', 8), ('to_look', 9), ('yaw_to_look', 10),
+	('throw_partner', 11), ('to_wall', 12), ('half_turn', 13), ('yaw_to_reference_less_reaction', 14), ('no_move', 15);
+
+-- homing: turns to the opponent in startup, re-aims only when they are far round (*_any_angle: always homes); settle_*: closes
+-- the angle to the target over 40 (very_slow), 30, 20, 10 or 5 (very_fast) frames; chase_*: homing at turn rate 3 (slowest)
+-- to 23 (fastest), the steady ones without the slow-down while the opponent is busy.
+CREATE TABLE motion (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO motion VALUES
+	('none', 0),               -- tracking stays as it is
+	('free', 1),               -- nothing steers; a running turn goes on
+	('homing_soft', 2), ('homing_halved', 3), ('homing', 4), ('homing_soft_any_angle', 8), ('homing_halved_any_angle', 9),
+	('homing_any_angle', 10),
+	('homing_reference', 11),  -- strong homing on the reference direction
+	('homing_behind_halved', 12), ('homing_behind', 13),
+	('approach', 14),          -- turns to the target until the first active frame and slides in
+	('ease_in', 15),           -- turns to the opponent, the pull ramping up over 8 frames
+	('sweep_locked', 16),      -- swings to one side of the reference; cancels locked for 24 frames
+	('sweep', 17),
+	('face_start_spot', 18),   -- turns to where the opponent stood at the start, while 1200 apart or more
+	('turn_to_target', 19),    -- turns to the target until the first active frame; from behind, half a turn more
+	('turn_to_target_ahead', 20),
+	('turn_to_move_yaw', 21),  -- 21..23 turn to the move yaw over 16 frames; the pushback stops
+	('thrower', 22), ('thrown', 23),
+	('guard', 24), ('juggle', 25), ('hit_down', 26), ('counter', 27), ('hit_front', 28), ('hit_back', 29), ('hit_left', 30),
+	('hit_right', 31), ('hit_to_target', 32),
+	('settle_to_opponent_very_slow', 33), ('settle_to_opponent_slow', 34), ('settle_to_opponent_medium', 35),
+	('settle_to_opponent_fast', 36), ('settle_to_opponent_very_fast', 37), ('settle_to_opponent_by_distance', 38),
+	('settle_to_side_very_slow', 39), ('settle_to_side_slow', 40), ('settle_to_side_medium', 41), ('settle_to_side_fast', 42),
+	('settle_to_side_very_fast', 43), ('settle_to_side_by_distance', 44),
+	('chase_slowest', 45), ('chase_slow', 46), ('chase_medium', 47), ('chase_fast', 48), ('chase_fastest', 49),
+	('chase_steady_slowest', 50), ('chase_steady_slow', 51), ('chase_steady_medium', 52), ('chase_steady_fast', 53),
+	('chase_steady_fastest', 54),
+	('face_stage_centre', 55),  -- turns to the middle of the stage in 5 frames
+	('no_move', 63);
+
+-- input: the command, its timing and words as text (docs/commands.md). The cancel options are not stored: the loader
+-- computes them, as the game does. kind: NULL for a cancel; end ends the list, group enters group_list, return goes back
+-- after the group row; their input is timing only. The flags carry over to the move change.
 CREATE TABLE cancel_list (
 	key       TEXT PRIMARY KEY,
 	character TEXT NOT NULL REFERENCES motbin(character)
@@ -92,8 +147,13 @@ CREATE TABLE cancel (
 	alias           INTEGER,
 	group_list      TEXT REFERENCES group_cancel_list(key),  -- a group entry: the group cancel list it enters
 	unk_0a          INTEGER,           -- (not loaded)
-	-- (hole cancel-transition-columns :tags (importer tk5mod content) :sev polish) extradata is the transition word (class, start alignment, motion code) and the pending flags as TK5 bits; no readable columns.
-	extradata       INTEGER NOT NULL,
+	transition      TEXT NOT NULL REFERENCES transition(name),
+	start_align     TEXT NOT NULL REFERENCES start_align(name),
+	motion          TEXT NOT NULL REFERENCES motion(name),
+	turn            INTEGER NOT NULL DEFAULT 0 CHECK (turn IN (0, 1)),          -- half a turn more
+	no_blend_out    INTEGER NOT NULL DEFAULT 0 CHECK (no_blend_out IN (0, 1)),  -- no blend out into the next move
+	no_root_fix     INTEGER NOT NULL DEFAULT 0 CHECK (no_root_fix IN (0, 1)),   -- the root is not re-placed for the new move
+	root_hips       INTEGER NOT NULL DEFAULT 0 CHECK (root_hips IN (0, 1)),     -- the root fix places the fighter by the hips
 	tracking_override TEXT REFERENCES tracking_override(key),  -- NULL: the move's own tracking
 	PRIMARY KEY (list, pos)
 );
@@ -114,7 +174,13 @@ CREATE TABLE group_cancel (
 	alias           INTEGER,
 	group_list      TEXT REFERENCES group_cancel_list(key),
 	unk_0a          INTEGER,           -- (not loaded)
-	extradata       INTEGER NOT NULL,
+	transition      TEXT NOT NULL REFERENCES transition(name),
+	start_align     TEXT NOT NULL REFERENCES start_align(name),
+	motion          TEXT NOT NULL REFERENCES motion(name),
+	turn            INTEGER NOT NULL DEFAULT 0 CHECK (turn IN (0, 1)),
+	no_blend_out    INTEGER NOT NULL DEFAULT 0 CHECK (no_blend_out IN (0, 1)),
+	no_root_fix     INTEGER NOT NULL DEFAULT 0 CHECK (no_root_fix IN (0, 1)),
+	root_hips       INTEGER NOT NULL DEFAULT 0 CHECK (root_hips IN (0, 1)),
 	tracking_override TEXT REFERENCES tracking_override(key),
 	PRIMARY KEY (list, pos)
 );

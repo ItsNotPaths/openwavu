@@ -24,7 +24,8 @@ int main(int argc, char **argv) {
     if (failed) return printf("%s\n", failed), 1;
     LINE("move", m.move_count, "%d/%u/%d/%d", m.moves[index].compare_id, m.moves[index].anim, m.moves[index].next_move,
          m.moves[index].extra_props);
-    LINE("cancel", m.cancel_count, "%#x/%d/%d", m.cancels[index].command.code, m.cancels[index].move, m.cancels[index].tracking_pick);
+    LINE("cancel", m.cancel_count, "%#x/%d/%d/%#x", m.cancels[index].command.code, m.cancels[index].move, m.cancels[index].tracking_pick,
+         m.cancels[index].extradata);
     LINE("requirement", m.requirement_count, "%d/%d", m.requirements[index].id, m.requirements[index].param);
     LINE("start_prop", m.start_property_count, "%d/%d", (int32_t)m.start_properties[index].requirements, m.start_properties[index].id);
     LINE("extra_prop", m.property_count, "%d", m.properties[index].value);

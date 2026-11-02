@@ -279,8 +279,16 @@ param_values :: proc(k: ^Keys, code, value: u16) -> (values: [7]db.Value) {
 	return
 }
 
+// A cancel's extradata: the transition word (class, start alignment, motion code), the flags, the word unlock.
+TRANSITION_SHEETS :: [3]string{"transition", "start_align", "motion"}
+TRANSITION_FIELDS :: [3]struct {shift, bits: u32}{{10, 4}, {6, 4}, {0, 6}}
+EXTRA_FLAGS :: [4]u32{1 << 15, 1 << 14, 1 << 16, 1 << 17}  // turn, no_blend_out, no_root_fix, root_hips
+
 @(private = "file")
 write_cancels :: proc(w: ^db.Writer, k: ^Keys, list: List, m: formats.Motbin, cancels: []formats.Cancel, picks: []u16) {
+	sheets := TRANSITION_SHEETS
+	names: [3]map[i64]string
+	for &x, i in names do x = db.names(w, sheets[i])
 	for c, i in cancels {
 		key, pos := in_list(w, k, list, i)
 		kind, input := cancel_input(m, c)
@@ -289,8 +297,17 @@ write_cancels :: proc(w: ^db.Writer, k: ^Keys, list: List, m: formats.Motbin, ca
 		if kind != "" do kind_value = kind
 		if kind == "group" do move, alias, group_list = db.Null{}, db.Null{}, list_ref(k, .Group_Cancel, c.move)
 		if picks[i] != 0 do tracking = row_key(k.char, "tracking_override", picks[i] - 1)  // the game counts picks from 1
-		db.insert(w, LIST_TABLES[list], key, pos, kind_value, input, list_ref(k, .Requirement, c.requirements), move, alias, group_list,
-			n(c.unk_0a), n(m.cancel_extras[c.extra] & ~u32(EXTRA_UNLOCK)), tracking)
+		extra := m.cancel_extras[c.extra]
+		values := make([dynamic]db.Value)
+		append(&values, key, pos, kind_value, input, list_ref(k, .Requirement, c.requirements), move, alias, group_list, n(c.unk_0a))
+		for field, f in TRANSITION_FIELDS {
+			cell: db.Value = db.Null{}  // no name: the row fails NOT NULL
+			if name, named := names[f][i64(extra >> field.shift & (1 << field.bits - 1))]; named do cell = name
+			append(&values, cell)
+		}
+		for flag in EXTRA_FLAGS do append(&values, n(extra & flag != 0))
+		append(&values, tracking)
+		db.insert(w, LIST_TABLES[list], ..values[:])
 	}
 }
 

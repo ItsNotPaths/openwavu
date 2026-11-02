@@ -80,3 +80,13 @@ insert :: proc(w: ^Writer, table: string, values: ..Value) {
 	if step(s) != DONE do w.err = fmt.aprintf("%s: %s", table, errmsg(w.handle), allocator = w.stmts.allocator)
 	reset(s)
 }
+
+// The rows of a name sheet (name, code) the schema fills, by code.
+names :: proc(w: ^Writer, table: string, allocator := context.allocator) -> map[i64]string {
+	out := make(map[i64]string, allocator)
+	s: ^Stmt
+	if prepare_v2(w.handle, fmt.ctprintf("SELECT code, name FROM %s", table), -1, &s, nil) != OK do return out
+	for step(s) == ROW do out[column_int64(s, 0)] = strings.clone_from_cstring(column_text(s, 1), allocator)
+	finalize(s)
+	return out
+}

@@ -90,14 +90,13 @@ static const Field move_fields[] = {
     FIELD_AS(T5Move, hits.launches, "hits_launches"),
 };
 
-// The command and its timing come from `input` (load_inputs).
+// The command and its timing come from `input`, the extradata from the transition columns (load_inputs).
 static const Field cancel_fields[] = {
     FIELD(T5Cancel, requirements),
     FIELD(T5Cancel, move),
     ALIAS_AS(T5Cancel, move, "alias"),
     FIELD_AS(T5Cancel, move, "group_list"),  // a group entry: the group cancel list it enters
     FIELD_AS(T5Cancel, tracking_pick, "tracking_override", .bias = 1),  // tracking_pick counts from 1
-    FIELD(T5Cancel, extradata),
 };
 
 static const Field requirement_fields[] = {FIELD(T5Requirement, id), PARAM(T5Requirement, param)};
@@ -409,21 +408,42 @@ static const char *cancel_input(const char *table, const char *kind, const char 
     return NULL;
 }
 
+// The transition word from its three name columns, then the flags; columns 2.. of the input select.
+static const char *const TRANSITION_COLUMNS[] = {"transition", "start_align", "motion"};
+static const uint32_t EXTRA_FLAGS[] = {EXTRADATA_TURN, EXTRADATA_NO_BLEND_OUT, EXTRADATA_NO_ROOT_FIX, EXTRADATA_ROOT_HIPS};
+enum { NAMES_FIRST = 2, FLAGS_FIRST = NAMES_FIRST + 3, NAME_TEXT_FIRST = FLAGS_FIRST + 4 };
+
+static const char *cancel_extradata(const char *table, sqlite3_stmt *row, uint32_t *extradata) {
+    for (int name = 0; name < 3; name++)
+        if (sqlite3_column_type(row, NAMES_FIRST + name) == SQLITE_NULL)
+            return fail("%s.%s: no row %s", table, TRANSITION_COLUMNS[name], (const char *)sqlite3_column_text(row, NAME_TEXT_FIRST + name));
+    *extradata = t5_transition(sqlite3_column_int(row, NAMES_FIRST), sqlite3_column_int(row, NAMES_FIRST + 1), sqlite3_column_int(row, NAMES_FIRST + 2));
+    for (int flag = 0; flag < 4; flag++)
+        if (sqlite3_column_int(row, FLAGS_FIRST + flag)) *extradata |= EXTRA_FLAGS[flag];
+    return NULL;
+}
+
 // Rows in the order load_table lays them out. No motbin: only counts the sequences.
 static const char *read_inputs(sqlite3 *db, const char *character, T5Motbin *motbin, Sequences *sequences) {
     static const char *const names[] = {"cancel", "group_cancel"};
     const char *failed = NULL;
     for (int table = 0; table < 2 && !failed; table++) {
-        char sql[256];
-        snprintf(sql, sizeof sql, "SELECT kind, input FROM %s_list l JOIN %s ON list = l.key WHERE l.character = ?1 ORDER BY l.rowid, pos",
+        char sql[1024];
+        snprintf(sql, sizeof sql,
+                 "SELECT kind, input, t.code, a.code, m.code, turn, no_blend_out, no_root_fix, root_hips, c.transition, c.start_align, "
+                 "c.motion FROM %s_list l JOIN %s c ON c.list = l.key LEFT JOIN transition t ON t.name = c.transition "
+                 "LEFT JOIN start_align a ON a.name = c.start_align LEFT JOIN motion m ON m.name = c.motion "
+                 "WHERE l.character = ?1 ORDER BY l.rowid, pos",
                  names[table], names[table]);
         sqlite3_stmt *rows;
         if ((failed = prepare(db, sql, character, &rows))) break;
         T5Cancel *cancels = !motbin ? NULL : table ? motbin->group_cancels : motbin->cancels;
         for (int32_t row = 0; !failed && sqlite3_step(rows) == SQLITE_ROW; row++) {
-            T5Cancel unused;
-            failed = cancel_input(names[table], (const char *)sqlite3_column_text(rows, 0), (const char *)sqlite3_column_text(rows, 1),
-                                  cancels ? &cancels[row] : &unused, sequences);
+            T5Cancel unused = {0}, *cancel = cancels ? &cancels[row] : &unused;
+            failed = cancel_extradata(names[table], rows, &cancel->extradata);
+            if (!failed)
+                failed = cancel_input(names[table], (const char *)sqlite3_column_text(rows, 0), (const char *)sqlite3_column_text(rows, 1),
+                                      cancel, sequences);
         }
         sqlite3_finalize(rows);
     }
