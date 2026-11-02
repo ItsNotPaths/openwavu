@@ -13,7 +13,7 @@ import "../titlepack"
 play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack) {
 	pack, ok := content.open_pack("packs/tekken5dr.tar")
 	if !ok {
-		fmt.eprintln("openwavu: no content pack; run openwavu-import first")
+		fmt.eprintln("openwavu: playing a pack is not built yet (hole pack-open)")
 		return
 	}
 	defer content.close_pack(&pack)
