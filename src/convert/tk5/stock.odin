@@ -298,6 +298,7 @@ CODE_REFS :: [?]struct {first, last: u16, ref: string}{
 	{123, 123, "move_pool"}, {218, 218, "move_pool"},  // the opponent's move is in a pool
 	{296, 296, "move_pool"}, {302, 302, "move_pool"}, {308, 308, "move_pool"},  // pool and facing
 	{314, 314, "move_pool"}, {320, 320, "move_pool"}, {326, 326, "move_pool"},
+	{224, 225, "compare_id"},  // the target's move, its pending move, is this identity
 	{0x8000 + 113, 0x8000 + 113, "tracking_row"},  // tracking
 	{0x8000 + 148, 0x8000 + 149, "move"},  // force move, in place
 	{0x8000 + 156, 0x8000 + 156, "move"},  // overwrite move

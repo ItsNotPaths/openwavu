@@ -44,6 +44,12 @@ text_keys_follow_stock_rows :: proc(t: ^testing.T) {
 	db.insert(&w, "requirement", "x", i64(0), i64(0), i64(123), "mod/pool")
 	for list in ([]db.Value{i64(0), "mod/pool"}) do for pos in i64(0) ..< 2 do db.insert(&w, "move_pool", "x", list, pos, i64(7))
 	db.insert(&w, "extra_prop", "x", i64(0), i64(0), i64(0), i64(0x8000 + 163), "mod/p", db.Null{})
+	for key in ([]db.Value{i64(0), "mod/t"}) do db.insert(&w, "tracking_override", "x", key, i64(0), i64(0), i64(0), i64(0))
+	for key in ([]db.Value{i64(0), "mod/s"}) do db.insert(&w, "input_sequence", "x", key, i64(0), i64(0), i64(-1))
+	db.insert(&w, "cancel", "x", i64(0), i64(0), i64(0x8007), i64(0), i64(-1), i64(0), db.Null{}, db.Null{},  // reads input sequence mod/s
+		i64(0), i64(0), i64(0), i64(0), i64(0), "mod/t", "mod/s")
+	for key in ([]db.Value{i64(0), "mod/z"}) do db.insert(&w, "anim", "x", key, i64(1), "a.anim")
+	test_move(&w, "x", 0, i64(0), "mod/z")
 	db.insert(&w, "hit_condition", "x", i64(0), i64(0), "mod/b", i64(10), i64(0), i64(0))
 	for key in ([]db.Value{i64(0), "mod/p", "mod/o"}) do db.insert(&w, "pushback", "x", key, i64(1), i64(0), i64(0), db.Null{}, i64(-1))
 	reaction := make([]db.Value, 35, context.temp_allocator)
@@ -54,14 +60,58 @@ text_keys_follow_stock_rows :: proc(t: ^testing.T) {
 	state, stdout, _, exec_err := os.process_exec({command = {TEXT_KEYS, TEXT_KEYS_DB, "x"}}, context.temp_allocator)
 	testing.expect(t, exec_err == nil && state.exit_code == 0)
 	// requirement rows: list 0, then mod/a, then mod/b at row 2; pushbacks: 0, then mod/o, then mod/p at 2;
-	// pools: list 0, then mod/pool at row 2
-	testing.expect_value(t, string(stdout), "2 2 0 2 0 0 0 2 ")
+	// pools: list 0, then mod/pool at row 2; the cancel reads sequence 1 (0x8007 + 1) and picks override 1 (counted from 1);
+	// the move's anim mod/z follows anim 0 of its bank
+	testing.expect_value(t, string(stdout), "2 2 0 2 0 0 0 2 0x8008 2 0/1 7 7 7 7 ")
 
 	w, err = db.create(TEXT_KEYS_DB, TK5_SCHEMA)
 	db.insert(&w, "requirement", "x", i64(0), i64(0), i64(5), "mod/pool")
 	testing.expect_value(t, db.finish(&w), "")
 	_, stdout, _, _ = os.process_exec({command = {TEXT_KEYS, TEXT_KEYS_DB, "x"}}, context.temp_allocator)
 	testing.expect_value(t, string(stdout), "requirement.param: text in a number column\n")
+}
+
+// A mod's move identity (compare id) is text, numbered after every stock one across all characters, so a pool or a
+// requirement of one character can name a move of another. An identity no move has fails the load.
+@(test)
+compare_ids_are_global :: proc(t: ^testing.T) {
+	built := build_sim_tool(COMPARE_IDS, "-Ivendor/sqlite", "tests/ref/load_lists.c", "modules/tk5/load.c", "modules/tk5/sim/stage_file.c", "modules/tk5/sim/anim.c",
+		"vendor/sqlite/libsqlite3.a", "-lpthread")
+	if !testing.expect(t, built, "tests/ref/load_lists.c did not build") do return
+	defer os.remove(COMPARE_IDS_DB)
+
+	load :: proc(t: ^testing.T, wanted: string) -> string {
+		w, err := db.create(COMPARE_IDS_DB, TK5_SCHEMA)
+		testing.expect_value(t, err, "")
+		db.insert(&w, "code_ref", i64(224), "compare_id")
+		test_move(&w, "y", 0, "mod/y_upper")
+		test_move(&w, "y", 1, i64(500))
+		test_move(&w, "x", 0, "mod/a_x")
+		db.insert(&w, "move_pool", "x", i64(0), i64(0), "mod/y_upper")
+		db.insert(&w, "move_pool", "x", i64(0), i64(1), i64(0))
+		db.insert(&w, "requirement", "x", i64(0), i64(0), i64(224), wanted)
+		testing.expect_value(t, db.finish(&w), "")
+		_, stdout, _, _ := os.process_exec({command = {COMPARE_IDS, COMPARE_IDS_DB, "x"}}, context.temp_allocator)
+		return string(stdout)
+	}
+	// stock ids end at 500: mod/a_x is 501, mod/y_upper 502. Output: the requirement param, x's move, x's pool
+	testing.expect_value(t, load(t, "mod/y_upper"), "502 501/0 502 0 ")
+	testing.expect_value(t, load(t, "mod/nobody"), "requirement.param: no compare_id mod/nobody\n")
+}
+
+COMPARE_IDS :: "build/load_compare_ids"
+COMPARE_IDS_DB :: "build/load_compare_ids.db"
+
+// A move row with no lists, the given compare id, and anim anim_idx of the character's own bank.
+@(private = "file")
+test_move :: proc(w: ^db.Writer, character: string, idx: i64, compare_id: db.Value, anim_idx: db.Value = i64(0)) {
+	MOVE_COLUMNS :: 44
+	values: [MOVE_COLUMNS]db.Value
+	for &v in values do v = i64(0)
+	values[0], values[1], values[2], values[3], values[4] = character, idx, "m", db.Null{}, character
+	values[5], values[12] = anim_idx, compare_id
+	for list in ([]int{9, 14, 19, 20, 21}) do values[list] = i64(-1)  // cancels, hit_conditions, the property lists
+	db.insert(w, "move", ..values[:])
 }
 
 // hit_condition 0 points to requirement list `target`; start_prop 0 has none.
@@ -82,7 +132,8 @@ load_lists :: proc(t: ^testing.T, target: i64) -> string {
 LOAD_ANIMS :: "build/load_anims"
 LOAD_ANIMS_ROOT :: "build/load_anims_pack"
 
-// Rows that name one file are one anim; an id without a row is a zero anim; a file that is not a tk5 .anim fails the load.
+// Rows that name one file are one anim; an id without a row is a zero anim; a mod's text ids follow the numbered ones, in
+// key order; a file that is not a tk5 .anim fails the load.
 @(test)
 anims_share_by_file :: proc(t: ^testing.T) {
 	built := build_sim_tool(LOAD_ANIMS, "-Ivendor/sqlite", "tests/ref/load_anims.c", "modules/tk5/load.c", "modules/tk5/sim/stage_file.c", "modules/tk5/sim/anim.c",
@@ -94,7 +145,7 @@ anims_share_by_file :: proc(t: ^testing.T) {
 	write_test_anim(t, "b.anim", 3, 7)
 	testing.expect(t, os.write_entire_file(LOAD_ANIMS_ROOT + "/bad.anim", []byte{1, 2, 3}) == nil)
 
-	testing.expect_value(t, load_anims(t, "b.anim"), "2:1.5 0:0 2:1.5 3:7 same 1 0")
+	testing.expect_value(t, load_anims(t, "b.anim"), "2:1.5 0:0 2:1.5 3:7 2:1.5 3:7 same 1 0")
 	testing.expect(t, strings.contains(load_anims(t, "bad.anim"), "bad file bad.anim"))
 }
 
@@ -106,7 +157,7 @@ write_test_anim :: proc(t: ^testing.T, file: string, frames: int, last: f32) {
 	testing.expect(t, tk5.write_anim(fmt.tprintf("%s/%s", LOAD_ANIMS_ROOT, file), {frames = frames, values = values}))
 }
 
-// Bank x: ids 0 and 2 on a.anim, 3 on `third`, 1 without a row.
+// Bank x: ids 0 and 2 on a.anim, 3 on `third`, 1 without a row; mod/a on a.anim, mod/z on b.anim.
 @(private = "file")
 load_anims :: proc(t: ^testing.T, third: string) -> string {
 	path :: LOAD_ANIMS_ROOT + "/pack.db"
@@ -115,6 +166,8 @@ load_anims :: proc(t: ^testing.T, third: string) -> string {
 	db.insert(&w, "anim", "x", i64(0), i64(2), "a.anim")
 	db.insert(&w, "anim", "x", i64(2), i64(2), "a.anim")
 	db.insert(&w, "anim", "x", i64(3), i64(3), third)
+	db.insert(&w, "anim", "x", "mod/z", i64(3), "b.anim")
+	db.insert(&w, "anim", "x", "mod/a", i64(2), "a.anim")
 	testing.expect_value(t, db.finish(&w), "")
 	state, stdout, _, exec_err := os.process_exec({command = {LOAD_ANIMS, path, LOAD_ANIMS_ROOT, "x"}}, context.temp_allocator)
 	testing.expect(t, exec_err == nil && state.exit_code <= 1)

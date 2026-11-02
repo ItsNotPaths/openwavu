@@ -9,7 +9,7 @@
 typedef struct sqlite3 sqlite3;
 
 // Where each anim bank starts in the fighter's anim list (T5FighterData.anims): character, common, embedded.
-// (hole mod-anims :tags tk5mod) the anim list has these three banks only, and anim_idx is a number: a mod can not add anims.
+// A mod's anims are text ids in these banks, after the numbered ones.
 typedef struct {
     uint32_t character, common, embedded;
 } T5AnimBases;

@@ -37,7 +37,7 @@ CREATE TABLE move (
 	cancels        INTEGER NOT NULL,  -- cancel list
 	next_move      INTEGER NOT NULL,  -- the move it goes to when it ends
 	end_yaw        INTEGER NOT NULL,
-	compare_id     INTEGER NOT NULL,  -- (hole compare-ids :tags (importer tk5mod)) its own number space (requirements, move pools, throws): a mod that needs a new move identity picks a number and can collide with another mod.
+	compare_id     INTEGER NOT NULL,  -- move identity (requirements, move pools, throws); a mod's own is text, numbered after every stock one
 	push_speed     INTEGER NOT NULL,
 	hit_conditions INTEGER NOT NULL,  -- hit_condition list
 	window_start   INTEGER NOT NULL,
@@ -70,9 +70,8 @@ CREATE TABLE move (
 	PRIMARY KEY (character, idx)
 );
 
--- command_code 0x8000 ends a list; 0x8005 enters group_list, 0x8006 returns; 0x8007 + n reads input_sequence n.
--- (hole cancel-refs :tags (importer tk5mod)) tracking_pick (1 + idx) and command_code 0x8007 + n pack references into numbers; they need tracking_override and input_sequence reference columns, or a mod's text-keyed rows can not be named.
--- (hole command-syntax :tags (importer content) :needs (cancel-refs compare-ids mod-anims)) commands are game bits (command_code, command_buttons); no cross-game command syntax yet. Designed by the user after the db reference work.
+-- command_code 0x8000 ends a list; 0x8005 enters group_list, 0x8006 returns; 0x8007 reads the row's input_sequence.
+-- (hole command-syntax :tags (importer content)) commands are game bits (command_code, command_buttons); no cross-game command syntax yet. Designed by the user after the db reference work.
 CREATE TABLE cancel (
 	character       TEXT NOT NULL,
 	list            INTEGER NOT NULL,
@@ -88,7 +87,8 @@ CREATE TABLE cancel (
 	window_end      INTEGER NOT NULL,
 	start_frame     INTEGER NOT NULL,
 	option          INTEGER NOT NULL,  -- as the loader computes it (0xc8508); the file value is ignored
-	tracking_pick   INTEGER NOT NULL,  -- 1 + tracking_override idx, 0: the move's default
+	tracking_override INTEGER,         -- the tracking_override it picks, NULL: the move's own tracking
+	input_sequence  INTEGER,           -- command_code 0x8007: the input_sequence it reads, else NULL
 	PRIMARY KEY (character, list, pos)
 );
 
@@ -107,7 +107,8 @@ CREATE TABLE group_cancel (
 	window_end      INTEGER NOT NULL,
 	start_frame     INTEGER NOT NULL,
 	option          INTEGER NOT NULL,  -- as the loader computes it (0xc8508); the file value is ignored
-	tracking_pick   INTEGER NOT NULL,  -- 1 + tracking_override idx, 0: the move's default
+	tracking_override INTEGER,         -- the tracking_override it picks, NULL: the move's own tracking
+	input_sequence  INTEGER,           -- command_code 0x8007: the input_sequence it reads, else NULL
 	PRIMARY KEY (character, list, pos)
 );
 
@@ -116,7 +117,7 @@ CREATE TABLE group_cancel (
 -- so a mod can name its own rows by text key. Requirement ids are below 0x8000, property ids from 0x8000 on.
 CREATE TABLE code_ref (
 	code INTEGER PRIMARY KEY,
-	ref  TEXT NOT NULL  -- the table the param names: move, pushback, tracking_row, move_pool (a list)
+	ref  TEXT NOT NULL  -- the table the param names: move, pushback, tracking_row, move_pool (a list); compare_id: a move identity
 );
 
 CREATE TABLE requirement (
@@ -351,7 +352,7 @@ CREATE TABLE tracking_row (
 	PRIMARY KEY (character, idx)
 );
 
--- Tracking a cancel entry names (cancel.tracking_pick - 1).
+-- Tracking a cancel entry names (cancel.tracking_override).
 CREATE TABLE tracking_override (
 	character  TEXT NOT NULL,
 	idx        INTEGER NOT NULL,

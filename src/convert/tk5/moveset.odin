@@ -6,6 +6,7 @@ import "../../db"
 import formats "../../formats/tk5"
 
 CMD_GROUP :: 0x8005
+CMD_SEQUENCE :: 0x8007  // 0x8007 + n reads input sequence n
 SIDE_BANDS :: 8  // header 0x140, 4 u16 each
 
 // anim_owner: the owner of the character's anim container (shared by Kuma and Panda, ...). moveset: index of formats.CHARACTERS.
@@ -149,10 +150,13 @@ embedded_owner :: proc(char: string) -> string {return fmt.tprintf("%s/embedded"
 write_cancels :: proc(w: ^db.Writer, table, char: string, m: formats.Motbin, cancels: []formats.Cancel, picks: []u16, list_starts: []bool) {
 	for c, i in cancels {
 		l, p := list_of(list_starts, i)
-		move, group_list: db.Value = n(c.move), db.Null{}
-		if c.command >> 16 == CMD_GROUP do move, group_list = db.Null{}, n(c.move)
-		db.insert(w, table, char, n(l), n(p), n(c.command >> 16), n(c.command & 0xffff), n(c.requirements), move, group_list, n(c.unk_0a),
-			n(m.cancel_extras[c.extra]), n(c.window_start), n(c.window_end), n(c.start_frame), n(cancel_option(m, c)), n(picks[i]))
+		code := c.command >> 16
+		move, group_list, sequence, tracking: db.Value = n(c.move), db.Null{}, db.Null{}, db.Null{}
+		if code == CMD_GROUP do move, group_list = db.Null{}, n(c.move)
+		if code >= CMD_SEQUENCE do code, sequence = CMD_SEQUENCE, n(code - CMD_SEQUENCE)
+		if picks[i] != 0 do tracking = n(picks[i] - 1)  // the game counts picks from 1
+		db.insert(w, table, char, n(l), n(p), n(code), n(c.command & 0xffff), n(c.requirements), move, group_list, n(c.unk_0a),
+			n(m.cancel_extras[c.extra]), n(c.window_start), n(c.window_end), n(c.start_frame), n(cancel_option(m, c)), tracking, sequence)
 	}
 }
 
