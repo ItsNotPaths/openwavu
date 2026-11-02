@@ -74,3 +74,22 @@ broken_commands_say_what_is_wrong :: proc(t: ^testing.T) {
 		testing.expectf(t, failed != "", "%q parsed", text)
 	}
 }
+
+// The plain notation reads like a move list: no frames, no repeat-separating or edge `n`, `^` kept.
+@(test)
+plain_notation_reads_like_a_move_list :: proc(t: ^testing.T) {
+	cases := [][2]string {
+		{"{n,f,n,f+1+2}20@1..255>1", "f,f+1+2"},
+		{"{n:u:n}16@5..15>15", "u"},
+		{"{f:n:^f}20@1..255>1", "f,^f"},
+		{"{n,b,n,f+2}50@1..255>1", "b,n,f+2"},
+		{"{1+2}1@21..21>21", "1+2"},
+		{"^b@1..255>1", "^b"},
+		{"@50..255>50", ""},
+	}
+	for c in cases {
+		input, failed := command.parse(c[0], TK5_BUTTONS)
+		if !testing.expect_value(t, failed, "") do continue
+		testing.expect_value(t, command.notation(input, TK5_BUTTONS), c[1])
+	}
+}

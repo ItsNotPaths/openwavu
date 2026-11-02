@@ -48,8 +48,8 @@ const char *ow_input_parse(const char *text, uint32_t length, const char *const 
 // The exact text of an input; returns its length, or 0 when it does not fit.
 uint32_t ow_input_text(const OwInput *input, const char *const *buttons, char *out, uint32_t room);
 
-// The plain notation players use (f,f+1+2), for reading only.
-// (hole input-notation :tags (sdk editor) :sev polish) no plain notation printer for move lists, the pause menu and the editor.
+// The plain notation players use (f,f+1+2), for reading only: no frames, no {…}1, ':' as ',', and no `n` that leads,
+// trails or only separates two steps of the same directions.
 uint32_t ow_input_notation(const OwInput *input, const char *const *buttons, char *out, uint32_t room);
 
 #ifdef OW_INPUT_IMPLEMENTATION
@@ -317,7 +317,7 @@ static void ow_put_directions(OwWriter *w, uint16_t bits, bool tap) {
     ow_put(w, best);
 }
 
-static void ow_put_step(OwWriter *w, const OwInputStep *step, const char *const *names) {
+static void ow_put_step(OwWriter *w, const OwInputStep *step, const char *const *names, bool plain) {
     bool first = true;
     if (step->directions) {
         ow_put_directions(w, step->directions, step->tap);
@@ -328,14 +328,15 @@ static void ow_put_step(OwWriter *w, const OwInputStep *step, const char *const 
         bool one = !(step->press & (step->press - 1));
         bool inner = true;
         const char *between = step->press_mode == OW_PRESS_ANY && !one ? "/" : "+";
-        if (step->press_mode == OW_PRESS_SAME_FRAME) ow_put(w, "{");
+        bool braces = step->press_mode == OW_PRESS_SAME_FRAME && !plain;
+        if (braces) ow_put(w, "{");
         for (int32_t i = 0; names[i]; i++) {
             if (!(step->press & (1 << i))) continue;
             if (!inner) ow_put(w, between);
             ow_put(w, names[i]);
             inner = false;
         }
-        if (step->press_mode == OW_PRESS_SAME_FRAME) ow_put(w, "}1");
+        if (braces) ow_put(w, "}1");
         first = false;
     }
     for (int32_t i = 0; names[i]; i++) {
@@ -363,7 +364,7 @@ uint32_t ow_input_text(const OwInput *input, const char *const *buttons, char *o
     if (sequence) ow_put(&w, "{");
     for (int32_t i = 0; i < input->step_count; i++) {
         if (i) ow_put(&w, input->steps[i].strict ? ":" : ",");
-        ow_put_step(&w, &input->steps[i], buttons);
+        ow_put_step(&w, &input->steps[i], buttons, false);
     }
     if (sequence) {
         ow_put(&w, "}");
@@ -378,9 +379,23 @@ uint32_t ow_input_text(const OwInput *input, const char *const *buttons, char *o
     return w.length < room ? (out[w.length] = 0, w.length) : 0;
 }
 
+static bool ow_bare_neutral(const OwInputStep *step) {
+    return step->directions == OW_DIR_N && !step->tap && !step->press && !step->held && !step->not_held && !step->summary;
+}
+
 uint32_t ow_input_notation(const OwInput *input, const char *const *buttons, char *out, uint32_t room) {
-    (void)input, (void)buttons, (void)out, (void)room;
-    return 0;
+    OwWriter w = {out, room, 0};
+    const OwInputStep *steps = input->steps;
+    int32_t last = input->step_count - 1;
+    bool first = true;
+    for (int32_t i = 0; i <= last; i++) {
+        bool separator = i > 0 && i < last && steps[i - 1].directions == steps[i + 1].directions;
+        if (ow_bare_neutral(&steps[i]) && (i == 0 || i == last || separator)) continue;
+        if (!first) ow_put(&w, ",");
+        ow_put_step(&w, &steps[i], buttons, true);
+        first = false;
+    }
+    return w.length < room ? (out[w.length] = 0, w.length) : 0;
 }
 
 #endif
