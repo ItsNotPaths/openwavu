@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dependencies into vendor/: zig (the C compiler for pack modules, pinned so ow build is reproducible), wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding,
-# SDL3_ttf built static with FreeType, and the UI font. Delete a vendor/ folder to refetch it.
+# SDL3 and SDL3_ttf built static (FreeType), and the UI font. Delete a vendor/ folder to refetch it.
 set -euo pipefail
 cd "$(dirname "$0")"
 ZIG=0.16.0
@@ -8,6 +8,8 @@ WASMTIME=v49.0.2
 SQLITE=3530400 # 3.53.4
 SQLITE_SHA3=628a44cfe82c66aed1ccbbe85a562d2e33ebe64b3288981ed76285612227934e
 CLAY=v0.14
+SDL=3.4.18
+SDL_SHA256=9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3
 SDL_TTF=3.2.2
 SDL_TTF_SHA256=63547d58d0185c833213885b635a2c0548201cc8f301e6587c0be1a67e1e045d
 FREETYPE=2-13-3
@@ -79,6 +81,21 @@ if [ ! -f vendor/clay/clay.h ]; then
 	echo "vendor/clay: $CLAY"
 fi
 
+# Headers, the static lib and src/dynapi/SDL_dynapi_procs.h, the function list the pack modules' SDL imports come from.
+if [ ! -f vendor/sdl3/lib/libSDL3.a ]; then
+	sdl_dir=$(mktemp -d)
+	fetch "https://github.com/libsdl-org/SDL/releases/download/release-$SDL/SDL3-$SDL.tar.gz" "$sdl_dir/sdl.tar.gz" "$SDL_SHA256"
+	mkdir -p "$sdl_dir/src" && tar xzf "$sdl_dir/sdl.tar.gz" -C "$sdl_dir/src" --strip-components=1
+	cmake -S "$sdl_dir/src" -B "$sdl_dir/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/vendor/sdl3" \
+		-DCMAKE_INSTALL_LIBDIR=lib -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF -DSDL_EXAMPLES=OFF >/dev/null
+	cmake --build "$sdl_dir/build" -j >/dev/null
+	cmake --install "$sdl_dir/build" >/dev/null
+	mkdir -p vendor/sdl3/dynapi
+	cp "$sdl_dir/src/src/dynapi/SDL_dynapi_procs.h" "$sdl_dir/src/LICENSE.txt" vendor/sdl3/dynapi/
+	rm -rf "$sdl_dir"
+	echo "vendor/sdl3: $SDL"
+fi
+
 if [ ! -f vendor/sdl3_ttf/libSDL3_ttf.a ]; then
 	ttf_dir=$(mktemp -d)
 	fetch "https://github.com/libsdl-org/SDL_ttf/releases/download/release-$SDL_TTF/SDL3_ttf-$SDL_TTF.tar.gz" "$ttf_dir/ttf.tar.gz" "$SDL_TTF_SHA256"
@@ -87,7 +104,7 @@ if [ ! -f vendor/sdl3_ttf/libSDL3_ttf.a ]; then
 	rm -rf "$ttf_dir/src/external/freetype" && mkdir -p "$ttf_dir/src/external/freetype"
 	tar xzf "$ttf_dir/freetype.tar.gz" -C "$ttf_dir/src/external/freetype" --strip-components=1
 	# English-only UI: no HarfBuzz shaping, no SVG glyphs.
-	cmake -S "$ttf_dir/src" -B "$ttf_dir/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+	cmake -S "$ttf_dir/src" -B "$ttf_dir/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_PREFIX_PATH="$PWD/vendor/sdl3" \
 		-DSDLTTF_VENDORED=ON -DSDLTTF_HARFBUZZ=OFF -DSDLTTF_PLUTOSVG=OFF -DSDLTTF_SAMPLES=OFF >/dev/null
 	cmake --build "$ttf_dir/build" -j >/dev/null
 	mkdir -p vendor/sdl3_ttf

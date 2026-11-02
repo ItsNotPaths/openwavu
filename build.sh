@@ -56,7 +56,8 @@ tk5_module() {
 }
 tk5_module gameplay.wasm "${tk5_core[@]}" modules/tk5/init.c modules/tk5/match.c modules/tk5/bot.c
 odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict-style
-odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/sdl3_ttf"
+# vendor:sdl3 links "system:SDL3": the -L dirs make that the vendored static libs.
+odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
 if [ "$run_tests" = 1 ]; then
