@@ -29,20 +29,22 @@ Mode :: struct {
 Title_Pack :: struct {
 	path:              string,  // the tar
 	id, name, version: string,
-	// (hole pack-modes :tags titlepack) pack.toml main (the entry module) and [modes.*] are not read, and the stock pack does not write them.
-	main:              string,
-	modes:             []Mode,
+	main:              string,  // the entry module; "" for a pack without code (a db mod)
+	modes:             []Mode,    // sorted by name
 	// (hole pack-base :tags titlepack) bases are not checked; a pack whose base the player lacks, or has at another version, fails inside the sim, not at join.
 	bases:             []string,  // pack ids, bottom first; a stock pack has none
 }
 
-// pack.toml text -> the pack. id and version are required; name falls back to the id.
+// pack.toml text -> the pack. id and version are required; name falls back to the id. Each [modes.x] needs both a sim
+// and a presenter.
 read_titlepack :: proc(manifest: string, allocator := context.allocator) -> (tp: Title_Pack, ok: bool) {
 	table, err := read_toml(manifest, context.temp_allocator)
 	if err != "" do return
 	id := table.values["id"].(string) or_return
 	version := table.values["version"].(string) or_return
 	name := table.values["name"].(string) or_else id
+	main := table.values["main"].(string) or_else ""
+	modes := read_modes(table, context.temp_allocator) or_return
 	bases := make([dynamic]string, allocator)
 	if list, has := table.values["bases"].([dynamic]Toml_Value); has {
 		for base in list {
@@ -53,9 +55,28 @@ read_titlepack :: proc(manifest: string, allocator := context.allocator) -> (tp:
 		id      = strings.clone(id, allocator),
 		name    = strings.clone(name, allocator),
 		version = strings.clone(version, allocator),
+		main    = strings.clone(main, allocator),
+		modes   = make([]Mode, len(modes), allocator),
 		bases   = bases[:],
 	}
+	for mode, i in modes do tp.modes[i] = {strings.clone(mode.name, allocator), strings.clone(mode.sim, allocator), strings.clone(mode.presenter, allocator)}
 	return tp, true
+}
+
+// The [modes.x] tables, sorted by name; views into table.
+@(private = "file")
+read_modes :: proc(table: ^Toml_Table, allocator := context.allocator) -> (modes: []Mode, ok: bool) {
+	section, has := table.values["modes"].(^Toml_Table)
+	if !has do return nil, true
+	list := make([dynamic]Mode, allocator)
+	for name, value in section.values {
+		mode := value.(^Toml_Table) or_return
+		sim := mode.values["sim"].(string) or_return
+		presenter := mode.values["presenter"].(string) or_return
+		append(&list, Mode{name, sim, presenter})
+	}
+	slice.sort_by(list[:], proc(a, b: Mode) -> bool {return a.name < b.name})
+	return list[:], true
 }
 
 destroy_titlepack :: proc(tp: Title_Pack, allocator := context.allocator) {
@@ -63,6 +84,13 @@ destroy_titlepack :: proc(tp: Title_Pack, allocator := context.allocator) {
 	delete(tp.id, allocator)
 	delete(tp.name, allocator)
 	delete(tp.version, allocator)
+	delete(tp.main, allocator)
+	for mode in tp.modes {
+		delete(mode.name, allocator)
+		delete(mode.sim, allocator)
+		delete(mode.presenter, allocator)
+	}
+	delete(tp.modes, allocator)
 	for base in tp.bases do delete(base, allocator)
 	delete(tp.bases, allocator)
 }

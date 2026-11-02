@@ -120,3 +120,28 @@ titlepack_reads_manifest :: proc(t: ^testing.T) {
 	_, no_version := titlepack.read_titlepack("id = \"mod\"\n", context.temp_allocator)
 	testing.expect(t, !no_version, "a pack.toml without version reads")
 }
+
+// The entry module and the match modes, sorted by name; a mode without its presenter makes the pack.toml bad.
+@(test)
+titlepack_reads_modes :: proc(t: ^testing.T) {
+	manifest :: `id = "x"
+version = "1"
+main = "app.wasm"
+
+[modes.versus]
+sim = "gameplay.wasm"
+presenter = "gamerender.wasm"
+
+[modes.ball]
+sim = "ball.wasm"
+presenter = "gamerender.wasm"
+`
+	tp, ok := titlepack.read_titlepack(manifest, context.temp_allocator)
+	if !testing.expect(t, ok) do return
+	testing.expect_value(t, tp.main, "app.wasm")
+	if !testing.expect_value(t, len(tp.modes), 2) do return
+	testing.expect_value(t, tp.modes[0], titlepack.Mode{"ball", "ball.wasm", "gamerender.wasm"})
+	testing.expect_value(t, tp.modes[1], titlepack.Mode{"versus", "gameplay.wasm", "gamerender.wasm"})
+	_, half_mode := titlepack.read_titlepack("id = \"x\"\nversion = \"1\"\n[modes.versus]\nsim = \"gameplay.wasm\"\n", context.temp_allocator)
+	testing.expect(t, !half_mode, "a mode without a presenter reads")
+}

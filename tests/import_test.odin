@@ -96,9 +96,10 @@ check_stock_tar :: proc(t: ^testing.T) {
 		file, _ := os.read_entire_file(fmt.tprintf("build/test_packs/tekken5dr/%s", path), context.temp_allocator)
 		testing.expect(t, string(data[entry.offset:][:entry.size]) == string(file), path)
 	}
-	toml, toml_err := titlepack.read_toml(string(data[index["pack.toml"].offset:][:index["pack.toml"].size]))
-	testing.expect_value(t, toml_err, "")
-	if toml != nil do titlepack.destroy_toml(toml)
+	manifest := string(data[index["pack.toml"].offset:][:index["pack.toml"].size])
+	tp, read := titlepack.read_titlepack(manifest, context.temp_allocator)
+	testing.expect(t, read && tp.main == "app.wasm", "pack.toml names its entry module")
+	testing.expect(t, len(tp.modes) == 1 && tp.modes[0] == {"versus", "gameplay.wasm", "gamerender.wasm"}, "pack.toml has the versus mode")
 
 	// The stock front reads and shows: every file it names is in the pack.
 	front_entry := index[titlepack.FRONT]
