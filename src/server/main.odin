@@ -20,7 +20,7 @@ next_players :: proc(rotation: Rotation, players: []string, winner: int) -> (nex
 	return {}
 }
 
-// (hole match-reports :tags (server net) :needs event-stream) peers do not report match events, and the server does not cross-check them.
+// (hole match-reports :tags (server net)) peers do not report match events, and the server does not cross-check them.
 cross_check :: proc(a, b: []u8) -> (agree: bool) {
 	return false
 }

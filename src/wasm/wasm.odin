@@ -185,6 +185,8 @@ global_set :: proc(s: Store, g: Global, v: Val) -> (err: string) {
 
 i32_val :: proc "contextless" (v: i32) -> (out: Val) {out.kind = I32; out.of.i32 = v; return}
 f32_val :: proc "contextless" (v: f32) -> (out: Val) {out.kind = F32; out.of.f32 = v; return}
+i64_val :: proc "contextless" (v: i64) -> (out: Val) {out.kind = I64; out.of.i64 = v; return}
+f64_val :: proc "contextless" (v: f64) -> (out: Val) {out.kind = F64; out.of.f64 = v; return}
 
 // Host functions return this to stop the module with a message.
 trap :: proc "contextless" (message: string) -> ^C_Trap {
