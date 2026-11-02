@@ -13,7 +13,9 @@ Launcher :: struct {
 	selected: union {
 		Install_Screen,
 		int,  // an installed pack
+		Front_Preview,
 	},
+	front:    Front_View,
 	source:   Install_Source,
 	browser:  Browser,
 	importer: Import_Job,
@@ -25,8 +27,15 @@ Launcher :: struct {
 
 Install_Screen :: struct {}
 
+// --front <tar or folder>: just that front, for creators.
+// (hole front-reload :tags game :sev polish) the preview reads the front once; edits need a restart.
+Front_Preview :: struct {
+	path: string,
+}
+
 launcher_destroy :: proc(l: ^Launcher) {
 	titlepack.destroy_installed(l.packs)
+	front_close(&l.front)
 	browser_destroy(&l.browser)
 	import_destroy(&l.importer)
 	strings.builder_destroy(&l.url)
@@ -41,12 +50,20 @@ Install_Source :: enum u8 {
 }
 
 // Installed packs left, the store right, whatever is selected in the middle; columns have no panel.
-// (hole launcher-backdrop :tags game :needs pack-front) the spotlight always shows; a picked pack's front backgrounds should replace it.
+// A front replaces the spotlight with its own backgrounds.
 launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
+	path := ""
+	switch pick in l.selected {
+	case int: path = l.packs[pick].path
+	case Front_Preview: path = pick.path
+	case Install_Screen:
+	}
+	if path != "" && path != l.front.path do front_open(&l.front, u, path)
+	showing_front := path != "" && l.front.err == ""
 	if clay.UI()({
 		id = clay.ID("Root"),
 		layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}},
-		custom = ui.painted(ui.Spotlight{}),
+		custom = showing_front ? {} : ui.painted(ui.Spotlight{}),
 	}) {
 		installed_column(l, u)
 		center(l, u)
@@ -90,7 +107,9 @@ center :: proc(l: ^Launcher, u: ^ui.Ui) {
 		case Install_Screen:
 			install_screen(l, u)
 		case int:
-			pack_page(l, u, pick)
+			pack_page(l, u, l.packs[pick].name, pick)
+		case Front_Preview:
+			pack_page(l, u, pick.path, nil)
 		}
 	}
 }
@@ -128,13 +147,23 @@ install_screen :: proc(l: ^Launcher, u: ^ui.Ui) {
 	}
 }
 
-// (hole pack-front :tags (game titlepack)) a picked pack shows only its name and Play: its front.txt is not read or drawn.
-pack_page :: proc(l: ^Launcher, u: ^ui.Ui, pack: int) {
+// The pack's front; without one (or with one that does not read) its name, Play and why.
+pack_page :: proc(l: ^Launcher, u: ^ui.Ui, name: string, pack: Maybe(int)) {
+	if l.front.err == "" {
+		action, target := front_page(&l.front, u, pack != nil)
+		switch action {
+		case .Play: l.play = pack
+		case .Url: _ = sdl.OpenURL(strings.clone_to_cstring(target, context.temp_allocator))
+		case .None, .Install, .Credits, .Toggle:
+		}
+		return
+	}
 	if clay.UI()({
 		layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}, childGap = 10, childAlignment = {.Center, .Center}, layoutDirection = .TopToBottom},
 	}) {
-		ui.label(l.packs[pack].id, 26, engraved = true, face = .Display)
-		if ui.button(u, clay.ID("Play"), "Play") {
+		ui.label(name, 26, engraved = true, face = .Display)
+		ui.label(l.front.err, tint = ui.TEXT_DIM)
+		if pack != nil && ui.button(u, clay.ID("Play"), "Play") {
 			l.play = pack
 		}
 	}

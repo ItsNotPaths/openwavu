@@ -31,6 +31,9 @@ main :: proc() {
 	defer ui.destroy(&u)
 	// (hole stock-rebuild :tags (game importer)) the stock pack is not rebuilt when its pack.toml version differs from this openwavu's importer; the [import] inputs are recorded for it.
 	l := Launcher{packs = titlepack.installed()}
+	if len(os.args) == 3 && os.args[1] == "--front" {
+		l.selected = Front_Preview{os.args[2]}
+	}
 	defer launcher_destroy(&l)
 
 	last := sdl.GetTicksNS()

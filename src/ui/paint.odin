@@ -16,6 +16,8 @@ Paint :: union {
 	Bar,
 	Spotlight,
 	Field,
+	Backdrop,
+	Front_Button,
 }
 
 // A raised or recessed steel face. lit adds the LED glow of a hovered or focused button.
@@ -88,6 +90,10 @@ paint :: proc(ui: ^Ui, rect: sdl.FRect, p: Paint) {
 		}
 	case Spotlight:
 		shade(ui.renderer, rect, spotlight_color)
+	case Backdrop:
+		backdrop(ui.renderer, rect, p)
+	case Front_Button:
+		front_button_paint(ui, rect, p)
 	case Bar:
 		steel(ui, rect, {face = .Raised})
 		line := sdl.FRect{rect.x, rect.y + rect.h - 4, rect.w, 1}
