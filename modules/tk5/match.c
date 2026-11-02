@@ -21,7 +21,8 @@ static T5View view;
 
 // The fields the passes read of a fresh fighter on a side (no position, no move: the round init places it).
 static void fighter_init(T5World *w, T5Fighter *f, uint32_t side) {
-    T5FighterData *d = &t5_match_data.data[side];
+    const T5SideData *picked = &t5_match_data.sides[side];
+    T5FighterData *d = &t5_match_data.sides[side].data;
     w->data[side] = d;
     w->fighters[side] = f;
     t5_fighter_clear_refs(f);
@@ -33,8 +34,8 @@ static void fighter_init(T5World *w, T5Fighter *f, uint32_t side) {
     f->side_index = (int16_t)side;
     f->opponent = f->target = (int16_t)(1 - side);
     f->health = f->max_health = START_HEALTH;
-    f->chara = t5_match_data.ids[side].chara;
-    f->chara_40 = t5_match_data.ids[side].model;
+    f->chara = picked->chara;
+    f->chara_40 = picked->model;
     f->body = t5_motbin_body(&d->moves);
     f->body_points = t5_motbin_body_points(&d->moves);
     f->gaze = t5_motbin_gaze(&d->moves);
@@ -116,7 +117,7 @@ OW_EXPORT(ow_sim_state_size) uint32_t ow_sim_state_size(void) { return sizeof t5
 static T5ViewFighter view_fighter(uint32_t side) {
     const T5Fighter *f = &t5_match.fighters[side];
     T5ViewFighter out = {
-        .loadout = t5_match_data.loadouts[side],
+        .loadout = t5_match_data.sides[side].loadout,
         .health = f->health,
         .max_health = f->max_health,
         .wins = f->wins,

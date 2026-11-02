@@ -13,17 +13,17 @@ typedef struct {
     float view_normal[2];  // xz direction from the fighters to the camera; screen sides follow it
 } T5MatchState;
 
-// A character's ids in the game: its move set (T5Fighter.chara) and its body model (chara_40), both compared by requirements.
+// One side as init loads it.
 typedef struct {
-    uint8_t chara;
-    int16_t model;
-} T5CharacterIds;
+    T5Loadout loadout;
+    uint8_t chara;   // the character's move set id (T5Fighter.chara)
+    int16_t model;   // its body model id (T5Fighter.chara_40); requirements compare both
+    T5FighterData data;
+} T5SideData;
 
 // Read only after init, except the moves and aliases, which properties write (hole snapshot-range).
 typedef struct {
-    T5Loadout loadouts[T5_FIGHTER_COUNT];
-    T5CharacterIds ids[T5_FIGHTER_COUNT];
-    T5FighterData data[T5_FIGHTER_COUNT];
+    T5SideData sides[T5_FIGHTER_COUNT];
     T5Stage stage;
     char stage_id[T5_NAME_BYTES];
 } T5MatchData;

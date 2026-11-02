@@ -120,35 +120,27 @@ instantiate :: proc(l: Linker, s: Store, m: Module) -> (inst: Instance, err: str
 }
 
 has_func :: proc(s: Store, inst: Instance, name: string) -> bool {
-	inst := inst
-	item: C_Extern
-	return wasmtime_instance_export_get(s.ctx, &inst.handle, raw_data(name), len(name), &item) && item.kind == EXTERN_FUNC
+	_, ok := export_of(s, inst, name, EXTERN_FUNC)
+	return ok
 }
 
 // Calls an exported function. A trap (out of fuel, out of bounds, ...) comes back as err.
 call :: proc(s: Store, inst: Instance, name: string, args: []Val = nil, results: []Val = nil) -> (err: string) {
-	inst := inst
-	item: C_Extern
-	if !wasmtime_instance_export_get(s.ctx, &inst.handle, raw_data(name), len(name), &item) || item.kind != EXTERN_FUNC {
-		return strings.concatenate({"no exported function ", name}, context.temp_allocator)
-	}
+	item, ok := export_of(s, inst, name, EXTERN_FUNC)
+	if !ok do return strings.concatenate({"no exported function ", name}, context.temp_allocator)
 	trap: ^C_Trap
 	if err = take_error(wasmtime_func_call(s.ctx, &item.of.func, raw_data(args), len(args), raw_data(results), len(results), &trap)); err != "" do return
 	return take_trap(trap)
 }
 
 export_memory :: proc(s: Store, inst: Instance, name: string) -> (m: Memory, ok: bool) {
-	inst := inst
-	item: C_Extern
-	ok = wasmtime_instance_export_get(s.ctx, &inst.handle, raw_data(name), len(name), &item) && item.kind == EXTERN_MEMORY
-	return {item.of.memory}, ok
+	item := export_of(s, inst, name, EXTERN_MEMORY) or_return
+	return {item.of.memory}, true
 }
 
 export_global :: proc(s: Store, inst: Instance, name: string) -> (g: Global, ok: bool) {
-	inst := inst
-	item: C_Extern
-	ok = wasmtime_instance_export_get(s.ctx, &inst.handle, raw_data(name), len(name), &item) && item.kind == EXTERN_GLOBAL
-	return {item.of.global}, ok
+	item := export_of(s, inst, name, EXTERN_GLOBAL) or_return
+	return {item.of.global}, true
 }
 
 // Inside a host function: the calling module's exported "memory"; nil if it has none. Valid until the memory grows.
@@ -195,6 +187,13 @@ trap :: proc "contextless" (message: string) -> ^C_Trap {
 
 @(private = "file")
 HOST := "openwavu"
+
+@(private = "file")
+export_of :: proc(s: Store, inst: Instance, name: string, kind: u8) -> (item: C_Extern, ok: bool) {
+	inst := inst
+	ok = wasmtime_instance_export_get(s.ctx, &inst.handle, raw_data(name), len(name), &item) && item.kind == kind
+	return
+}
 
 @(private = "file")
 valtypes :: proc(kinds: []u8) -> [^]^C_Valtype {

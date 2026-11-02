@@ -13,8 +13,13 @@ Pack :: struct {
 	dbs:   map[string]^db.Sqlite,  // by path; in memory, so patches from the packs above can apply
 }
 
+// Only a tar: a folder is a front preview, never run.
 open_pack :: proc(path: string) -> (p: Pack, ok: bool) {
 	p.files = titlepack.open_files(path) or_return
+	if p.files.dir != "" {
+		titlepack.close_files(&p.files)
+		return {}, false
+	}
 	p.dbs = make(map[string]^db.Sqlite)
 	for file in p.files.files {
 		if !strings.has_suffix(file, DB_EXTENSION) do continue

@@ -126,7 +126,7 @@ static void scan(Bot *b, const T5Motbin *motbin, const T5Cancel *entry) {
 void t5_bots_begin(uint64_t seed) {
     for (uint32_t side = 0; side < T5_FIGHTER_COUNT; side++) {
         Bot *b = &bots[side];
-        const T5Motbin *motbin = &t5_match_data.data[side].moves;
+        const T5Motbin *motbin = &t5_match_data.sides[side].data.moves;
         *b = (Bot){.rng = (uint32_t)(seed * 2 + side + 1)};  // never 0: xorshift would stay 0
         const T5Move *idle = &motbin->moves[move_index(motbin, T5_ALIAS_IDLE_STAND)];
         scan(b, motbin, &motbin->cancels[idle->cancels]);

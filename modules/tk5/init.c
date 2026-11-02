@@ -33,35 +33,41 @@ static const char *new_arena(T5Arena *arena, size_t bytes) {
     return arena->base ? NULL : "out of memory";
 }
 
-// The one row of a query with one bound value (text when `text` is set, else `number`); NULL when there is none.
-static sqlite3_stmt *one_row(sqlite3 *db, const char *sql, const char *text, int64_t number) {
-    sqlite3_stmt *row = NULL;
-    if (sqlite3_prepare_v2(db, sql, -1, &row, NULL) != SQLITE_OK) return NULL;
-    if (text) sqlite3_bind_text(row, 1, text, -1, SQLITE_STATIC);
-    else sqlite3_bind_int64(row, 1, number);
-    if (sqlite3_step(row) == SQLITE_ROW) return row;
-    sqlite3_finalize(row);
+// The statement on its first row; NULL, finalized, when there is none.
+static sqlite3_stmt *first_row(sqlite3_stmt *query) {
+    if (sqlite3_step(query) == SQLITE_ROW) return query;
+    sqlite3_finalize(query);
     return NULL;
 }
 
-static const char *read_loadout(uint32_t side, T5Loadout *out) {
-    if (ow_loadout(side, out, sizeof *out) != (int32_t)sizeof *out) return "a loadout is missing or not a T5Loadout";
-    out->character[T5_NAME_BYTES - 1] = 0;
-    return NULL;
+static sqlite3_stmt *row_by_text(sqlite3 *db, const char *sql, const char *key) {
+    sqlite3_stmt *query;
+    if (sqlite3_prepare_v2(db, sql, -1, &query, NULL) != SQLITE_OK) return NULL;
+    sqlite3_bind_text(query, 1, key, -1, SQLITE_STATIC);
+    return first_row(query);
+}
+
+static sqlite3_stmt *row_by_number(sqlite3 *db, const char *sql, int64_t key) {
+    sqlite3_stmt *query;
+    if (sqlite3_prepare_v2(db, sql, -1, &query, NULL) != SQLITE_OK) return NULL;
+    sqlite3_bind_int64(query, 1, key);
+    return first_row(query);
 }
 
 static const char *load_side(sqlite3 *db, uint32_t side) {
-    T5MatchData *d = &t5_match_data;
-    const char *character = d->loadouts[side].character;
-    sqlite3_stmt *row = one_row(db, "SELECT game_index, model FROM character WHERE id = ?1", character, 0);
+    T5SideData *s = &t5_match_data.sides[side];
+    if (ow_loadout(side, &s->loadout, sizeof s->loadout) != (int32_t)sizeof s->loadout) return "a loadout is missing or not a T5Loadout";
+    s->loadout.character[T5_NAME_BYTES - 1] = 0;
+    sqlite3_stmt *row = row_by_text(db, "SELECT game_index, model FROM character WHERE id = ?1", s->loadout.character);
     if (!row) return "a loadout names no character";
-    d->ids[side] = (T5CharacterIds){(uint8_t)sqlite3_column_int(row, 0), (int16_t)sqlite3_column_int(row, 1)};
+    s->chara = (uint8_t)sqlite3_column_int(row, 0);
+    s->model = (int16_t)sqlite3_column_int(row, 1);
     sqlite3_finalize(row);
     size_t bytes;
     T5Arena arena;
-    const char *failed = t5_load_fighter_storage(db, character, &bytes);
+    const char *failed = t5_load_fighter_storage(db, s->loadout.character, &bytes);
     if (!failed) failed = new_arena(&arena, bytes);
-    if (!failed) failed = t5_load_fighter(&d->data[side], db, character, read_pack_file, NULL, &arena);
+    if (!failed) failed = t5_load_fighter(&s->data, db, s->loadout.character, read_pack_file, NULL, &arena);
     return failed;
 }
 
@@ -69,7 +75,7 @@ static const char *load_side(sqlite3 *db, uint32_t side) {
 static const char *load_stage(sqlite3 *db) {
     T5MatchData *d = &t5_match_data;
     int64_t index = (int64_t)ow_param(OW_STR("stage"), 0);
-    sqlite3_stmt *row = one_row(db, "SELECT id FROM stage WHERE game_index = ?1", NULL, index);
+    sqlite3_stmt *row = row_by_number(db, "SELECT id FROM stage WHERE game_index = ?1", index);
     if (!row) return "the stage param names no stage";
     snprintf(d->stage_id, sizeof d->stage_id, "%s", (const char *)sqlite3_column_text(row, 0));
     sqlite3_finalize(row);
@@ -85,7 +91,6 @@ static const char *load(void) {
     sqlite3 *db = ow_db_open(DB_PATH, sizeof DB_PATH - 1);
     if (!db) return "the pack has no tk5.db";
     const char *failed = NULL;
-    for (uint32_t side = 0; side < T5_FIGHTER_COUNT && !failed; side++) failed = read_loadout(side, &t5_match_data.loadouts[side]);
     for (uint32_t side = 0; side < T5_FIGHTER_COUNT && !failed; side++) failed = load_side(db, side);
     if (!failed) failed = load_stage(db);
     sqlite3_close(db);

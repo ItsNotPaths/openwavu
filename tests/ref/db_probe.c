@@ -1,11 +1,11 @@
-// A module that links the SDK's SQLite and reads one value from the pack file x.db.
+// A module that links the SDK's SQLite and reads one value from the pack file game.db.
 #include <stddef.h>
 
 #include "ow_db.h"
 #include "sqlite3.h"
 
 OW_EXPORT(probe) int32_t probe(void) {
-	sqlite3 *db = ow_db_open("x.db", 4);
+	sqlite3 *db = ow_db_open("game.db", 7);
 	if (!db) return -1;
 	sqlite3_stmt *query;
 	int32_t value = -2;
