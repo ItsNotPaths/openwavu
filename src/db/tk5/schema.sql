@@ -54,10 +54,9 @@ CREATE TABLE move (
 	first_active   INTEGER NOT NULL,
 	last_active    INTEGER NOT NULL,
 	push_shape     INTEGER NOT NULL,
-	unk_4a         INTEGER NOT NULL,
 	tracking_row        TEXT NOT NULL REFERENCES tracking_row(key),  -- default tracking
 	tracking_far_row    TEXT NOT NULL REFERENCES tracking_row(key),  -- used instead when the angle of far_source is above far_angle
-	tracking_far_source INTEGER NOT NULL,  -- 0 never, 1 opponent angle, 2 angle 0x84
+	tracking_far_source TEXT NOT NULL REFERENCES tracking_far_source(name),
 	tracking_far_angle  INTEGER NOT NULL,
 	rides_partner  INTEGER NOT NULL,  -- the thrower rides on the partner (Xiaoyu's Hien throws)
 	-- The hitbox of slot n ends at the end point and starts at the start point: a kind (none, bone, special, effect, keep,
@@ -146,7 +145,6 @@ CREATE TABLE cancel (
 	move            TEXT REFERENCES move(key),
 	alias           INTEGER,
 	group_list      TEXT REFERENCES group_cancel_list(key),  -- a group entry: the group cancel list it enters
-	unk_0a          INTEGER,           -- (not loaded)
 	transition      TEXT NOT NULL REFERENCES transition(name),
 	start_align     TEXT NOT NULL REFERENCES start_align(name),
 	motion          TEXT NOT NULL REFERENCES motion(name),
@@ -173,7 +171,6 @@ CREATE TABLE group_cancel (
 	move            TEXT REFERENCES move(key),
 	alias           INTEGER,
 	group_list      TEXT REFERENCES group_cancel_list(key),
-	unk_0a          INTEGER,           -- (not loaded)
 	transition      TEXT NOT NULL REFERENCES transition(name),
 	start_align     TEXT NOT NULL REFERENCES start_align(name),
 	motion          TEXT NOT NULL REFERENCES motion(name),
@@ -218,7 +215,6 @@ CREATE TABLE hit_condition (
 	pos          INTEGER NOT NULL,
 	requirements TEXT NOT NULL REFERENCES requirement_list(key),
 	damage       INTEGER,
-	unk_06       INTEGER,
 	reaction     TEXT NOT NULL REFERENCES reaction(key),
 	PRIMARY KEY (list, pos)
 );
@@ -248,7 +244,6 @@ CREATE TABLE pushback (
 	frames       INTEGER NOT NULL,
 	distance     INTEGER NOT NULL,
 	curve_frames INTEGER NOT NULL,  -- values of the curve it reads, from the first
-	unk_06       INTEGER,           -- (not loaded)
 	curve        TEXT NOT NULL REFERENCES pushback_curve_list(key)
 );
 CREATE INDEX pushback_character ON pushback(character);
@@ -284,7 +279,6 @@ CREATE TABLE extra_prop (  -- "when" is an SQL keyword: quote it
 	value_tracking_row TEXT REFERENCES tracking_row(key),
 	value_move_pool  TEXT REFERENCES move_pool_list(key),
 	value_compare_id,
-	unk_06    INTEGER,           -- (not loaded)
 	PRIMARY KEY (list, pos)
 );
 
@@ -446,28 +440,70 @@ CREATE TABLE skeleton_b (
 	PRIMARY KEY (character, slot)
 );
 
+-- The names of the tracking codes (modules/tk5/sim/tracking.h).
+CREATE TABLE tracking_law (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO tracking_law VALUES
+	('hold', 0),      -- facing stays on the move yaw
+	('home', 1),      -- turns toward the target, capped by the rate and the total limit
+	('settle', 2),    -- closes a share of the gap to the target each frame
+	('sweep', 3),     -- swings the yaw to one side of the target over the move
+	('ease_out', 4),  -- a share of the gap that grows over the move
+	('ease_in', 5),   -- a share of the gap that ramps up over the first frames
+	('leave', 6);     -- faces the spot where the opponent stood, on the near side
+
+CREATE TABLE tracking_phase (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO tracking_phase VALUES
+	('running', 0),   -- the row's law runs
+	('free', 1),      -- nothing runs, only the scripted turn of the move
+	('reaim', 2),     -- every few frames, one scripted turn to the reference angle
+	('scripted', 3);  -- a spread turn does the work
+
+CREATE TABLE tracking_target (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO tracking_target VALUES
+	('none', 0), ('opponent', 1), ('behind_opponent', 2),
+	('reference', 3),            -- the opponent, or the opposite way when they stand behind
+	('side_of_opponent', 4),     -- offset to the side the root leans to
+	('stage_centre', 5), ('opponent_start_spot', 6);
+
+CREATE TABLE tracking_when (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO tracking_when VALUES ('never', 0), ('always', 1), ('unless_anim_changed', 2);
+
+CREATE TABLE tracking_gate (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO tracking_gate VALUES
+	('none', 0), ('skip_while_busy', 1), ('spread_while_busy', 2),
+	('spread_early_while_busy', 3);  -- only while the move clock is at most gate_until
+
+CREATE TABLE tracking_halving (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO tracking_halving VALUES ('none', 0), ('all', 1), ('late', 2);  -- all: the picked rate halves; late: rate_late is half of rate_normal
+
+-- The angle that picks the far row at move start.
+CREATE TABLE tracking_far_source (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO tracking_far_source VALUES
+	('never', 0), ('opponent_angle', 1),
+	('angle_84', 2);  -- the fighter's angle at +0x84, not named yet; no stock row
+
 -- Facing rows: how a move turns the fighter (law, target, gate, rate, limit, end). The first row is hold. Degrees, frames, mm.
 CREATE TABLE tracking_row (
 	key        TEXT PRIMARY KEY,
 	character  TEXT NOT NULL REFERENCES motbin(character),
-	law        INTEGER NOT NULL,  -- hold, home, settle, sweep, ease out, ease in, leave
-	start      INTEGER NOT NULL,  -- phase: running, free, reaim, scripted
-	target     INTEGER NOT NULL,  -- none, opponent, behind, reference, side, stage centre, start spot
+	law        TEXT NOT NULL REFERENCES tracking_law(name),
+	start      TEXT NOT NULL REFERENCES tracking_phase(name),
+	target     TEXT NOT NULL REFERENCES tracking_target(name),
 	stock_mode INTEGER NOT NULL,  -- the game's mode byte (oracle and harness only)
-	gate_kind  INTEGER NOT NULL,  -- none, skip, spread, spread early (while the opponent is busy)
+	gate_kind  TEXT NOT NULL REFERENCES tracking_gate(name),
 	gate_until INTEGER NOT NULL,
 	gate_min_distance INTEGER NOT NULL,
 	rate_normal INTEGER NOT NULL, rate_late INTEGER NOT NULL, rate_air INTEGER NOT NULL,
 	rate_late_from INTEGER NOT NULL,
 	rate_frames INTEGER NOT NULL,
-	rate_halving INTEGER NOT NULL,  -- none, all, late
+	rate_halving TEXT NOT NULL REFERENCES tracking_halving(name),
 	rate_frames_by_distance INTEGER NOT NULL,
 	limit_total INTEGER NOT NULL,
 	limit_sweep_0 INTEGER NOT NULL, limit_sweep_1 INTEGER NOT NULL, limit_sweep_2 INTEGER NOT NULL, limit_sweep_3 INTEGER NOT NULL,  -- front, left, back, right
-	end_move_yaw_when INTEGER NOT NULL,  -- never, always, unless the anim changed
-	end_pivot_when INTEGER NOT NULL,
+	end_move_yaw_when TEXT NOT NULL REFERENCES tracking_when(name),
+	end_pivot_when TEXT NOT NULL REFERENCES tracking_when(name),
 	end_grace INTEGER NOT NULL,
-	end_phase INTEGER NOT NULL
+	end_phase TEXT NOT NULL REFERENCES tracking_phase(name)
 );
 CREATE INDEX tracking_row_character ON tracking_row(character);
 
@@ -477,7 +513,7 @@ CREATE TABLE tracking_override (
 	character  TEXT NOT NULL REFERENCES motbin(character),
 	row        TEXT NOT NULL REFERENCES tracking_row(key),
 	far_row    TEXT NOT NULL REFERENCES tracking_row(key),
-	far_source INTEGER NOT NULL,
+	far_source TEXT NOT NULL REFERENCES tracking_far_source(name),
 	far_angle  INTEGER NOT NULL
 );
 CREATE INDEX tracking_override_character ON tracking_override(character);
@@ -488,7 +524,7 @@ CREATE TABLE tracking_fixed (
 	slot       INTEGER NOT NULL,
 	row        TEXT NOT NULL REFERENCES tracking_row(key),
 	far_row    TEXT NOT NULL REFERENCES tracking_row(key),
-	far_source INTEGER NOT NULL,
+	far_source TEXT NOT NULL REFERENCES tracking_far_source(name),
 	far_angle  INTEGER NOT NULL,
 	PRIMARY KEY (character, slot)
 );

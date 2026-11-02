@@ -81,12 +81,22 @@ insert :: proc(w: ^Writer, table: string, values: ..Value) {
 	reset(s)
 }
 
-// The rows of a name sheet (name, code) the schema fills, by code.
-names :: proc(w: ^Writer, table: string, allocator := context.allocator) -> map[i64]string {
-	out := make(map[i64]string, allocator)
+// Every name sheet (a table of exactly name and code, filled by the schema): sheet -> code -> name.
+name_sheets :: proc(w: ^Writer, allocator := context.allocator) -> map[string]map[i64]string {
+	sheets := make(map[string]map[i64]string, allocator)
+	tables: [dynamic]string
 	s: ^Stmt
-	if prepare_v2(w.handle, fmt.ctprintf("SELECT code, name FROM %s", table), -1, &s, nil) != OK do return out
-	for step(s) == ROW do out[column_int64(s, 0)] = strings.clone_from_cstring(column_text(s, 1), allocator)
+	if prepare_v2(w.handle, NAME_SHEETS, -1, &s, nil) != OK do return sheets
+	for step(s) == ROW do append(&tables, strings.clone_from_cstring(column_text(s, 0), allocator))
 	finalize(s)
-	return out
+	for table in tables {
+		names := make(map[i64]string, allocator)
+		if prepare_v2(w.handle, fmt.ctprintf("SELECT code, name FROM %s", table), -1, &s, nil) != OK do continue
+		for step(s) == ROW do names[column_int64(s, 0)] = strings.clone_from_cstring(column_text(s, 1), allocator)
+		finalize(s)
+		sheets[table] = names
+	}
+	return sheets
 }
+
+NAME_SHEETS: cstring : "SELECT name FROM sqlite_master m WHERE type = 'table' AND (SELECT group_concat(name) FROM pragma_table_info(m.name)) = 'name,code'"

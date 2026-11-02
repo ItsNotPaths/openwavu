@@ -574,8 +574,9 @@ static const Table *list_table(const char *target) {
     return NULL;
 }
 
-// The keys of the table a column's foreign key names: a row's index in sheet order, or for a <table>_list the index
-// of the list's first row in <table> (lists take their rows and their end row). No keys when it is not a foreign key.
+// The keys of the table a column's foreign key names: a row's index in sheet order, for a <table>_list the index of the
+// list's first row in <table> (lists take their rows and their end row), for a name sheet (name, code) the code. No keys
+// when it is not a foreign key.
 static const char *read_target_keys(sqlite3 *db, const char *character, const char *table, const char *column, Keys *keys) {
     sqlite3_stmt *row;
     const char *failed = prepare(db, "SELECT \"table\" FROM pragma_foreign_key_list(?1) WHERE \"from\" = ?2", table, &row);
@@ -586,8 +587,12 @@ static const char *read_target_keys(sqlite3 *db, const char *character, const ch
     sqlite3_finalize(row);
     if (!target[0]) return NULL;
     keys->foreign = true;
+    int64_t name_sheet;
+    failed = query_int(db, "SELECT (SELECT group_concat(name) FROM pragma_table_info(?1)) = 'name,code'", target, &name_sheet);
+    if (failed) return failed;
     const Table *lists = list_table(target);
-    if (lists)
+    if (name_sheet) snprintf(sql, sizeof sql, "SELECT name, code FROM %s ORDER BY name", target);
+    else if (lists)
         snprintf(sql, sizeof sql,
                  "SELECT key, sum(size) OVER (ORDER BY rowid) - size FROM (SELECT rowid, key, "
                  "(SELECT count(*) FROM %s WHERE list = l.key) + ?2 AS size FROM %s l WHERE character = ?1) ORDER BY key",

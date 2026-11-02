@@ -37,10 +37,10 @@ mod_rows_follow_by_sheet_order :: proc(t: ^testing.T) {
 		INSERT INTO requirement_list VALUES ('x/r', 'x');
 		INSERT INTO requirement (list, pos, id, param_move_pool, param_alias) VALUES ('x/r', 0, 123, 'mod/pool', NULL), ('x/r', 1, 148, NULL, 4);
 		INSERT INTO pushback_curve_list VALUES ('x/curve', 'x');
-		INSERT INTO pushback VALUES ('x/pushback/0', 'x', 1, 0, 0, NULL, 'x/curve'), ('mod/p', 'x', 1, 0, 0, NULL, 'x/curve');
+		INSERT INTO pushback VALUES ('x/pushback/0', 'x', 1, 0, 0, 'x/curve'), ('mod/p', 'x', 1, 0, 0, 'x/curve');
 		INSERT INTO extra_prop_list VALUES ('x/e', 'x');
 		INSERT INTO extra_prop (list, pos, "when", id, value_pushback) VALUES ('x/e', 0, 1, 0x80a3, 'mod/p');
-		INSERT INTO tracking_override VALUES ('x/o', 'x', 'x/t', 'x/t', 0, 0), ('mod/t', 'x', 'x/t', 'x/t', 0, 0);
+		INSERT INTO tracking_override VALUES ('x/o', 'x', 'x/t', 'x/t', 'never', 0), ('mod/t', 'x', 'x/t', 'x/t', 'never', 0);
 		INSERT INTO cancel (list, pos, input, requirements, move, transition, start_align, motion, tracking_override)
 			VALUES ('x/c', 0, '@0..0>0', 'x/r', 'x/m', 'start', 'keep', 'none', 'mod/t');
 		INSERT INTO anim VALUES ('x', 0, 1, 'a.anim'), ('x', 'mod/z', 1, 'a.anim');
@@ -73,9 +73,10 @@ cancel_inputs_load_as_commands :: proc(t: ^testing.T) {
 }
 
 // A cancel's transition, start alignment and motion names and its flags load as the word the sim reads (transition.h):
-// pass 9 << 10, to_opponent 4 << 6, sweep_locked 16, turn bit 15, root_hips bit 17. A name with no row fails the load.
+// pass 9 << 10, to_opponent 4 << 6, sweep_locked 16, turn bit 15, root_hips bit 17. A name its sheet does not have fails
+// the load, in a cancel or in any cell that names a code (tracking).
 @(test)
-cancel_transitions_load_by_name :: proc(t: ^testing.T) {
+codes_load_by_name :: proc(t: ^testing.T) {
 	if !build_load_lists(t, #procedure) do return
 	rows :: `
 		INSERT INTO requirement_list VALUES ('x/r', 'x');
@@ -83,6 +84,8 @@ cancel_transitions_load_by_name :: proc(t: ^testing.T) {
 			VALUES ('x/c', 0, '@0..0>0', 'x/r', '%s', 'to_opponent', 'sweep_locked', 1, 1);`
 	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "pass")), "move: 501/0/32769/-1\ncancel: 0/0/0/0x2a510\nrequirement: 327/0\n")
 	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "passing")), "cancel.transition: no row passing\n")
+	testing.expect_value(t, load_lists(t, #procedure, "INSERT INTO tracking_override VALUES ('x/o', 'x', 'x/t', 'x/t', 'sideways', 0);"),
+		"tracking_override.far_source: no row sideways\n")
 }
 
 // A mod's move identity (compare id) is text, numbered after every stock one across all characters, so a pool or a
@@ -115,17 +118,18 @@ build_load_lists :: proc(t: ^testing.T, test: string) -> bool {
 load_lists :: proc(t: ^testing.T, test, rows: string) -> string {
 	move :: `INSERT INTO move (key, character, name, anim_owner, anim_idx, anim, vuln, hit_level, cancels, next_alias, end_yaw,
 		compare_id, push_speed, hit_conditions, window_start, window_end, hold_frame, flags, hit_category, first_active, last_active,
-		push_shape, unk_4a, tracking_row, tracking_far_row, tracking_far_source, tracking_far_angle, rides_partner, hit_pair_end_kind_0,
+		push_shape, tracking_row, tracking_far_row, tracking_far_source, tracking_far_angle, rides_partner, hit_pair_end_kind_0,
 		hit_pair_end_index_0, hit_pair_start_kind_0, hit_pair_start_index_0, hit_pair_end_kind_1, hit_pair_end_index_1,
 		hit_pair_start_kind_1, hit_pair_start_index_1, hits_attack_bones, hits_slots, hits_launches)
-		VALUES ('%s', '%s', 'm', '%s', 0, 0, 0, 0, 'x/c', 1, 0, %s, 0, 'x/h', 0, 0, 0, 0, 0, 0, 0, 0, 0, 'x/t', 'x/t',
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);`
+		VALUES ('%s', '%s', 'm', '%s', 0, 0, 0, 0, 'x/c', 1, 0, %s, 0, 'x/h', 0, 0, 0, 0, 0, 0, 0, 0, 'x/t', 'x/t',
+		'never', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);`
 	tool, path := fmt.tprintf("build/%s", test), fmt.tprintf("build/%s.db", test)
 	defer os.remove(path)
 	w, err := db.create(path, TK5_SCHEMA)
 	testing.expect_value(t, err, "")
 	db.exec_sql(&w, `INSERT INTO cancel_list VALUES ('x/c', 'x'); INSERT INTO hit_condition_list VALUES ('x/h', 'x');`)
-	db.exec_sql(&w, fmt.tprintf("INSERT INTO tracking_row VALUES ('x/t', 'x'%s);", strings.repeat(", 0", 23, context.temp_allocator)))
+	db.exec_sql(&w, `INSERT INTO tracking_row VALUES ('x/t', 'x', 'hold', 'running', 'none', 0, 'none', 0, 0, 0, 0, 0, 0, 0, 'none', 0,
+		0, 0, 0, 0, 0, 'never', 'never', 0, 'running');`)
 	db.exec_sql(&w, fmt.tprintf(move, "x/m", "x", "x", "'mod/a_x'"))
 	db.exec_sql(&w, fmt.tprintf(move, "y/upper", "y", "y", "'mod/y_upper'"))
 	db.exec_sql(&w, fmt.tprintf(move, "y/other", "y", "y", "500"))
