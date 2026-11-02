@@ -90,7 +90,7 @@ check_stock_tar :: proc(t: ^testing.T) {
 	index, ok := titlepack.read_tar(data)
 	if !testing.expect(t, ok, "stock pack did not read") do return
 	defer titlepack.destroy_tar(index)
-	for path in ([]string{"pack.toml", "front.txt", "gameplay.wasm", "gamerender.wasm", "app.wasm", "tk5.db", "ui/pic1.png", "anims/kazuya/0.anim"}) {
+	for path in ([]string{"pack.toml", titlepack.FRONT, "gameplay.wasm", "gamerender.wasm", "app.wasm", "tk5.db", "ui/pic1.png", "anims/kazuya/0.anim"}) {
 		entry, has := index[path]
 		if !testing.expect(t, has, path) do continue
 		file, _ := os.read_entire_file(fmt.tprintf("build/test_packs/tekken5dr/%s", path), context.temp_allocator)
@@ -99,4 +99,11 @@ check_stock_tar :: proc(t: ^testing.T) {
 	toml, toml_err := titlepack.read_toml(string(data[index["pack.toml"].offset:][:index["pack.toml"].size]))
 	testing.expect_value(t, toml_err, "")
 	if toml != nil do titlepack.destroy_toml(toml)
+
+	// The stock front reads and shows: every file it names is in the pack.
+	front_entry := index[titlepack.FRONT]
+	front, front_err := titlepack.read_front(string(data[front_entry.offset:][:front_entry.size]), context.temp_allocator)
+	testing.expect_value(t, front_err, "")
+	for e in front.elements do if e.file != "" do testing.expect(t, e.file in index, e.file)
+	testing.expect(t, len(front.elements) > 40, "stock front has no roster")
 }
