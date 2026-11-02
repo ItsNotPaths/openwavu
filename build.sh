@@ -18,6 +18,11 @@ if [ ! -f "$clay_lib" ] || [ vendor/clay/clay.h -nt "$clay_lib" ]; then
 	cc -O2 -fPIC -DCLAY_IMPLEMENTATION -x c -c vendor/clay/clay.h -o vendor/clay/clay.o
 	ar rcs "$clay_lib" vendor/clay/clay.o
 fi
+# ow_input.h is header-only; the Odin binding (src/command) links it.
+if [ ! -f build/libow_input.a ] || [ sdk/include/ow_input.h -nt build/libow_input.a ]; then
+	cc -std=c23 -O2 -DOW_INPUT_IMPLEMENTATION -x c -c sdk/include/ow_input.h -o build/ow_input.o
+	ar rcs build/libow_input.a build/ow_input.o
+fi
 odin build src/importer -out:build/openwavu-import -o:speed -vet -strict-style
 # (hole module-build :tags (wasm tk5mod) :needs ow-cli) the stock gameplay.wasm and app.wasm are not built from modules/tk5 with ow build; the TK5 core needs -fwrapv -ffp-contract=off -fno-fast-math there too.
 odin build src/game -out:build/openwavu -vet -strict-style -extra-linker-flags:"-Lvendor/sdl3_ttf"
