@@ -1,11 +1,17 @@
-// Loads a character from a db (modules/tk5/load.c) and prints the requirement index of each hit condition and start
-// property, the first two pushback indices of each reaction, each requirement param, each extra property value, and each
-// cancel's command code and tracking pick, each move's compare id and anim index, and each move pool value, or the load error. Usage: load_lists db character
+// Loads a character from a db (modules/tk5/load.c) and prints one line per non-empty table of what the sim reads, or the
+// load error. Usage: load_lists db character
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "load.h"
 #include "sqlite3.h"
+
+#define LINE(name, count, format, ...)                                                                                     \
+    if (count) {                                                                                                           \
+        printf(name ":");                                                                                                  \
+        for (int32_t index = 0; index < count; index++) printf(" " format, __VA_ARGS__);                                  \
+        printf("\n");                                                                                                      \
+    }
 
 int main(int argc, char **argv) {
     sqlite3 *db;
@@ -13,18 +19,15 @@ int main(int argc, char **argv) {
     size_t bytes;
     const char *failed = t5_load_motbin_storage(db, argv[2], &bytes);
     T5Arena arena = {malloc(bytes), bytes, 0};
-    T5Motbin motbin;
-    if (!failed) failed = t5_load_motbin(&motbin, db, argv[2], (T5AnimBases){}, &arena);
+    T5Motbin m;
+    if (!failed) failed = t5_load_motbin(&m, db, argv[2], (T5AnimBases){}, &arena);
     if (failed) return printf("%s\n", failed), 1;
-    for (int32_t index = 0; index < motbin.hit_condition_count; index++) printf("%d ", (int32_t)motbin.hit_conditions[index].requirements);
-    for (int32_t index = 0; index < motbin.start_property_count; index++) printf("%d ", (int32_t)motbin.start_properties[index].requirements);
-    for (int32_t index = 0; index < motbin.reaction_count; index++)
-        printf("%d %d ", (int32_t)motbin.reactions[index].pushback[0].index, (int32_t)motbin.reactions[index].pushback[1].index);
-    for (int32_t index = 0; index < motbin.requirement_count; index++) printf("%d ", motbin.requirements[index].param);
-    for (int32_t index = 0; index < motbin.property_count; index++) printf("%d ", motbin.properties[index].value);
-    for (int32_t index = 0; index < motbin.cancel_count; index++)
-        printf("%#x %d ", motbin.cancels[index].command.code, motbin.cancels[index].tracking_pick);
-    for (int32_t index = 0; index < motbin.move_count; index++) printf("%d/%u ", motbin.moves[index].compare_id, motbin.moves[index].anim);
-    for (int32_t index = 0; index < motbin.id_pool_count; index++) printf("%d ", motbin.id_pool[index]);
+    LINE("move", m.move_count, "%d/%u/%d/%d", m.moves[index].compare_id, m.moves[index].anim, m.moves[index].next_move,
+         m.moves[index].extra_props);
+    LINE("cancel", m.cancel_count, "%#x/%d/%d", m.cancels[index].command.code, m.cancels[index].move, m.cancels[index].tracking_pick);
+    LINE("requirement", m.requirement_count, "%d/%d", m.requirements[index].id, m.requirements[index].param);
+    LINE("start_prop", m.start_property_count, "%d/%d", (int32_t)m.start_properties[index].requirements, m.start_properties[index].id);
+    LINE("extra_prop", m.property_count, "%d", m.properties[index].value);
+    LINE("move_pool", m.id_pool_count, "%d", m.id_pool[index]);
     return 0;
 }

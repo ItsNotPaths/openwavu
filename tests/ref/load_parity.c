@@ -81,7 +81,8 @@ static void drop_unread(T5Motbin *motbin) {
 static bool same_table(const Table *table, const T5Motbin *db, const T5Motbin *file) {
     int32_t db_count = *(const int32_t *)((const char *)db + table->count);
     int32_t file_count = *(const int32_t *)((const char *)file + table->count);
-    if (db_count != file_count) {
+    // The db ends a table's last list with an end row where the file runs into its zero record: the sim reads the same.
+    if (db_count != file_count && db_count != file_count + 1) {
         printf("%s: %d rows, the sim file %d\n", table->name, db_count, file_count);
         return false;
     }

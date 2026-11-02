@@ -1,5 +1,5 @@
--- Tables of every game. Lengths in metres, Y up. Keys are stable strings or game indices, never rowids (patches match on them).
--- A row a mod adds has a text key `<pack id>/<name>` where the game uses a number (docs/formats.md).
+-- Tables of every game. Lengths in metres, Y up. Keys are stable strings (patches match on them), never rowids.
+-- A row a mod adds has a key `<pack id>/<name>` (docs/formats.md). anim ids are a bank's game numbers; a mod's are text.
 
 CREATE TABLE source (
 	key   TEXT PRIMARY KEY,  -- title_id, eboot_sha256, data_sha256, schema_version, importer_version

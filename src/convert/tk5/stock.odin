@@ -310,8 +310,10 @@ CODE_REFS :: [?]struct {first, last: u16, ref: string}{
 	{0x8000 + 263, 0x8000 + 295, "move"},  // alias set
 }
 
-write_code_refs :: proc(w: ^db.Writer) {
-	for r in CODE_REFS do for code in r.first ..= r.last do db.insert(w, "code_ref", i64(code), r.ref)
+// The table a code's param names, "" for a plain param.
+code_ref :: proc(code: u16) -> string {
+	for r in CODE_REFS do if code >= r.first && code <= r.last do return r.ref
+	return ""
 }
 
 REQUIREMENT_END :: 0x147
