@@ -80,7 +80,7 @@ paint :: proc(ui: ^Ui, rect: sdl.FRect, p: Paint) {
 	case Window:
 		window(ui, rect, p)
 	case Plate:
-		plate_led(ui, {rect.x, rect.y + 7, 6, 6}, p.lit)
+		plate_led(ui, {rect.x + 4, rect.y + 7, 6, 6}, p.lit)
 	case Field:
 		steel(ui, rect, {face = .Recessed, lit = p.typing})
 		if p.caret >= 0 {

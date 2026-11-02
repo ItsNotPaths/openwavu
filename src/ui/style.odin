@@ -2,6 +2,10 @@ package ui
 
 import clay "../../vendor/clay"
 
+// Both roles are Michroma for now; split them here when the body gets its own face.
+BODY_FONT    :: #load("../../vendor/fonts/Michroma-Regular.ttf")
+DISPLAY_FONT :: #load("../../vendor/fonts/Michroma-Regular.ttf")
+
 // Colours are 0xRRGGBBAA, as in docs/launcher-spec.md.
 
 BACKGROUND :: 0x000000ff
@@ -54,6 +58,10 @@ SLOT_FRAME :: 16
 SLOT_LIFT  :: 3
 LIFT_RATE  :: 21
 UNDERSIDE  :: 5
+PLATE_PAD  :: 18  // plate edge to name, clears the LED
+
+MARQUEE_SPEED :: 30  // px per second
+MARQUEE_PAUSE :: 1.2  // seconds at each end
 WINDOW_H   :: SLOT - SLOT_FRAME - 38
 PLATE_H    :: 20
 

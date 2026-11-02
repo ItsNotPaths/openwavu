@@ -96,7 +96,7 @@ install_screen :: proc(l: ^Launcher, u: ^ui.Ui) {
 	if clay.UI()({
 		layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}, padding = {48, 48, 40, 40}, childGap = 20, layoutDirection = .TopToBottom},
 	}) {
-		ui.label("Install a pack", ui.TITLE_SIZE, engraved = true)
+		ui.label("Install a pack", ui.TITLE_SIZE, engraved = true, face = .Display)
 		if clay.UI()(ui.row(18, {.Left, .Top})) {
 			if ui.card(u, clay.ID("FromGameFiles"), "Game files", "Build packs from your own TK5 import. Needs the game files on disk.", l.source == .Game_Files) {
 				l.source = .Game_Files
@@ -126,7 +126,7 @@ pack_page :: proc(l: ^Launcher, u: ^ui.Ui, pack: int) {
 	if clay.UI()({
 		layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}, childGap = 10, childAlignment = {.Center, .Center}, layoutDirection = .TopToBottom},
 	}) {
-		ui.label(l.packs[pack].id, 26, engraved = true)
+		ui.label(l.packs[pack].id, 26, engraved = true, face = .Display)
 		if ui.button(u, clay.ID("Play"), "Play") {
 			l.play = pack
 		}
@@ -149,9 +149,9 @@ top_bar :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 		custom = ui.painted(ui.Bar{}),
 		floating = {attachTo = .Root, offset = {0, (shown - 1) * (ui.BAR_HEIGHT + 12)}, zIndex = 1},
 	}) {
-		ui.label(VERSION, tint = ui.TEXT_DIM)
+		ui.label(VERSION, tint = ui.TEXT_DIM, face = .Display)
 		if clay.UI()({floating = {attachTo = .Parent, attachment = {.CenterCenter, .CenterCenter}}}) {
-			ui.label(clock(), engraved = true)
+			ui.label(clock(), engraved = true, face = .Display)
 		}
 		ui.spacer()
 		// (hole launcher-settings :tags game :sev gap) the settings button opens nothing.
@@ -171,7 +171,7 @@ side_column :: proc() -> clay.ElementDeclaration {
 
 column_head :: proc(u: ^ui.Ui, title: string, search: clay.ElementId, text: ^strings.Builder) {
 	if clay.UI()({layout = {sizing = {width = clay.SizingGrow({})}, padding = {16, 16, 16, 12}, childGap = 8, layoutDirection = .TopToBottom}}) {
-		ui.label(title, ui.COLUMN_SIZE, ui.TITLE)
+		ui.label(title, ui.COLUMN_SIZE, ui.TITLE, face = .Display)
 		ui.field(u, search, text, "Search")
 	}
 }

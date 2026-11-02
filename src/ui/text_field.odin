@@ -54,7 +54,7 @@ field :: proc(ui: ^Ui, id: clay.ElementId, text: ^strings.Builder, placeholder: 
 	}
 
 	str := strings.to_string(text^)
-	caret := typing ? text_width(str[:t.caret], TEXT_SIZE) : 0
+	caret := typing ? text_size(ui, .Body, str[:t.caret], TEXT_SIZE).x : 0
 	inner := clay.GetElementData(id).boundingBox.width - 2 * FIELD_PAD
 	shift := typing ? max(0, caret - inner + 2) : 0
 	show_caret := typing && math.mod(t.blink, 1) < 0.5

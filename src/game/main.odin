@@ -20,7 +20,10 @@ main :: proc() {
 	}
 	defer render.destroy(&r)
 	u: ui.Ui
-	ui.init(&u, r.r2d, render.size(&r))
+	if !ui.init(&u, r.r2d, render.size(&r)) {
+		fmt.eprintln("openwavu:", sdl.GetError())
+		os.exit(1)
+	}
 	defer ui.destroy(&u)
 	l := Launcher{packs = titlepack.installed()}
 	defer launcher_destroy(&l)

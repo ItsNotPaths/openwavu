@@ -1,13 +1,12 @@
 package ui
 
-import "core:fmt"
-import "core:unicode/utf8"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
 
-label :: proc(text: string, size: u16 = TEXT_SIZE, tint: u32 = TEXT, engraved := false) {
+label :: proc(text: string, size: u16 = TEXT_SIZE, tint: u32 = TEXT, engraved := false, face := Font.Body) {
 	clay.TextDynamic(text, clay.TextConfig({
 		textColor = clay_color(tint),
+		fontId = u16(face),
 		fontSize = size,
 		userData = engraved ? &engraved_tag : nil,
 	}))
@@ -21,7 +20,7 @@ button :: proc(ui: ^Ui, id: clay.ElementId, text: string, style := BUTTON, nav :
 		layout = {sizing = {height = clay.SizingFixed(style.height)}, padding = style.padding, childAlignment = {.Center, .Center}},
 		custom = painted(Steel{face = active ? style.hover : style.face, lit = active && style.hover == .Raised}),
 	}) {
-		label(text, style.text_size, style.text)
+		label(text, style.text_size, style.text, face = .Display)
 	}
 	return s.clicked
 }
@@ -39,7 +38,7 @@ card :: proc(ui: ^Ui, id: clay.ElementId, heading, text: string, selected := fal
 		},
 		custom = painted(Steel{face = .Raised, lit = s.hovered || s.focused || selected}),
 	}) {
-		label(heading, HEAD_SIZE, engraved = true)
+		label(heading, HEAD_SIZE, engraved = true, face = .Display)
 		label(text, tint = TEXT_DIM)
 	}
 	return s.clicked
@@ -118,34 +117,33 @@ slot_box_ui :: proc(ui: ^Ui, id: clay.ElementId, name: string, art: ^sdl.Texture
 				custom = painted(Window{art = art, selected = selected}),
 			}) {
 				if glyph != "" {
-					label(glyph, PLUS_SIZE, selected ? LED : PLUS, engraved = true)
+					label(glyph, PLUS_SIZE, selected ? LED : PLUS, engraved = true, face = .Display)
 				}
 			}
 			if clay.UI()({
-				layout = {sizing = {clay.SizingGrow({}), clay.SizingFixed(PLATE_H)}, padding = {4, 4, 0, 0}, childAlignment = {.Center, .Center}},
+				layout = {sizing = {clay.SizingGrow({}), clay.SizingFixed(PLATE_H)}, padding = {PLATE_PAD, PLATE_PAD, 0, 0}},
 				custom = painted(Plate{lit = active || selected}),
 			}) {
-				label(fit(name, SLOT - 2 * 20 - 2 * 12, PLATE_SIZE), PLATE_SIZE, engraved = true)
+				plate_name(ui, name)
 			}
 		}
 	}
 	return s.clicked
 }
 
-// Cuts text with "..." to fit width.
 @(private)
-fit :: proc(text: string, width: f32, size: u16) -> string {
-	if text_width(text, size) <= width {
-		return text
+plate_name :: proc(ui: ^Ui, name: string) {
+	overflow := text_size(ui, .Display, name, PLATE_SIZE).x - (SLOT - 2 * SLOT_FRAME - 2 * PLATE_PAD)
+	if clay.UI()({
+		layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}, childAlignment = {overflow > 0 ? .Left : .Center, .Center}},
+		clip = {horizontal = true, childOffset = {overflow > 0 ? -marquee(overflow, ui.time) : 0, 0}},
+	}) {
+		clay.TextDynamic(name, clay.TextConfig({
+			textColor = clay_color(TEXT),
+			fontId = u16(Font.Display),
+			fontSize = PLATE_SIZE,
+			wrapMode = .None,
+			userData = &engraved_tag,
+		}))
 	}
-	for n := len(text) - 1; n > 0; n -= 1 {
-		if !utf8.rune_start(text[n]) {
-			continue
-		}
-		cut := fmt.tprintf("%s...", text[:n])
-		if text_width(cut, size) <= width {
-			return cut
-		}
-	}
-	return "..."
 }

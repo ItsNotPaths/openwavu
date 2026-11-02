@@ -3,6 +3,7 @@ package ui
 
 import "core:math"
 import sdl "vendor:sdl3"
+import ttf "vendor:sdl3/ttf"
 import clay "../../vendor/clay"
 
 Nav :: enum u8 {
@@ -28,11 +29,14 @@ Input :: struct {
 Ui :: struct {
 	renderer:  ^sdl.Renderer,
 	textures:  Textures,
+	text_engine: ^ttf.TextEngine,
+	fonts:     map[Font_Key]^ttf.Font,
 	motion:    map[u32]f32,
 	input:     Input,
 	typing:    Typing,
 	size:      [2]f32,
 	dt:        f32,
+	time:      f32,
 	focus:     clay.ElementId,
 	focusable: [dynamic]clay.ElementId,
 	memory:    []u8,
@@ -42,16 +46,17 @@ Widget_State :: struct {
 	hovered, focused, clicked: bool,
 }
 
-init :: proc(ui: ^Ui, renderer: ^sdl.Renderer, size: [2]f32) {
+init :: proc(ui: ^Ui, renderer: ^sdl.Renderer, size: [2]f32) -> bool {
 	ui.renderer = renderer
 	ui.textures = bake(renderer)
 	ui.memory = make([]u8, clay.MinMemorySize())
 	arena := clay.CreateArenaWithCapacityAndMemory(uint(len(ui.memory)), raw_data(ui.memory))
 	clay.Initialize(arena, {size.x, size.y}, {handler = clay_error})
-	clay.SetMeasureTextFunction(measure_text, nil)
+	return init_text(ui)
 }
 
 destroy :: proc(ui: ^Ui) {
+	destroy_text(ui)
 	unbake(ui.textures)
 	delete(ui.motion)
 	delete(ui.typing.edits)
@@ -62,6 +67,7 @@ destroy :: proc(ui: ^Ui) {
 begin :: proc(ui: ^Ui, size: [2]f32, dt: f32) {
 	ui.size = size
 	ui.dt = dt
+	ui.time += dt
 	clear(&ui.focusable)
 	clay.SetLayoutDimensions({size.x, size.y})
 	clay.SetPointerState(ui.input.mouse, ui.input.mouse_down)
