@@ -74,7 +74,7 @@ CREATE TABLE move (
 CREATE INDEX move_character ON move(character);
 
 -- command_code 0x8000 ends a list; 0x8005 enters group_list, 0x8006 returns; 0x8007 reads the row's input_sequence.
--- (hole command-syntax :tags (importer content)) commands are game bits (command_code, command_buttons); no cross-game command syntax yet. Designed by the user after the db reference work.
+-- (hole tk5-input-import :tags (importer tk5mod)) commands are TK5 bits (command_code, command_buttons, input_sequence and its input_extra lists, window_start/window_end/start_frame); they should be one `input` text cell (docs/commands.md), with the end, group and return rows as a `kind` column.
 CREATE TABLE cancel_list (
 	key       TEXT PRIMARY KEY,
 	character TEXT NOT NULL REFERENCES motbin(character)
@@ -96,6 +96,7 @@ CREATE TABLE cancel (
 	window_end      INTEGER NOT NULL,
 	start_frame     INTEGER NOT NULL,
 	option          INTEGER NOT NULL,  -- as the loader computes it (0xc8508); the file value is ignored
+	-- (hole cancel-flag-words :tags (importer tk5mod) :needs tk5-input-import) option and extradata are TK5 bits; reversal, stop, lock skip, no move and unlocking a locked fighter should be words after the timing in `input` (docs/commands.md, Open).
 	tracking_override TEXT REFERENCES tracking_override(key),  -- NULL: the move's own tracking
 	input_sequence  TEXT REFERENCES input_sequence(key),        -- command_code 0x8007: the sequence it reads
 	PRIMARY KEY (list, pos)

@@ -287,6 +287,7 @@ param_values :: proc(k: ^Keys, code, value: u16) -> (values: [7]db.Value) {
 	return
 }
 
+// (hole tk5-input-import) TK5 command bits, sequences, dash and tap codes are written as they are, not as steps printed with ow_input_text.
 @(private = "file")
 write_cancels :: proc(w: ^db.Writer, k: ^Keys, list: List, m: formats.Motbin, cancels: []formats.Cancel, picks: []u16) {
 	for c, i in cancels {

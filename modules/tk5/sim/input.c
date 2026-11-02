@@ -344,6 +344,7 @@ static Run run_back(const T5History *history, uint8_t start, uint16_t direction,
     return run;
 }
 
+// (hole strict-sequences :tags (sim tk5mod) :needs tk5-input-load) sequences have no strict joiner (':'), so dashes and taps need their own matchers; with it they become sequences ({f:n:^f}20), and the oracle shows whether that is exact or a deviation to record.
 // Dash: `direction` entered now; before it N for n frames, before that `direction` for m frames, n + m <= DASH_FRAMES.
 static bool dash_match(const T5Input *input, const T5History *history, uint16_t direction) {
     if ((input->direction_new & DIRECTIONS_COMPARED) != direction) return false;  // the direction must be entered this frame

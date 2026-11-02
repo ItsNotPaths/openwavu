@@ -87,6 +87,7 @@ static const Field move_fields[] = {
     FIELD_AS(T5Move, hits.launches, "hits_launches"),
 };
 
+// (hole tk5-input-load :tags (tk5mod content) :needs tk5-input-import) cancels read TK5 command bits and the input_sequence/input_extra tables; they should parse `input` (ow_input_parse) and map the steps to T5Command, T5InputSequence and the timing fields, with the stock parity test as the round trip.
 static const Field cancel_fields[] = {
     FIELD_AS(T5Cancel, command.code, "command_code"),
     FIELD_AS(T5Cancel, command.buttons, "command_buttons"),
