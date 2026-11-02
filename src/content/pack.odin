@@ -1,26 +1,27 @@
-// A content pack at run time: the game database plus its files, with the lobby's overlays applied.
+// A pack file at run time: its tar and its game database.
 package content
 
 import "../db"
 
 Pack :: struct {
-	root: string,  // content/<game>
-	db:   ^db.Sqlite,  // in memory, overlays applied
+	path: string,  // packs/<id>.tar
+	db:   ^db.Sqlite,  // in memory, so patches from the packs above can apply
 }
 
 // (hole pack-open :tags (content mech) :sev blocker) packs do not load; nothing reads tk5.db at run time.
-open_pack :: proc(root: string) -> (p: Pack, ok: bool) {
+open_pack :: proc(path: string) -> (p: Pack, ok: bool) {
 	return {}, false
 }
 
 close_pack :: proc(p: ^Pack) {}
 
-// A title pack's files: the base import (if the pack names one), then the pack's own files; same path wins.
+// What a pack sees: its bases in pack.toml order, then the pack itself; the same path in a later layer wins.
+// A stock pack has no bases and is a view of one layer.
 View :: struct {
-	base, pack: Pack,
+	layers: []Pack,
 }
 
-// (hole content-view :tags (content titlepack) :needs (pack-open overlay-apply titlepack-format)) no file view of base import + pack files + overlays behind content_read; a pack can not ship its own database.
-open_view :: proc(base: Maybe(string), pack_root: string, overlays: []string) -> (v: View, ok: bool) {
+// (hole content-view :tags (content titlepack) :needs (pack-open patch-apply titlepack-format)) no file view of a pack over its bases behind content_read, with each layer's db patches applied to the database below.
+open_view :: proc(tars: []string) -> (v: View, ok: bool) {
 	return {}, false
 }
