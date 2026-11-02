@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Dependencies into vendor/: wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding,
+# Dependencies into vendor/: zig (the C compiler for pack modules, pinned so ow build is reproducible), wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding,
 # SDL3_ttf built static with FreeType, and the UI font. Delete a vendor/ folder to refetch it.
 set -euo pipefail
 cd "$(dirname "$0")"
+ZIG=0.16.0
 WASMTIME=v49.0.2
 SQLITE=3530400 # 3.53.4
 SQLITE_SHA3=628a44cfe82c66aed1ccbbe85a562d2e33ebe64b3288981ed76285612227934e
@@ -24,6 +25,21 @@ fetch() {
 		exit 1
 	fi
 }
+
+if [ ! -x vendor/zig/zig ]; then
+	case "$(uname -s)-$(uname -m)" in
+		Linux-x86_64) target=x86_64-linux zig_sha256=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00 ;;
+		Linux-aarch64) target=aarch64-linux zig_sha256=ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17 ;;
+		Darwin-arm64) target=aarch64-macos zig_sha256=b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489 ;;
+		Darwin-x86_64) target=x86_64-macos zig_sha256=0387557ed1877bc6a2e1802c8391953baddba76081876301c522f52977b52ba7 ;;
+		*) echo "download-deps: no zig build for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+	esac
+	zig_dir=$(mktemp -d)
+	fetch "https://ziglang.org/download/$ZIG/zig-$target-$ZIG.tar.xz" "$zig_dir/zig.tar.xz" "$zig_sha256"
+	mkdir -p vendor/zig && tar xJf "$zig_dir/zig.tar.xz" -C vendor/zig --strip-components=1
+	rm -rf "$zig_dir"
+	echo "vendor/zig: $ZIG $target"
+fi
 
 if [ ! -d vendor/wasmtime ]; then
 	case "$(uname -s)-$(uname -m)" in

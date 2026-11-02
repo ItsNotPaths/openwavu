@@ -32,6 +32,15 @@ if [ ! -f build/libow_input.a ] || [ sdk/include/ow_input.h -nt build/libow_inpu
 	cc -std=c23 -O2 -DOW_INPUT_IMPLEMENTATION -x c -c sdk/include/ow_input.h -o build/ow_input.o
 	ar rcs build/libow_input.a build/ow_input.o
 fi
+# The SDK's SQLite for pack modules (sdk/src/ow_db.c has its VFS): SQLITE_OS_OTHER, so only openwavu imports.
+mkdir -p build/sdk
+if [ ! -f build/sdk/libow_db.a ] || [ vendor/sqlite/sqlite3.c -nt build/sdk/libow_db.a ] || [ sdk/src/ow_db.c -nt build/sdk/libow_db.a ]; then
+	vendor/zig/zig cc --target=wasm32-wasi -Os -DSQLITE_OS_OTHER=1 -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION \
+		-DSQLITE_OMIT_WAL -DSQLITE_DEFAULT_MEMSTATUS=0 -c vendor/sqlite/sqlite3.c -o build/sdk/sqlite3.o
+	vendor/zig/zig cc --target=wasm32-wasi -Os -std=c23 -Isdk/include -c sdk/src/ow_db.c -o build/sdk/ow_db.o
+	rm -f build/sdk/libow_db.a
+	vendor/zig/zig ar rcs build/sdk/libow_db.a build/sdk/sqlite3.o build/sdk/ow_db.o
+fi
 odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict-style
 # (hole module-build :tags (wasm tk5mod) :needs ow-cli) the stock gameplay.wasm, gamerender.wasm and app.wasm are not built from modules/tk5 with ow build; the TK5 core needs -fwrapv -ffp-contract=off -fno-fast-math there too.
 odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/sdl3_ttf"

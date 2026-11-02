@@ -4,7 +4,7 @@ package ow
 
 import "core:fmt"
 
-// (hole ow-cli :tags (tools sdk)) no ow new (templates), ow build (reproducible) or ow run.
+// (hole ow-cli :tags (tools sdk)) no ow new (templates), ow build (reproducible, links build/sdk/libow_db.a and the SDK by itself) or ow run.
 main :: proc() {
 	fmt.eprintln("ow: not built")
 }
