@@ -3,6 +3,7 @@ package wasm
 
 import "core:c"
 
+// (hole windows-build :tags tools) no Windows build: no wasmtime import here, download-deps.sh and build.sh are bash-only and fetch no Windows libs (wasmtime, clay, sqlite, SDL3, SDL3_ttf).
 when ODIN_OS == .Linux {
 	foreign import lib {"../../vendor/wasmtime/lib/libwasmtime.a", "system:pthread", "system:dl", "system:m"}
 } else when ODIN_OS == .Darwin {

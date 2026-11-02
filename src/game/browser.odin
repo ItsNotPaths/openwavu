@@ -9,19 +9,30 @@ import clay "../../vendor/clay"
 import "../ui"
 
 // Picks what the importer takes: an RPCS3 folder, or a game folder and optionally a .rap file.
+// dir "" is the list of filesystem roots (drive letters on Windows).
 Browser :: struct {
+	opened:  bool,
 	dir:     string,
 	entries: []os.File_Info,  // folders first, then .rap files
 	picked:  [dynamic]string,
 	is_game: bool,  // dir holds PARAM.SFO or dev_hdd0
-	next:    string,  // opened next frame; Clay still points at this frame's names
+	next:    Maybe(string),  // opened next frame; Clay still points at this frame's names
 }
 
 browser_open :: proc(b: ^Browser, dir: string) {
 	browser_close(b)
+	b.opened = true
 	b.dir = strings.clone(dir)
-	all, _ := os.read_all_directory_by_path(dir, context.temp_allocator)
 	entries := make([dynamic]os.File_Info)
+	if dir == "" {
+		for root in roots(context.temp_allocator) {
+			append(&entries, os.File_Info{fullpath = strings.clone(root), name = strings.clone(root), type = .Directory})
+		}
+		b.entries = entries[:]
+		b.is_game = false
+		return
+	}
+	all, _ := os.read_all_directory_by_path(dir, context.temp_allocator)
 	for entry in all {
 		if strings.has_prefix(entry.name, ".") {
 			continue
@@ -56,33 +67,35 @@ browser_destroy :: proc(b: ^Browser) {
 		delete(path)
 	}
 	delete(b.picked)
-	delete(b.next)
+	if next, ok := b.next.?; ok {
+		delete(next)
+	}
 }
 
 browser :: proc(b: ^Browser, u: ^ui.Ui) {
-	if b.dir == "" {
+	if !b.opened {
 		home, _ := os.user_home_dir(context.temp_allocator)
 		browser_open(b, home)
 	}
-	if b.next != "" {
-		browser_open(b, b.next)
-		delete(b.next)
-		b.next = ""
+	if next, ok := b.next.?; ok {
+		browser_open(b, next)
+		delete(next)
+		b.next = nil
 	}
 	if clay.UI()({layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}, childGap = 8, layoutDirection = .TopToBottom}}) {
 		if clay.UI()(ui.row(8)) {
-			ui.label(b.dir, tint = ui.TEXT_DIM)
+			ui.label(b.dir == "" ? "Drives" : b.dir, tint = ui.TEXT_DIM)
 			ui.spacer()
 			if b.is_game {
 				ui.label("Looks like a game folder", tint = ui.LED)
 			}
-			if ui.button(u, clay.ID("UseFolder"), "Use this folder") {
+			if b.dir != "" && ui.button(u, clay.ID("UseFolder"), "Use this folder") {
 				pick(b, b.dir)
 			}
 		}
 		if clay.UI()(ui.scroll(clay.ID("Files"))) {
-			if ui.list_row(u, clay.ID("Up"), "../", false) {
-				b.next = strings.clone(filepath.dir(b.dir))
+			if parent, ok := up(b.dir); ok && ui.list_row(u, clay.ID("Up"), "../", false) {
+				b.next = strings.clone(parent)
 			}
 			for entry, i in b.entries {
 				folder := entry.type == .Directory
@@ -112,6 +125,18 @@ browser :: proc(b: ^Browser, u: ^ui.Ui) {
 			}
 		}
 	}
+}
+
+// The folder above dir. Above a root is the root list, shown only when there are several roots.
+up :: proc(dir: string) -> (parent: string, ok: bool) {
+	if dir == "" {
+		return "", false
+	}
+	all := roots(context.temp_allocator)
+	if slice.contains(all, dir) {
+		return "", len(all) > 1
+	}
+	return filepath.dir(dir), true
 }
 
 // Picking a picked path again unpicks it.
