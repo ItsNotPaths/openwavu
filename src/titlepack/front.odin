@@ -15,6 +15,7 @@ Front :: struct {
 	glow:     [4]u8,
 	font:     string,  // a TTF in the pack's file view; "" for the launcher's
 	elements: []Element,
+	credits:  []string,  // credits "..." lines; the launcher shows them in its popup
 }
 
 Kind :: enum u8 {
@@ -54,6 +55,7 @@ DEFAULT_GLOW :: [4]u8{0xff, 0x5a, 0x4a, 0xff}
 read_front :: proc(text: string, allocator := context.allocator) -> (front: Front, err: string) {
 	front = {height = 720, glow = DEFAULT_GLOW}
 	elements := make([dynamic]Element, allocator)
+	credits := make([dynamic]string, allocator)
 	line_number := 0
 	rest := text
 	for line in strings.split_lines_iterator(&rest) {
@@ -66,6 +68,9 @@ read_front :: proc(text: string, allocator := context.allocator) -> (front: Fron
 		if len(words) == 0 do continue
 		if words[0].text == "page" {
 			err = read_page(&front, words[1:])
+		} else if words[0].text == "credits" {
+			if len(words) != 2 || !words[1].quoted do err = "credits takes one \"quoted line\""
+			else do append(&credits, words[1].text)
 		} else {
 			e: Element
 			e, err = read_element(words)
@@ -77,11 +82,12 @@ read_front :: proc(text: string, allocator := context.allocator) -> (front: Fron
 		}
 	}
 	front.elements = elements[:]
-	for &e in front.elements {
-		e.x = clamp(e.x, 0, FRONT_WIDTH)
-		e.y = clamp(e.y, 0, front.height)
-		e.w = clamp(e.w, 0, FRONT_WIDTH - e.x)
-		e.h = clamp(e.h, 0, front.height - e.y)
+	front.credits = credits[:]
+	for &e in front.elements {  // boxes may hang off the canvas, which cuts them off; the limits only keep sizes sane
+		e.x = clamp(e.x, -FRONT_WIDTH, FRONT_WIDTH)
+		e.y = clamp(e.y, -front.height, front.height)
+		e.w = clamp(e.w, 0, 2 * FRONT_WIDTH)
+		e.h = clamp(e.h, 0, 2 * front.height)
 	}
 	return
 }
@@ -148,7 +154,7 @@ read_element :: proc(words: []Word) -> (e: Element, err: string) {
 	for name, kind in KIND_NAMES do if words[0].text == name && !words[0].quoted && words[0].key == "" {
 		e.kind, found = kind, true
 	}
-	if !found do return e, fmt.tprintf("%q is not page, bg, image, rect, text or button", word_name(words[0]))
+	if !found do return e, fmt.tprintf("%q is not page, credits, bg, image, rect, text or button", word_name(words[0]))
 	e.color = {0xff, 0xff, 0xff, 0xff}
 	e.size = 24
 	for w in words[1:] {

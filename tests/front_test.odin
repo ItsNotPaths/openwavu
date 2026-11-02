@@ -24,6 +24,8 @@ button install    x=40  y=460 w=220 h=56 label="Install"
 button credits    x=40  y=540 w=220 h=56 label="Credits" image=btn/credits.png
 image  edge.png   x=0 y=840 w=1000  // a comment
 button uninstall  x=280 y=540
+credits "Art: someone"
+credits "Code: someone else"
 `
 	front, err := titlepack.read_front(text, context.temp_allocator)
 	if !testing.expect_value(t, err, "") do return
@@ -39,6 +41,7 @@ button uninstall  x=280 y=540
 	testing.expect(t, e[6].action == .Toggle && e[6].target == "map" && e[6].text == "Show map")
 	testing.expect(t, e[7].action == .Install && e[8].action == .Credits && e[8].file == "btn/credits.png")
 	testing.expect(t, e[10].action == .Uninstall)
+	testing.expect(t, len(front.credits) == 2 && front.credits[1] == "Code: someone else")
 }
 
 // A creator sees which line is wrong.
@@ -57,11 +60,12 @@ front_errors_name_the_line :: proc(t: ^testing.T) {
 	}
 }
 
-// Boxes stay on the canvas: 1000 wide, as tall as the page.
+// Boxes may hang off the canvas (art placed by its visible part), within sane limits.
 @(test)
-front_boxes_clamp_to_canvas :: proc(t: ^testing.T) {
-	front, err := titlepack.read_front("page height=500\nrect x=900 y=-20 w=400 h=900", context.temp_allocator)
+front_boxes_may_hang_off_canvas :: proc(t: ^testing.T) {
+	front, err := titlepack.read_front("page height=500\nrect x=-94 y=-221 w=900 h=60\nrect x=9000 y=-9000 w=99999 h=1", context.temp_allocator)
 	if !testing.expect_value(t, err, "") do return
-	r := front.elements[0]
-	testing.expect(t, r.x == 900 && r.y == 0 && r.w == 100 && r.h == 500)
+	a, b := front.elements[0], front.elements[1]
+	testing.expect(t, a.x == -94 && a.y == -221 && a.w == 900)
+	testing.expect(t, b.x == 1000 && b.y == -500 && b.w == 2000)
 }
