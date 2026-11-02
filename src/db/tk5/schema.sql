@@ -73,7 +73,8 @@ CREATE TABLE move (
 );
 CREATE INDEX move_character ON move(character);
 
--- input: the command and its timing as text (docs/commands.md). kind: NULL for a cancel; end ends the list, group
+-- input: the command, its timing and words as text (docs/commands.md); bit 18 of extradata is the word unlock. The cancel
+-- options are not stored: the loader computes them, as the game does. kind: NULL for a cancel; end ends the list, group
 -- enters group_list, return goes back after the group row; their input is timing only.
 CREATE TABLE cancel_list (
 	key       TEXT PRIMARY KEY,
@@ -91,9 +92,8 @@ CREATE TABLE cancel (
 	alias           INTEGER,
 	group_list      TEXT REFERENCES group_cancel_list(key),  -- a group entry: the group cancel list it enters
 	unk_0a          INTEGER,           -- (not loaded)
+	-- (hole cancel-transition-columns :tags (importer tk5mod content) :sev polish) extradata is the transition word (class, start alignment, motion code) and the pending flags as TK5 bits; no readable columns.
 	extradata       INTEGER NOT NULL,
-	option          INTEGER NOT NULL,  -- as the loader computes it (0xc8508); the file value is ignored
-	-- (hole cancel-flag-words :tags (importer tk5mod)) option and extradata are TK5 bits; reversal, stop, lock skip, no move and unlocking a locked fighter should be words after the timing in `input` (docs/commands.md, Open).
 	tracking_override TEXT REFERENCES tracking_override(key),  -- NULL: the move's own tracking
 	PRIMARY KEY (list, pos)
 );
@@ -115,7 +115,6 @@ CREATE TABLE group_cancel (
 	group_list      TEXT REFERENCES group_cancel_list(key),
 	unk_0a          INTEGER,           -- (not loaded)
 	extradata       INTEGER NOT NULL,
-	option          INTEGER NOT NULL,
 	tracking_override TEXT REFERENCES tracking_override(key),
 	PRIMARY KEY (list, pos)
 );

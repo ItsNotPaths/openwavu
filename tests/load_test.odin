@@ -41,8 +41,8 @@ mod_rows_follow_by_sheet_order :: proc(t: ^testing.T) {
 		INSERT INTO extra_prop_list VALUES ('x/e', 'x');
 		INSERT INTO extra_prop (list, pos, "when", id, value_pushback) VALUES ('x/e', 0, 1, 0x80a3, 'mod/p');
 		INSERT INTO tracking_override VALUES ('x/o', 'x', 'x/t', 'x/t', 0, 0), ('mod/t', 'x', 'x/t', 'x/t', 0, 0);
-		INSERT INTO cancel (list, pos, input, requirements, move, extradata, option, tracking_override)
-			VALUES ('x/c', 0, '@0..0>0', 'x/r', 'x/m', 0, 0, 'mod/t');
+		INSERT INTO cancel (list, pos, input, requirements, move, extradata, tracking_override)
+			VALUES ('x/c', 0, '@0..0>0', 'x/r', 'x/m', 0, 'mod/t');
 		INSERT INTO anim VALUES ('x', 0, 1, 'a.anim'), ('x', 'mod/z', 1, 'a.anim');
 		UPDATE move SET anim_idx = 'mod/z', extra_props = 'x/e';`
 	// pools: x/pool rows 0..1 and its end, mod/pool at 3; requirement 148 names alias 4 (0x8004); the pushback mod/p is row 1;
@@ -62,10 +62,10 @@ cancel_inputs_load_as_commands :: proc(t: ^testing.T) {
 	if !build_load_lists(t, #procedure) do return
 	rows :: `
 		INSERT INTO requirement_list VALUES ('x/r', 'x');
-		INSERT INTO cancel (list, pos, kind, input, requirements, extradata, option) VALUES
-			('x/c', 0, NULL, '{{^f:n:^f}}20@1..255>1', 'x/r', 0, 0), ('x/c', 1, NULL, '{{f:n:^f}}20@1..255>1', 'x/r', 0, 0),
-			('x/c', 2, NULL, '{{n,f+1}}10@1..255>1', 'x/r', 0, 0), ('x/c', 3, NULL, '%s', 'x/r', 0, 0),
-			('x/c', 4, 'end', '@50..255>50', 'x/r', 0, 0);`
+		INSERT INTO cancel (list, pos, kind, input, requirements, extradata) VALUES
+			('x/c', 0, NULL, '{{^f:n:^f}}20@1..255>1', 'x/r', 0), ('x/c', 1, NULL, '{{f:n:^f}}20@1..255>1', 'x/r', 0),
+			('x/c', 2, NULL, '{{n,f+1}}10@1..255>1', 'x/r', 0), ('x/c', 3, NULL, '%s', 'x/r', 0),
+			('x/c', 4, 'end', '@50..255>50', 'x/r', 0);`
 	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "f+1@1..1>1")), "move: 501/0/32769/-1\ncancel: 0x8001/0/0 0x8007/0/0 0x8008/0/0 0x40/0/0 0x8000/0/0\n" +
 		"requirement: 327/0\n")
 	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "f+5@1..1>1")), "cancel.input f+5@1..1>1: a direction or button is unknown\n")

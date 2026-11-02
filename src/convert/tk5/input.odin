@@ -5,11 +5,12 @@ import "core:fmt"
 import "../../command"
 import formats "../../formats/tk5"
 
-TK5_BUTTONS := []cstring{"1", "2", "3", "4", nil}
+TK5_NAMES := command.Names{{"1", "2", "3", "4", nil}, {"unlock", nil}}
 
 // The codes after CMD_END: dashes and taps, as the sequences they match.
 SPECIAL_INPUTS := [4]string{"{^f:n:^f}20", "{^b:n:^b}20", "{n:u:n}16", "{n:d:n}16"}
 
+EXTRA_UNLOCK :: 1 << 18  // the input counts while the fighter's input is locked: the word `unlock`
 COMMAND_ANY_PRESS :: 1 << 12
 COMMAND_HOLD_AFTER_PRESS :: 1 << 13
 COMMAND_SUMMARY :: 1 << 14
@@ -24,7 +25,7 @@ cancel_input :: proc(m: formats.Motbin, c: formats.Cancel) -> (kind, text: strin
 	case code == CMD_GROUP: kind = "group"
 	case code == CMD_GROUP_END: kind = "return"
 	case code > CMD_END && code < CMD_GROUP:
-		input, _ = command.parse(fmt.tprintf("%s@0..0>0", SPECIAL_INPUTS[code - CMD_END - 1]), TK5_BUTTONS)
+		input, _ = command.parse(fmt.tprintf("%s@0..0>0", SPECIAL_INPUTS[code - CMD_END - 1]), TK5_NAMES)
 	case code >= CMD_SEQUENCE:
 		s := m.input_sequences[code - CMD_SEQUENCE]
 		input.window, input.step_count = s.unk_00, u8(s.unk_02)
@@ -33,7 +34,8 @@ cancel_input :: proc(m: formats.Motbin, c: formats.Cancel) -> (kind, text: strin
 		input.steps[0], input.step_count = step(u16(code), u16(c.command), false), 1
 	}
 	input.open, input.close, input.start = c.window_start, c.window_end, c.start_frame
-	return kind, command.print(input, TK5_BUTTONS)
+	if m.cancel_extras[c.extra] & EXTRA_UNLOCK != 0 do input.words = 1
+	return kind, command.print(input, TK5_NAMES)
 }
 
 // Inside a sequence "no press" is a step without buttons. A one-button press is written one way: the game's three modes

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "sim/requirements.h"
+#include "sim/transition.h"
 #include "sqlite3.h"
 #define OW_INPUT_IMPLEMENTATION
 #include "ow_input.h"
@@ -97,7 +98,6 @@ static const Field cancel_fields[] = {
     FIELD_AS(T5Cancel, move, "group_list"),  // a group entry: the group cancel list it enters
     FIELD_AS(T5Cancel, tracking_pick, "tracking_override", .bias = 1),  // tracking_pick counts from 1
     FIELD(T5Cancel, extradata),
-    FIELD(T5Cancel, option),
 };
 
 static const Field requirement_fields[] = {FIELD(T5Requirement, id), PARAM(T5Requirement, param)};
@@ -338,6 +338,9 @@ static size_t table_bytes(int32_t count, size_t size) { return t5_arena_round(((
 // --- cancel inputs (docs/commands.md)
 
 static const char *const BUTTON_NAMES[] = {"1", "2", "3", "4", NULL};
+static const char *const WORD_NAMES[] = {"unlock", NULL};  // bit i: EXTRA_WORDS[i] of extradata
+static const uint32_t EXTRA_WORDS[] = {1 << 18};
+static const OwInputNames NAMES = {BUTTON_NAMES, WORD_NAMES};
 
 // The codes after T5_CANCEL_END: dashes and taps, as the sequences they match.
 static const char *const SPECIAL_INPUTS[] = {"{^f:n:^f}20@0..0>0", "{^b:n:^b}20@0..0>0", "{n:u:n}16@0..0>0", "{n:d:n}16@0..0>0"};
@@ -368,8 +371,8 @@ static T5Command step_command(const OwInputStep *step, bool in_sequence) {
 
 static uint16_t special_code(OwInput input) {
     char text[256];
-    input.open = input.close = input.start = 0;
-    ow_input_text(&input, BUTTON_NAMES, text, sizeof text);
+    input.open = input.close = input.start = input.words = 0;
+    ow_input_text(&input, &NAMES, text, sizeof text);
     for (uint16_t index = 0; index < sizeof SPECIAL_INPUTS / sizeof *SPECIAL_INPUTS; index++)
         if (strcmp(text, SPECIAL_INPUTS[index]) == 0) return T5_CANCEL_DASH_F + index;
     return 0;
@@ -377,9 +380,11 @@ static uint16_t special_code(OwInput input) {
 
 static const char *cancel_input(const char *table, const char *kind, const char *text, T5Cancel *cancel, Sequences *sequences) {
     OwInput input;
-    const char *failed = ow_input_parse(text, (uint32_t)strlen(text), BUTTON_NAMES, &input);
+    const char *failed = ow_input_parse(text, (uint32_t)strlen(text), &NAMES, &input);
     if (failed) return fail("%s.input %s: %s", table, text, failed);
     cancel->window_start = input.open, cancel->window_end = input.close, cancel->start_frame = input.start;
+    for (size_t word = 0; word < sizeof EXTRA_WORDS / sizeof *EXTRA_WORDS; word++)
+        if (input.words >> word & 1) cancel->extradata |= EXTRA_WORDS[word];
     if (kind) {
         if (input.step_count) return fail("%s.input %s: a %s row takes timing only", table, text, kind);
         cancel->command.code = strcmp(kind, "end") == 0 ? T5_CANCEL_END : strcmp(kind, "group") == 0 ? T5_CANCEL_GROUP : T5_CANCEL_GROUP_END;
@@ -429,6 +434,29 @@ static void sequence_bytes(const Sequences *counted, size_t *sequences, size_t *
     *sequences = table_bytes(counted->sequence_count, sizeof(T5InputSequence));
     *joints = table_bytes(counted->sequence_count, sizeof(uint16_t));
     *extras = table_bytes(counted->extra_count, sizeof(T5Command));
+}
+
+static constexpr enum T5TransitionClass TRANSITION_CLASS_PASS = 9;  // an entry of this class does not end the cancel scan
+
+// T5Cancel.option as the game's loader computes it (0xc8508): from the requirement ids, the command and the transition.
+static uint16_t cancel_option(const T5Motbin *motbin, const T5Cancel *cancel) {
+    uint16_t option = cancel->command.code || cancel->command.buttons ? T5_OPTION_INPUT : T5_OPTION_NO_INPUT;
+    for (const T5Requirement *r = &motbin->requirements[cancel->requirements]; r->id != T5_REQUIREMENT_COUNT; r++) {
+        if (r->id > 0x122 && r->id < 0x8000) option |= T5_OPTION_REVERSAL;
+        if (r->id > 0x134 && r->id < 0x8000) option |= T5_OPTION_NO_DAMAGE;
+        if (r->id == 0x8162) option |= T5_OPTION_TRACK;
+        if (r->id >= 0x6a && r->id <= 0x6c) option |= T5_OPTION_INPUT;
+    }
+    uint16_t transition = t5_extradata_transition(cancel->extradata);
+    if (t5_transition_class(transition) != TRANSITION_CLASS_PASS) option |= T5_OPTION_STOP;
+    if (t5_transition_code(transition) == MOTION_SWEEP) option |= T5_OPTION_LOCK_SKIP;
+    return option;
+}
+
+static void set_options(T5Motbin *motbin) {
+    for (int32_t index = 0; index < motbin->cancel_count; index++) motbin->cancels[index].option = cancel_option(motbin, &motbin->cancels[index]);
+    for (int32_t index = 0; index < motbin->group_cancel_count; index++)
+        motbin->group_cancels[index].option = cancel_option(motbin, &motbin->group_cancels[index]);
 }
 
 static const char *load_inputs(sqlite3 *db, const char *character, T5Arena *arena, T5Motbin *motbin) {
@@ -744,6 +772,7 @@ const char *t5_load_motbin(T5Motbin *motbin, sqlite3 *db, const char *character,
     if (!failed) failed = read_refs(db, character, &refs);
     for (size_t index = 0; index < TABLE_COUNT && !failed; index++) failed = load_table(db, character, &tables[index], &refs, arena, motbin);
     if (!failed) failed = load_inputs(db, character, arena, motbin);
+    if (!failed) set_options(motbin);
     free_refs(&refs);
     return failed;
 }

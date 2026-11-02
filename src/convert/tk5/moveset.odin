@@ -290,7 +290,7 @@ write_cancels :: proc(w: ^db.Writer, k: ^Keys, list: List, m: formats.Motbin, ca
 		if kind == "group" do move, alias, group_list = db.Null{}, db.Null{}, list_ref(k, .Group_Cancel, c.move)
 		if picks[i] != 0 do tracking = row_key(k.char, "tracking_override", picks[i] - 1)  // the game counts picks from 1
 		db.insert(w, LIST_TABLES[list], key, pos, kind_value, input, list_ref(k, .Requirement, c.requirements), move, alias, group_list,
-			n(c.unk_0a), n(m.cancel_extras[c.extra]), n(cancel_option(m, c)), tracking)
+			n(c.unk_0a), n(m.cancel_extras[c.extra] & ~u32(EXTRA_UNLOCK)), tracking)
 	}
 }
 

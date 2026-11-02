@@ -344,31 +344,3 @@ requirement_param :: proc(r: formats.Requirement) -> u16 {
 	}
 	return 1 << u16(every) + u16(first) * PHASE_FIRST_FRAME_UNIT
 }
-
-// The cancel option bits as the loader 0xc8508 computes them; the file value is ignored.
-cancel_option :: proc(m: formats.Motbin, c: formats.Cancel) -> (option: u16) {
-	ids := requirement_ids(m, c.requirements)
-	extra := m.cancel_extras[c.extra]
-	if c.command == 0 do option |= 1
-	for id in ids {
-		if id > 0x122 && id < 0x8000 do option |= 2
-		if id > 0x134 && id < 0x8000 do option |= 4
-		if id == 0x8162 do option |= 8
-		if id >= 0x6a && id <= 0x6c do option |= 0x10
-	}
-	if c.command != 0 do option |= 0x10
-	if extra & 0x3c00 != 0x2400 do option |= 0x40
-	if extra & 0x3f == 0x10 do option |= 0x80
-	return
-}
-
-// Requirement ids of the list at `first`, up to its end marker.
-@(private = "file")
-requirement_ids :: proc(m: formats.Motbin, first: u32) -> []u16 {
-	ids := make([dynamic]u16, context.temp_allocator)
-	for r in m.requirements[first:] {
-		if r.id == REQUIREMENT_END do break
-		append(&ids, r.id)
-	}
-	return ids[:]
-}
