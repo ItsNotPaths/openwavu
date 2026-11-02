@@ -37,6 +37,11 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_lit/*'"), 240)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_renders/*'"), 54)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id IN ('select_renders/paul_right', 'select_renders/paul_left', 'select_renders/xiaoyu_left')"), 3)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM font"), 8)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM glyph"), 14961)
+	testing.expect_value(t, count(handle, "SELECT count(DISTINCT font) FROM glyph WHERE code = 0x41"), 8)  // every font has an A
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM glyph WHERE font = 'text_big' AND code IN (0x41F, 0x3066)"), 2)  // П, て
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM glyph WHERE font = 'wide' AND code = 0xE000"), 1)  // a button glyph
 	all_images: ^db.Stmt
 	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT file FROM image", -1, &all_images, nil), db.OK) do return
 	defer db.finalize(all_images)

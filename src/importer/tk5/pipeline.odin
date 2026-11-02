@@ -324,9 +324,8 @@ import_stage :: proc(im: ^Import, index: int) {
 import_sounds :: proc(im: ^Import) {}
 
 // (hole tim2-textures :tags importer :sev polish) model section 17 (TIM2) is not decoded.
-// (hole font-glyphs :tags (importer titlepack)) font pages (font1..4) are images only; their NFH glyph tables are not read.
 // (hole menu-layouts :tags (importer tk5mod)) a screen's SWG layout is copied as is, not decoded; its third block is dropped.
-// The PNGs in the archive, the PS3 menu art next to PARAM.SFO, every 2D art entry and the select renders.
+// The PNGs in the archive, the PS3 menu art next to PARAM.SFO, every 2D art entry, the fonts and the select renders.
 import_images :: proc(im: ^Import) {
 	for index in 33 ..< 37 {
 		defer free_all(context.temp_allocator)
@@ -353,6 +352,25 @@ import_images :: proc(im: ^Import) {
 			parts = formats.sections(parts[1], context.temp_allocator) or_continue
 		}
 		for section, i in parts do write_art(im, fmt.tprintf("%s/%03d", art.name, i), section)
+	}
+	for font in formats.FONTS {
+		defer free_all(context.temp_allocator)
+		data := read_entry(im.archive, font.index) or_continue
+		parts := formats.sections(data, context.temp_allocator) or_continue
+		if 2 * (font.first + font.pages) > len(parts) || !make_dir(join(im.root, "ui", "fonts", font.name)) do continue
+		line_height, _ := formats.read_nfh(parts[2 * font.first + 1], context.temp_allocator) or_continue
+		db.insert(&im.w, "font", font.name, i64(line_height))
+		for page in 0 ..< font.pages {
+			pair := 2 * (font.first + page)
+			_, glyphs := formats.read_nfh(parts[pair + 1], context.temp_allocator) or_continue
+			pngs, _ := convert.art_pngs(parts[pair], context.temp_allocator)
+			if len(pngs) == 0 || pngs[0] == nil do continue
+			id := fmt.tprintf("fonts/%s/%02d", font.name, page)
+			write_image(im, id, pngs[0])
+			for g in glyphs {
+				db.insert(&im.w, "glyph", font.name, i64(g.code), id, i64(g.x), i64(g.y), i64(g.width), i64(g.height), g.x_offset, g.y_offset, g.advance)
+			}
+		}
 	}
 	if !make_dir(join(im.root, "ui", "select_renders")) do return
 	for render, i in formats.SELECT_RENDERS {

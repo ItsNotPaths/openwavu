@@ -88,6 +88,25 @@ CREATE TABLE image (  -- UI, portraits
 	file TEXT NOT NULL
 );
 
+CREATE TABLE font (
+	id          TEXT PRIMARY KEY,
+	line_height INTEGER NOT NULL  -- px
+);
+
+CREATE TABLE glyph (  -- one character on a font page; px
+	font     TEXT NOT NULL REFERENCES font(id),
+	code     INTEGER NOT NULL,  -- Unicode
+	image    TEXT NOT NULL REFERENCES image(id),  -- the page
+	x        INTEGER NOT NULL,
+	y        INTEGER NOT NULL,
+	width    INTEGER NOT NULL,
+	height   INTEGER NOT NULL,
+	x_offset REAL NOT NULL,  -- pen to the glyph's left edge
+	y_offset REAL NOT NULL,  -- line top to the glyph's top
+	advance  REAL NOT NULL,  -- pen step
+	PRIMARY KEY (font, code)
+);
+
 CREATE TABLE texture (  -- DDS files; glb materials name them by hash in their extras, unique per owner only
 	owner  TEXT NOT NULL,  -- the part's owner or the stage
 	hash   INTEGER NOT NULL,
