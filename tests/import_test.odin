@@ -48,6 +48,15 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 		testing.expect(t, png_err == nil && image.width > 0 && image.height > 0, file)
 	}
 	testing.expect_value(t, db.step(images), db.DONE)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM texture"), 9616)
+	textures: ^db.Stmt
+	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT file FROM texture", -1, &textures, nil), db.OK) do return
+	defer db.finalize(textures)
+	for db.step(textures) == db.ROW {
+		file := string(db.column_text(textures, 0))
+		data, read_err := os.read_entire_file(fmt.tprintf("build/test_packs/tekken5dr/%s", file), context.temp_allocator)
+		if !testing.expect(t, read_err == nil && len(data) > 128 && string(data[:4]) == "DDS ", file) do break
+	}
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM pragma_foreign_key_check"), 0)  // every cell that names a row finds it
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part p WHERE NOT EXISTS (SELECT 1 FROM costume_part c WHERE c.part = p.id)"), 0)
 

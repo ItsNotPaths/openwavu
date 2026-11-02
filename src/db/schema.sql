@@ -88,6 +88,14 @@ CREATE TABLE image (  -- UI, portraits
 	file TEXT NOT NULL
 );
 
+CREATE TABLE texture (  -- DDS files; glb materials name them by hash in their extras, unique per owner only
+	owner  TEXT NOT NULL,  -- the part's owner or the stage
+	hash   INTEGER NOT NULL,
+	file   TEXT NOT NULL,
+	cutout INTEGER NOT NULL,  -- 1: draw with alpha test
+	PRIMARY KEY (owner, hash)
+);
+
 -- (hole intro-timelines :tags importer :needs intro-re) no intro, win and outro timelines: fighter anim, camera track, frame events (effect, sound, voice).
 -- (hole text-strings :tags importer :sev polish) no source found yet for localized UI strings.
 CREATE TABLE text (

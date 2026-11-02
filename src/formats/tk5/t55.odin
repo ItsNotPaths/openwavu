@@ -1,8 +1,7 @@
 // T55DATA1.BIN archive: file table in the EBOOT, per-entry XOR, zlib. tk5decomp data.md §1-2.
 package tk5_formats
 
-import "core:bytes"
-import "core:compress/zlib"
+import "vendor:zlib"
 
 SECTOR :: 0x800
 ENTRY_SIZE :: 0x1c
@@ -34,11 +33,13 @@ unpack_entry :: proc(e: Entry, stored: []byte, allocator := context.allocator) -
 	if len(stored) != int(e.stored_size) do return nil, false
 	if word_sum(stored) != e.word_sum do decrypt(stored, e.key)
 	if e.size == e.stored_size do return stored, true
-	buf: bytes.Buffer
-	bytes.buffer_init_allocator(&buf, 0, int(e.size), allocator)
-	if zlib.inflate(stored, &buf, expected_output_size = int(e.size)) != nil do return nil, false
-	data = bytes.buffer_to_bytes(&buf)
-	return data, len(data) == int(e.size)
+	data = make([]byte, e.size, allocator)
+	size := zlib.uLongf(e.size)
+	if zlib.uncompress(raw_data(data), &size, raw_data(stored), zlib.uLong(len(stored))) != zlib.OK || size != zlib.uLongf(e.size) {
+		delete(data, allocator)
+		return nil, false
+	}
+	return data, true
 }
 
 @(private)

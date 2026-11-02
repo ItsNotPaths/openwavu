@@ -1,4 +1,4 @@
-// Character parts and stage scenes as glb: skinned meshes, PNG textures, metres, Y up.
+// Character parts and stage scenes as glb: skinned meshes, metres, Y up. Textures are DDS files (texture.odin); materials name them by hash.
 package tk5_convert
 
 import "core:encoding/json"
@@ -12,10 +12,8 @@ import formats "../../formats/tk5"
 MM :: 1000.0  // file millimetres per glTF metre
 BODY_BONES :: 23  // animated by the 23 channels; the rest are helpers
 
-Textures :: map[u32]formats.Texture  // by hash, MIF placeholders already resolved
-
 // skeleton: nil for unskinned (stage) geometry. matrices: per mesh, row vectors in file units, or nil.
-write_model :: proc(path: string, meshes: []formats.Mesh, textures: Textures, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil) -> (ok: bool) {
+write_model :: proc(path: string, meshes: []formats.Mesh, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil) -> (ok: bool) {
 	context.allocator = context.temp_allocator
 	g: convert.Gltf
 	scene: convert.Scene
@@ -38,7 +36,7 @@ write_model :: proc(path: string, meshes: []formats.Mesh, textures: Textures, sk
 				prim.attributes["WEIGHTS_0"] = convert.add_accessor(&g, normalized(p.weights), "VEC4", convert.ARRAY_BUFFER)
 			}
 			prim.indices = convert.add_accessor(&g, flat(p.triangles), "SCALAR", convert.ELEMENT_ARRAY_BUFFER)
-			if len(p.materials) > 0 do prim.material = material(&g, &materials, textures, p.materials)
+			if len(p.materials) > 0 do prim.material = material(&g, &materials, p.materials)
 			append(&out.primitives, prim)
 		}
 		append(&g.meshes, out)
@@ -57,22 +55,13 @@ write_model :: proc(path: string, meshes: []formats.Mesh, textures: Textures, sk
 	return convert.write_glb(&g, path)
 }
 
-// One glTF material per first-pass texture; every pass goes to extras as stored.
+// One glTF material per first-pass texture; every pass goes to extras as stored, texture hashes included.
 @(private = "file")
-material :: proc(g: ^convert.Gltf, cache: ^map[u32]int, textures: Textures, passes: []formats.Material) -> int {
+material :: proc(g: ^convert.Gltf, cache: ^map[u32]int, passes: []formats.Material) -> int {
 	hash: u32 = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0
 	if m, seen := cache[hash]; seen do return m
 	out: convert.Material
 	out.doubleSided = true
-	if t, has := textures[hash]; has {
-		// (hole texture-dds :tags (importer content) :needs titlepack-format :sev polish) DXT textures are decoded to PNG inside the glb; leaning to raw DDS files in the pack's raw content (ws.md), lossless and GPU ready.
-		rgba, decoded := formats.decode_rgba(t, context.temp_allocator)
-		if decoded {
-			out.pbrMetallicRoughness.baseColorTexture = convert.Texture_Ref{convert.add_png(g, fmt.tprintf("%08x", hash), convert.encode_png(rgba, t.width, t.height))}
-			// (hole texture-alpha-re :tags importer) any texel alpha < 128 makes the material cut-out; some costume textures (kazuya pants) use alpha for something else, likely a colour mask, and draw see-through.
-			for i := 3; i < len(rgba); i += 4 do if rgba[i] < 128 {out.alphaMode = "MASK"; break}
-		}
-	}
 	extras := make(json.Object)
 	pass_values := make(json.Array)
 	for p in passes {

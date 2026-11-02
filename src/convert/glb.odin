@@ -23,8 +23,6 @@ Gltf :: struct {
 	nodes:       [dynamic]Node `json:",omitempty"`,
 	meshes:      [dynamic]Mesh `json:",omitempty"`,
 	materials:   [dynamic]Material `json:",omitempty"`,
-	textures:    [dynamic]Texture `json:",omitempty"`,
-	images:      [dynamic]Image `json:",omitempty"`,
 	skins:       [dynamic]Skin `json:",omitempty"`,
 	animations:  [dynamic]Animation `json:",omitempty"`,
 	accessors:   [dynamic]Accessor `json:",omitempty"`,
@@ -56,20 +54,9 @@ Primitive :: struct {
 }
 Material :: struct {
 	name:                 string `json:",omitempty"`,
-	pbrMetallicRoughness: struct {
-		baseColorTexture: Maybe(Texture_Ref) `json:",omitempty"`,
-		metallicFactor:   f32,
-	},
-	alphaMode:            string `json:",omitempty"`,
+	pbrMetallicRoughness: struct {metallicFactor: f32},
 	doubleSided:          bool,
 	extras:               json.Object `json:",omitempty"`,  // raw game material data
-}
-Texture_Ref :: struct {index: int}
-Texture :: struct {source: int}
-Image :: struct {
-	name:       string `json:",omitempty"`,
-	bufferView: int,
-	mimeType:   string,
 }
 Skin :: struct {
 	joints:              [dynamic]int,
@@ -169,7 +156,6 @@ read_glb :: proc(data: []byte, allocator := context.allocator) -> (g: Gltf, ok: 
 		if view.buffer != 0 || len(g.buffers) == 0 || view.byteOffset < 0 || view.byteLength < 0 do return
 		if view.byteOffset > g.buffers[0].byteLength || view.byteLength > g.buffers[0].byteLength - view.byteOffset do return
 	}
-	for image in g.images do if image.bufferView < 0 || image.bufferView >= len(g.bufferViews) do return
 	ok = json_seen
 	return
 }
@@ -242,12 +228,7 @@ destroy_gltf :: proc(g: ^Gltf, allocator := context.allocator) {
 	}
 	for material in g.materials {
 		delete(material.name)
-		delete(material.alphaMode)
 		json.destroy_value(material.extras)
-	}
-	for image in g.images {
-		delete(image.name)
-		delete(image.mimeType)
 	}
 	for skin in g.skins do delete(skin.joints)
 	for animation in g.animations {
@@ -266,8 +247,6 @@ destroy_gltf :: proc(g: ^Gltf, allocator := context.allocator) {
 	delete(g.nodes)
 	delete(g.meshes)
 	delete(g.materials)
-	delete(g.textures)
-	delete(g.images)
 	delete(g.skins)
 	delete(g.animations)
 	delete(g.accessors)
@@ -308,12 +287,6 @@ add_accessor :: proc(g: ^Gltf, data: []$T, type: string, target: Maybe(int) = ni
 	}
 	append(&g.accessors, a)
 	return len(g.accessors) - 1
-}
-
-add_png :: proc(g: ^Gltf, name: string, png: []byte) -> (texture: int) {
-	append(&g.images, Image{name = name, bufferView = add_view(g, png), mimeType = "image/png"})
-	append(&g.textures, Texture{source = len(g.images) - 1})
-	return len(g.textures) - 1
 }
 
 write_glb :: proc(g: ^Gltf, path: string) -> (ok: bool) {

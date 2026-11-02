@@ -1,9 +1,13 @@
 package tk5_importer
 
+import "core:crypto/hash"
+import "core:encoding/hex"
 import "core:fmt"
 import "core:os"
+import "core:slice"
 import "core:strings"
 import "core:sync"
+import "core:thread"
 import "../../db"
 import convert "../../convert/tk5"
 import formats "../../formats/tk5"
@@ -28,6 +32,7 @@ Import :: struct {
 	root:     string,
 	w:        db.Writer,
 	progress: ^Progress,
+	textures: map[string]bool,  // <owner>/<hash> with a texture row
 }
 
 // Steps of one import, counted with atomics so another thread can show them.
@@ -46,9 +51,22 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	file, open_err := os.open(game.data)
 	if open_err != nil do return "cannot open T55DATA1.BIN"
 	defer os.close(file)
+	Data_Hash :: struct {digest: [32]byte, ok: bool}
+	data_hash: Data_Hash  // hashed on its own thread while the import runs: ~4 s without SHA instructions
+	hasher := thread.create_and_start_with_poly_data2(game.data, &data_hash, proc(path: string, out: ^Data_Hash) {
+		digest, err := hash.hash_file_by_name(.SHA256, path)
+		copy(out.digest[:], digest)
+		out.ok = err == nil
+		delete(digest)
+	})
+	defer thread.destroy(hasher)
 
 	im := Import{archive = {table, file}, game = game, root = root, progress = progress}
-	for dir in ([]string{"anims", "parts", "stages", "ui"}) {
+	defer {
+		for key in im.textures do delete(key)
+		delete(im.textures)
+	}
+	for dir in ([]string{"anims", "parts", "stages", "textures", "ui"}) {
 		if !make_dir(join(im.root, dir)) do return fmt.tprintf("cannot create %s", join(im.root, dir))
 	}
 	im.w, err = db.create(join(im.root, "tk5.db"), TK5_SCHEMA)
@@ -56,7 +74,6 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	w := &im.w
 	db.insert(w, "source", "title_id", game.build.title_id)
 	db.insert(w, "source", "elf_sha256", game.build.elf_sha256)
-	db.insert(w, "source", "data_sha256", game.data_sha256)
 	db.insert(w, "source", "schema_version", SCHEMA_VERSION)
 	db.insert(w, "source", "importer_version", IMPORTER_VERSION)
 
@@ -71,6 +88,9 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	import_sounds(&im)
 	import_images(&im)
 	step(&im)
+	thread.join(hasher)
+	if !data_hash.ok do return "cannot read T55DATA1.BIN"
+	db.insert(w, "source", "data_sha256", string(hex.encode(data_hash.digest[:], context.temp_allocator)))
 	return db.finish(w)
 }
 
@@ -151,13 +171,14 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 	skeleton := largest_skeleton(sections)
 	for placeholder, frame0 in swaps do if t, has := textures[frame0]; has do textures[placeholder] = t
 	if len(nud) < len(parts) || len(skeleton.bones) == 0 do return false
+	write_textures(im, owner, textures)
 
 	dir := join(im.root, "parts", owner)
 	if !make_dir(dir) do return false
 	for part, i in parts {
 		meshes, read := formats.read_ndp3(nud[i], context.temp_allocator)
 		file := fmt.tprintf("parts/%s/%s.glb", owner, part)
-		if !read || !convert.write_model(join(im.root, file), meshes, textures, skeleton) do return false
+		if !read || !convert.write_model(join(im.root, file), meshes, skeleton) do return false
 		db.insert(&im.w, "part", part, owner, i == 0 ? "body" : "lod", parts[0], file)
 	}
 	for b, i in skeleton.bones {
@@ -203,6 +224,23 @@ idle_head_top :: proc(im: ^Import, c: formats.Character, m: formats.Motbin, data
 	idle := formats.read_anim(bank, int(anim & 0x3fff), context.temp_allocator) or_return
 	if idle.frames == 0 do return
 	return convert.head_top(skeleton, idle), true
+}
+
+// Each new hash of owner as a texture row, in hash order. A MIF placeholder's row names its frame 0 file.
+write_textures :: proc(im: ^Import, owner: string, textures: convert.Textures) {
+	if !make_dir(join(im.root, "textures", owner)) do return
+	hashes, _ := slice.map_keys(textures, context.temp_allocator)
+	slice.sort(hashes)
+	for hash in hashes {
+		key := fmt.tprintf("%s/%08x", owner, hash)
+		if key in im.textures do continue
+		t := textures[hash]
+		dds, cutout, ok := convert.texture_dds(t, context.temp_allocator)
+		file := fmt.tprintf("textures/%s/%08x.dds", owner, t.hash)
+		if !ok || os.write_entire_file(join(im.root, file), dds) != nil do continue
+		db.insert(&im.w, "texture", owner, i64(hash), file, i64(cutout ? 1 : 0))
+		im.textures[strings.clone(key)] = true
+	}
 }
 
 // Every anim of a body bank as anims/<owner>/<idx>.anim. Ids that share a record share the file of the first one.
@@ -275,7 +313,8 @@ import_stage :: proc(im: ^Import, index: int) {
 	}
 	// (hole stage-break-pieces :tags importer :sev polish) section 4 (flying pieces of breakable props) is not exported.
 	file := fmt.tprintf("stages/%s.glb", id)
-	if len(meshes) > 0 && !convert.write_model(join(im.root, file), meshes[:], textures, nil, matrices[:]) do return
+	write_textures(im, id, textures)
+	if len(meshes) > 0 && !convert.write_model(join(im.root, file), meshes[:], nil, matrices[:]) do return
 	collision, surfaces := fmt.tprintf("stages/%s.collision.glb", id), fmt.tprintf("stages/%s.surfaces", id)
 	if !convert.write_stage_collision(join(im.root, collision), join(im.root, surfaces), s) do return
 	db.insert(&im.w, "stage", id, id, i64(index), file, collision, surfaces)

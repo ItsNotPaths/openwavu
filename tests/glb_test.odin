@@ -2,7 +2,6 @@ package tests
 
 import "core:bytes"
 import "core:encoding/endian"
-import "core:image/png"
 import "core:os"
 import "core:slice"
 import "core:testing"
@@ -31,8 +30,6 @@ glb_round_trips_every_accessor :: proc(t: ^testing.T) {
 	convert.add_accessor(&g, indices, "SCALAR")
 	convert.add_accessor(&g, long_indices, "SCALAR")
 	convert.add_accessor(&g, times, "SCALAR")
-	pixels := []byte{255, 0, 128, 255}
-	convert.add_png(&g, "test", convert.encode_png(pixels, 1, 1))
 	append(&g.nodes, convert.Node{name = "test", mesh = 0, skin = 0})
 	prim := convert.Primitive{attributes = make(map[string]int), indices = 6, material = 0}
 	prim.attributes["POSITION"] = 0
@@ -40,9 +37,7 @@ glb_round_trips_every_accessor :: proc(t: ^testing.T) {
 	append(&mesh.primitives, prim)
 	append(&g.meshes, mesh)
 	append(&g.skins, convert.Skin{inverseBindMatrices = 3})
-	material: convert.Material
-	material.pbrMetallicRoughness.baseColorTexture = convert.Texture_Ref{0}
-	append(&g.materials, material)
+	append(&g.materials, convert.Material{})
 	animation := convert.Animation{name = "test"}
 	append(&animation.samplers, convert.Sampler{input = 8, output = 0, interpolation = "LINEAR"})
 	append(&animation.channels, convert.Channel{target = {node = 0, path = "translation"}})
@@ -80,10 +75,6 @@ glb_round_trips_every_accessor :: proc(t: ^testing.T) {
 	testing.expect_value(t, h.meshes[0].primitives[0].attributes["POSITION"], 0)
 	testing.expect_value(t, h.skins[0].inverseBindMatrices, Maybe(int)(3))
 	testing.expect_value(t, h.animations[0].channels[0].target.path, "translation")
-	view := h.bufferViews[h.images[0].bufferView]
-	image, png_err := png.load_from_bytes(h.bin[view.byteOffset:][:view.byteLength], {.alpha_add_if_missing}, context.temp_allocator)
-	testing.expect_value(t, png_err, nil)
-	testing.expect(t, png_err == nil && bytes.equal(image.pixels.buf[:], pixels))
 }
 
 @(test)

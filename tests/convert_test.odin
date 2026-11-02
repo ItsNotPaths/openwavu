@@ -3,25 +3,27 @@ package tests
 import "core:bytes"
 import "core:encoding/endian"
 import "core:encoding/json"
-import "core:image/png"
 import "core:os"
 import "core:slice"
 import "core:testing"
 import "../src/convert"
 
+// DXT blocks go in as stored, behind a header any DDS reader takes: size, four cc, linear size.
 @(test)
-png_round_trips :: proc(t: ^testing.T) {
-	w, h := 5, 3
-	rgba := make([]byte, w * h * 4, context.temp_allocator)
-	for &b, i in rgba do b = u8(i * 7)
-	data := convert.encode_png(rgba, w, h, context.temp_allocator)
-	img, err := png.load_from_bytes(data, {.alpha_add_if_missing}, context.temp_allocator)
-	testing.expect_value(t, err, nil)
-	if err != nil do return
-	testing.expect(t, img.width == w && img.height == h && bytes.equal(img.pixels.buf[:], rgba), "PNG pixels differ")
+dds_keeps_blocks :: proc(t: ^testing.T) {
+	blocks := make([]byte, 2 * 1 * 16, context.temp_allocator)  // 8x4 texels of DXT5
+	for &b, i in blocks do b = u8(i)
+	data := convert.encode_dds(.BC3, 8, 4, blocks, context.temp_allocator)
+	u32_at :: proc(d: []byte, offset: int) -> u32 {v, _ := endian.get_u32(d[offset:], .Little); return v}
+	testing.expect_value(t, string(data[:4]), "DDS ")
+	testing.expect_value(t, u32_at(data, 12), 4)  // height
+	testing.expect_value(t, u32_at(data, 16), 8)  // width
+	testing.expect_value(t, u32_at(data, 20), 32)  // linear size
+	testing.expect_value(t, string(data[84:][:4]), "DXT5")
+	testing.expect(t, bytes.equal(data[128:], blocks), "DDS blocks differ")
 }
 
-// One textured triangle; the chunks and the JSON must follow the glb layout.
+// One triangle; the chunks and the JSON must follow the glb layout.
 @(test)
 glb_layout_is_valid :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
@@ -29,14 +31,11 @@ glb_layout_is_valid :: proc(t: ^testing.T) {
 	positions := [][3]f32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}
 	uvs := [][2]f32{{0, 0}, {1, 0}, {0, 1}}
 	indices := []u16{0, 1, 2}
-	pixels := []byte{255, 0, 0, 255}
 	prim := convert.Primitive{attributes = make(map[string]int, context.temp_allocator), material = 0}
 	prim.attributes["POSITION"] = convert.add_accessor(&g, positions, "VEC3", convert.ARRAY_BUFFER, with_bounds = true)
 	prim.attributes["TEXCOORD_0"] = convert.add_accessor(&g, uvs, "VEC2", convert.ARRAY_BUFFER)
 	prim.indices = convert.add_accessor(&g, indices, "SCALAR", convert.ELEMENT_ARRAY_BUFFER)
-	mat: convert.Material
-	mat.pbrMetallicRoughness.baseColorTexture = convert.Texture_Ref{convert.add_png(&g, "red", convert.encode_png(pixels, 1, 1, context.temp_allocator))}
-	append(&g.materials, mat)
+	append(&g.materials, convert.Material{})
 	mesh := convert.Mesh{name = "tri"}
 	append(&mesh.primitives, prim)
 	append(&g.meshes, mesh)
