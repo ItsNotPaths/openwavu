@@ -1,5 +1,5 @@
 // Loads a character from a db (modules/tk5/load.c) and prints the requirement index of each hit condition and start
-// property, or the load error. Usage: load_lists db character
+// property, then the first two pushback indices of each reaction, or the load error. Usage: load_lists db character
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -17,5 +17,7 @@ int main(int argc, char **argv) {
     if (failed) return printf("%s\n", failed), 1;
     for (int32_t index = 0; index < motbin.hit_condition_count; index++) printf("%d ", (int32_t)motbin.hit_conditions[index].requirements);
     for (int32_t index = 0; index < motbin.start_property_count; index++) printf("%d ", (int32_t)motbin.start_properties[index].requirements);
+    for (int32_t index = 0; index < motbin.reaction_count; index++)
+        printf("%d %d ", (int32_t)motbin.reactions[index].pushback[0].index, (int32_t)motbin.reactions[index].pushback[1].index);
     return 0;
 }

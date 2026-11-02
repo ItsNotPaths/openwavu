@@ -23,6 +23,35 @@ list_ids_become_indices :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(load_lists(t, 7), "no requirement list 7"))
 }
 
+TEXT_KEYS :: "build/load_text_keys"
+TEXT_KEYS_DB :: "build/load_text_keys.db"
+
+// A mod's rows have text keys and are laid out after the stock rows, in key order; references by key follow.
+@(test)
+text_keys_follow_stock_rows :: proc(t: ^testing.T) {
+	built := build_sim_tool(TEXT_KEYS, "-Ivendor/sqlite", "tests/ref/load_lists.c", "modules/tk5/load.c", "modules/tk5/sim/stage_file.c", "modules/tk5/sim/anim.c",
+		"vendor/sqlite/libsqlite3.a", "-lpthread")
+	if !testing.expect(t, built, "tests/ref/load_lists.c did not build") do return
+	defer os.remove(TEXT_KEYS_DB)
+
+	w, err := db.create(TEXT_KEYS_DB, TK5_SCHEMA)
+	testing.expect_value(t, err, "")
+	for pos in i64(0) ..< 2 do db.insert(&w, "requirement", "x", "mod/b", pos, i64(1), i64(0))
+	db.insert(&w, "requirement", "x", "mod/a", i64(0), i64(1), i64(0))
+	db.insert(&w, "requirement", "x", i64(0), i64(0), i64(1), i64(0))
+	db.insert(&w, "hit_condition", "x", i64(0), i64(0), "mod/b", i64(10), i64(0), i64(0))
+	for key in ([]db.Value{i64(0), "mod/p", "mod/o"}) do db.insert(&w, "pushback", "x", key, i64(1), i64(0), i64(0), db.Null{}, i64(-1))
+	reaction := make([]db.Value, 35, context.temp_allocator)
+	for &v in reaction do v = i64(0)
+	reaction[0], reaction[2], reaction[3] = "x", "mod/p", i64(0)
+	db.insert(&w, "reaction", ..reaction)
+	testing.expect_value(t, db.finish(&w), "")
+	state, stdout, _, exec_err := os.process_exec({command = {TEXT_KEYS, TEXT_KEYS_DB, "x"}}, context.temp_allocator)
+	testing.expect(t, exec_err == nil && state.exit_code == 0)
+	// requirement rows: list 0, then mod/a, then mod/b at row 2; pushbacks: 0, then mod/o, then mod/p at 2
+	testing.expect_value(t, string(stdout), "2 2 0 ")
+}
+
 // hit_condition 0 points to requirement list `target`; start_prop 0 has none.
 @(private = "file")
 load_lists :: proc(t: ^testing.T, target: i64) -> string {

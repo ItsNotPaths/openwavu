@@ -1,4 +1,5 @@
--- Tables of every game. Lengths in metres, Y up. Keys are stable strings or game indices, never rowids (overlays match on them).
+-- Tables of every game. Lengths in metres, Y up. Keys are stable strings or game indices, never rowids (patches match on them).
+-- A row a mod adds has a text key `<pack id>/<name>` where the game uses a number (docs/formats.md).
 
 CREATE TABLE source (
 	key   TEXT PRIMARY KEY,  -- title_id, eboot_sha256, data_sha256, schema_version, importer_version
@@ -11,12 +12,6 @@ CREATE TABLE code_name (
 	code INTEGER NOT NULL,
 	name TEXT NOT NULL,
 	PRIMARY KEY (kind, code)
-);
-
-CREATE TABLE removed (  -- only used in overlays
-	tbl TEXT NOT NULL,
-	key TEXT NOT NULL,  -- primary key values, joined with '/'
-	PRIMARY KEY (tbl, key)
 );
 
 CREATE TABLE character (

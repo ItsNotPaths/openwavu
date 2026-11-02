@@ -14,6 +14,7 @@ typedef enum : uint8_t {
     KIND_INT,    // the low `size` bytes of the integer
     KIND_FLOAT,
     KIND_LIST,   // a list id of table `list`, stored as the index of the list's first row; -1 stays -1
+    KIND_ROW,    // a row of indexed table `list`: a number is the index as it is, a text key (a mod's row) is looked up
     KIND_ANIM,   // two columns, anim_owner and anim_idx, stored as the index in the fighter's anim list
 } Kind;
 
@@ -22,7 +23,7 @@ typedef struct {
     size_t offset, size;
     size_t count, stride;  // array elements
     Kind kind;
-    const char *list;
+    const char *list;  // KIND_LIST, KIND_ROW: the table referenced
 } Field;
 
 #define MEMBER(type, path) (((type *)0)->path)
@@ -31,6 +32,11 @@ typedef struct {
 #define FIELD(type, member) FIELD_AS(type, member, #member)
 #define LIST_AS(type, path, name, table) {name, offsetof(type, path), sizeof MEMBER(type, path), 1, 0, KIND_LIST, table}
 #define LIST(type, member, table) LIST_AS(type, member, #member, table)
+#define ROW_AS(type, path, name, table) {name, offsetof(type, path), sizeof MEMBER(type, path), 1, 0, KIND_ROW, table}
+#define ROW(type, member, table) ROW_AS(type, member, #member, table)
+#define ROW_ARRAY_AS(type, array, path, name, table)                                                                        \
+    {name, offsetof(type, array[0] path), sizeof MEMBER(type, array[0] path),                                               \
+     sizeof MEMBER(type, array) / sizeof MEMBER(type, array[0]), sizeof MEMBER(type, array[0]), KIND_ROW, table}
 #define ARRAY_AS(type, array, path, name)                                                                                   \
     {name, offsetof(type, array[0] path), sizeof MEMBER(type, array[0] path),                                               \
      sizeof MEMBER(type, array) / sizeof MEMBER(type, array[0]), sizeof MEMBER(type, array[0]), KIND_OF(type, array[0] path), NULL}
@@ -43,7 +49,7 @@ static const Field move_fields[] = {
     FIELD(T5Move, vuln),
     FIELD(T5Move, hit_level),
     LIST(T5Move, cancels, "cancel"),
-    FIELD(T5Move, next_move),
+    ROW(T5Move, next_move, "move"),
     FIELD(T5Move, end_yaw),
     FIELD(T5Move, compare_id),
     FIELD(T5Move, push_speed),
@@ -58,8 +64,8 @@ static const Field move_fields[] = {
     FIELD(T5Move, first_active),
     FIELD(T5Move, last_active),
     FIELD(T5Move, push_shape),
-    FIELD_AS(T5Move, tracking.row, "tracking_row"),
-    FIELD_AS(T5Move, tracking.far_row, "tracking_far_row"),
+    ROW_AS(T5Move, tracking.row, "tracking_row", "tracking_row"),
+    ROW_AS(T5Move, tracking.far_row, "tracking_far_row", "tracking_row"),
     FIELD_AS(T5Move, tracking.far_source, "tracking_far_source"),
     FIELD_AS(T5Move, tracking.far_angle, "tracking_far_angle"),
     FIELD(T5Move, rides_partner),
@@ -76,7 +82,7 @@ static const Field cancel_fields[] = {
     FIELD_AS(T5Cancel, command.code, "command_code"),
     FIELD_AS(T5Cancel, command.buttons, "command_buttons"),
     LIST(T5Cancel, requirements, "requirement"),
-    FIELD(T5Cancel, move),
+    ROW(T5Cancel, move, "move"),
     LIST_AS(T5Cancel, move, "group_list", "group_cancel"),  // a group entry: the group cancel list it enters
     FIELD(T5Cancel, tracking_pick),
     FIELD(T5Cancel, extradata),
@@ -102,7 +108,7 @@ static const Field command_fields[] = {
     FIELD(T5Command, buttons),
 };
 
-static const Field move_pool_fields[] = {VALUE(uint16_t, "move")};
+static const Field move_pool_fields[] = {{"move", 0, sizeof(uint16_t), 1, 0, KIND_ROW, "move"}};
 
 static const Field pushback_fields[] = {
     FIELD(T5Pushback, frames),
@@ -128,7 +134,7 @@ static const Field conditional_property_fields[] = {
 static const Field hit_condition_fields[] = {
     LIST(T5HitCondition, requirements, "requirement"),
     FIELD(T5HitCondition, damage),
-    FIELD(T5HitCondition, reaction),
+    ROW(T5HitCondition, reaction, "reaction"),
 };
 
 static const Field side_band_fields[] = {
@@ -139,10 +145,10 @@ static const Field side_band_fields[] = {
 };
 
 static const Field reaction_fields[] = {
-    ARRAY_AS(T5Reaction, pushback, .index, "pushback"),
+    ROW_ARRAY_AS(T5Reaction, pushback, .index, "pushback", "pushback"),
     ARRAY(T5Reaction, angle),
     ARRAY(T5Reaction, yaw),
-    ARRAY(T5Reaction, move),
+    ROW_ARRAY_AS(T5Reaction, move, , "move", "move"),
 };
 
 static const Field tracking_row_fields[] = {
@@ -169,8 +175,8 @@ static const Field tracking_row_fields[] = {
 };
 
 static const Field move_tracking_fields[] = {
-    FIELD(T5MoveTracking, row),
-    FIELD(T5MoveTracking, far_row),
+    ROW(T5MoveTracking, row, "tracking_row"),
+    ROW(T5MoveTracking, far_row, "tracking_row"),
     FIELD(T5MoveTracking, far_source),
     FIELD(T5MoveTracking, far_angle),
 };
@@ -203,9 +209,12 @@ static const Field gaze_fields[] = {
     FIELD_AS(T5Gaze, head_turn.bits, "head_turn"),
 };
 
+// (hole code-refs :tags (tk5mod content)) references packed into game codes take numbers only, so a mod's text-keyed rows can not be named there: cancel tracking_pick (1 + idx), command 0x8007+n (input sequences), move ids in property values and requirement params, and anim_idx (a mod can not add anims).
+// Keys are the game's numbers for stock rows and text (`<pack>/<name>`) for rows a mod adds. SQLite orders every
+// number before every text, so stock rows keep the game's layout and mod rows follow, sorted by key.
 typedef enum : uint8_t {
     ROWS_LISTS,    // (list, pos) rows, laid out in list id order
-    ROWS_INDEXED,  // idx 0..count-1
+    ROWS_INDEXED,  // numbered idx 0..n-1, then text keys
     ROWS_ONE,      // the one row of the character
 } Rows;
 
@@ -264,20 +273,21 @@ static const char *prepare(sqlite3 *db, const char *sql, const char *character, 
     return NULL;
 }
 
-// Rows of the table for the character. Indexed rows must be 0..count-1.
+// Rows of the table for the character. The numbered rows of an indexed table must be 0..n-1.
 static const char *count_rows(sqlite3 *db, const char *character, const Table *table, int32_t *count) {
     char sql[256];
     bool indexed = table->rows == ROWS_INDEXED;
-    snprintf(sql, sizeof sql, "SELECT count(*), %s FROM %s WHERE character = ?1", indexed ? "coalesce(max(idx) + 1, 0)" : "0",
+    snprintf(sql, sizeof sql, "SELECT count(*), %s FROM %s WHERE character = ?1",
+             indexed ? "total(typeof(idx) = 'integer'), coalesce(max(CASE WHEN typeof(idx) = 'integer' THEN idx END) + 1, 0)" : "0, 0",
              table->name);
     sqlite3_stmt *statement;
     const char *failed = prepare(db, sql, character, &statement);
     if (failed) return failed;
     sqlite3_step(statement);
     *count = sqlite3_column_int(statement, 0);
-    int32_t span = sqlite3_column_int(statement, 1);
+    int32_t numbered = sqlite3_column_int(statement, 1), span = sqlite3_column_int(statement, 2);
     sqlite3_finalize(statement);
-    if (indexed && span != *count) return fail("%s %s: idx runs to %d over %d rows", table->name, character, span - 1, *count);
+    if (span != numbered) return fail("%s %s: idx runs to %d over %d numbered rows", table->name, character, span - 1, numbered);
     return NULL;
 }
 
@@ -295,9 +305,10 @@ const char *t5_load_motbin_storage(sqlite3 *db, const char *character, size_t *b
     return NULL;
 }
 
-// The first row of each list of a table, in id order: the order the lists are laid out in.
+// The first row of each list (or of each row of an indexed table), in key order: the order they are laid out in.
 typedef struct {
     int64_t id;
+    char *key;  // a text key; NULL: the number id
     int32_t first;
 } ListStart;
 
@@ -306,9 +317,10 @@ typedef struct {
     int32_t count;
 } Lists;
 
-static const char *read_lists(sqlite3 *db, const char *character, const char *table, Lists *lists) {
+// column: list for a list table, idx for an indexed one.
+static const char *read_lists(sqlite3 *db, const char *character, const char *table, const char *column, Lists *lists) {
     char sql[256];
-    snprintf(sql, sizeof sql, "SELECT list, count(*) FROM %s WHERE character = ?1 GROUP BY list ORDER BY list", table);
+    snprintf(sql, sizeof sql, "SELECT %s, count(*) FROM %s WHERE character = ?1 GROUP BY %s ORDER BY %s", column, table, column, column);
     sqlite3_stmt *statement;
     const char *failed = prepare(db, sql, character, &statement);
     if (failed) return failed;
@@ -320,23 +332,48 @@ static const char *read_lists(sqlite3 *db, const char *character, const char *ta
             if (!grown) return sqlite3_finalize(statement), fail("out of memory");
             lists->starts = grown;
         }
-        lists->starts[lists->count++] = (ListStart){sqlite3_column_int64(statement, 0), first};
+        bool text = sqlite3_column_type(statement, 0) == SQLITE_TEXT;
+        char *key = text ? strdup((const char *)sqlite3_column_text(statement, 0)) : NULL;
+        if (text && !key) return sqlite3_finalize(statement), fail("out of memory");
+        lists->starts[lists->count++] = (ListStart){text ? 0 : sqlite3_column_int64(statement, 0), key, first};
         first += sqlite3_column_int(statement, 1);
     }
     sqlite3_finalize(statement);
     return NULL;
 }
 
-static bool list_first(const Lists *lists, int64_t id, int64_t *first) {
+static void free_lists(Lists *lists) {
+    for (int32_t index = 0; index < lists->count; index++) free(lists->starts[index].key);
+    free(lists->starts);
+}
+
+// SQLite's order: numbers by value, then text by bytes.
+static int compare_key(const ListStart *start, int64_t id, const char *key) {
+    if (!start->key != !key) return start->key ? 1 : -1;
+    if (key) return strcmp(start->key, key);
+    return (start->id > id) - (start->id < id);
+}
+
+static bool list_first(const Lists *lists, int64_t id, const char *key, int64_t *first) {
     int32_t low = 0, high = lists->count;
     while (low < high) {
         int32_t middle = (low + high) / 2;
-        if (lists->starts[middle].id < id) low = middle + 1;
+        if (compare_key(&lists->starts[middle], id, key) < 0) low = middle + 1;
         else high = middle;
     }
-    if (low == lists->count || lists->starts[low].id != id) return false;
+    if (low == lists->count || compare_key(&lists->starts[low], id, key) != 0) return false;
     *first = lists->starts[low].first;
     return true;
+}
+
+// A list or row reference as stored: a number id or a text key.
+static const char *resolve(sqlite3_stmt *row, int column, const Field *field, const Lists *lists, int64_t *value) {
+    const char *key = sqlite3_column_type(row, column) == SQLITE_TEXT ? (const char *)sqlite3_column_text(row, column) : NULL;
+    *value = sqlite3_column_int64(row, column);
+    if (!key && (field->kind == KIND_ROW || *value == -1)) return NULL;  // numbered rows and "none" are used as they are
+    if (list_first(lists, *value, key, value)) return NULL;
+    if (key) return fail("%s: no %s %s", field->column, field->list, key);
+    return fail("%s: no %s list %lld", field->column, field->list, (long long)*value);
 }
 
 static uint32_t anim_base(const char *owner, T5AnimBases anims) {
@@ -381,8 +418,10 @@ static const char *copy_row(sqlite3_stmt *row, const Table *table, const Lists *
                 continue;
             }
             int64_t value = sqlite3_column_int64(row, column);
-            if (field->kind == KIND_LIST && value != -1 && !list_first(&lists[index], value, &value))
-                return fail("%s.%s: no %s list %lld", table->name, field->column, field->list, (long long)value);
+            if (field->kind == KIND_LIST || field->kind == KIND_ROW) {
+                const char *failed = resolve(row, column, field, &lists[index], &value);
+                if (failed) return fail("%s.%s", table->name, failed);
+            }
             memcpy(at, &value, field->size);  // little endian: the low bytes
         }
     }
@@ -403,7 +442,8 @@ static const char *load_table(sqlite3 *db, const char *character, const Table *t
     Lists lists[table->field_count];
     memset(lists, 0, sizeof lists);
     for (size_t index = 0; index < table->field_count && !failed; index++)
-        if (table->fields[index].kind == KIND_LIST) failed = read_lists(db, character, table->fields[index].list, &lists[index]);
+        if (table->fields[index].kind == KIND_LIST) failed = read_lists(db, character, table->fields[index].list, "list", &lists[index]);
+        else if (table->fields[index].kind == KIND_ROW) failed = read_lists(db, character, table->fields[index].list, "idx", &lists[index]);
     char sql[4096];
     build_select(table, sql, sizeof sql);
     sqlite3_stmt *rows = NULL;
@@ -411,20 +451,23 @@ static const char *load_table(sqlite3 *db, const char *character, const Table *t
     for (int32_t row = 0; !failed && row < count && sqlite3_step(rows) == SQLITE_ROW; row++)
         failed = copy_row(rows, table, lists, anims, items + (size_t)row * table->size);
     sqlite3_finalize(rows);
-    for (size_t index = 0; index < table->field_count; index++) free(lists[index].starts);
+    for (size_t index = 0; index < table->field_count; index++) free_lists(&lists[index]);
     return failed;
 }
 
 static const char *load_aliases(sqlite3 *db, const char *character, T5Motbin *motbin) {
-    sqlite3_stmt *rows;
-    const char *failed = prepare(db, "SELECT idx, move FROM move_alias WHERE character = ?1", character, &rows);
-    if (failed) return failed;
+    static const Field alias_move = ROW(T5Motbin, aliases, "move");
+    Lists moves = {0};
+    sqlite3_stmt *rows = NULL;
+    const char *failed = read_lists(db, character, "move", "idx", &moves);
+    if (!failed) failed = prepare(db, "SELECT idx, move FROM move_alias WHERE character = ?1", character, &rows);
     while (!failed && sqlite3_step(rows) == SQLITE_ROW) {
-        int64_t index = sqlite3_column_int64(rows, 0);
+        int64_t index = sqlite3_column_int64(rows, 0), move;
         if (index < 0 || index >= T5_ALIAS_COUNT) failed = fail("move_alias %s: idx %lld", character, (long long)index);
-        else motbin->aliases[index] = (uint32_t)sqlite3_column_int64(rows, 1);
+        else if (!(failed = resolve(rows, 1, &alias_move, &moves, &move))) motbin->aliases[index] = (uint32_t)move;
     }
     sqlite3_finalize(rows);
+    free_lists(&moves);
     memcpy(motbin->alias_defaults, motbin->aliases, sizeof motbin->aliases);
     return failed;
 }
