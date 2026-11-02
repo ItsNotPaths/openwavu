@@ -15,6 +15,7 @@ CREATE TABLE motbin (
 	creator   BLOB,           -- SJIS, raw
 	date      TEXT,
 	full_date TEXT,
+	-- (hole motbin-header :tags importer :sev polish) header 0x140..0x188 is a raw blob; side_band already reads 0x140, the rest is not decoded.
 	unk_140   BLOB            -- header 0x140..0x188
 );
 
@@ -32,7 +33,9 @@ CREATE TABLE move (
 	anim_name      TEXT,
 	anim_owner     TEXT NOT NULL,     -- anim(character): container owner, <char>/embedded or common
 	anim_idx       INTEGER NOT NULL,
+	-- (hole move-copy-columns :tags (importer content) :sev polish) anim repeats anim_owner and anim_idx (every stock row); hit_category is the raw hitbox bytes hit_pair_* and hits_* are made from, not yet proven lossless. Both still in the sheet.
 	anim           INTEGER NOT NULL,  -- the raw anim id (not loaded)
+	-- (hole move-code-names :tags (importer tk5mod content) :sev polish) vuln, hit_level, flags and hit_pair_*_kind are numbers: no name sheets, and flags is a bitfield, not 0/1 columns.
 	vuln           INTEGER NOT NULL,
 	hit_level      INTEGER NOT NULL,
 	cancels        TEXT NOT NULL REFERENCES cancel_list(key),
@@ -193,6 +196,7 @@ CREATE INDEX requirement_list_character ON requirement_list(character);
 CREATE TABLE requirement (
 	list      TEXT NOT NULL REFERENCES requirement_list(key),
 	pos       INTEGER NOT NULL,
+	-- (hole requirement-names :tags (importer tk5mod content) :sev polish) requirement ids are numbers with no names; code_name is empty.
 	id        INTEGER NOT NULL,  -- code_name kind 'tk5.requirement'
 	param     INTEGER,           -- 0xf1, 0xf2: a phase test (stock.odin requirement_param), not the game's flow state
 	param_move       TEXT REFERENCES move(key),
@@ -270,6 +274,7 @@ CREATE INDEX extra_prop_list_character ON extra_prop_list(character);
 CREATE TABLE extra_prop (  -- "when" is an SQL keyword: quote it
 	list      TEXT NOT NULL REFERENCES extra_prop_list(key),
 	pos       INTEGER NOT NULL,
+	-- (hole property-names :tags (importer tk5mod content) :sev polish) property ids (extra, start and end properties) and the frame code "when" are numbers with no names.
 	"when"    INTEGER NOT NULL,  -- frame code
 	id        INTEGER NOT NULL,
 	value     INTEGER,           -- property 0x8071: a tracking_row, not the game's mode
@@ -359,6 +364,7 @@ CREATE TABLE command_list (
 	name_ja2  TEXT,
 	command_0 TEXT, command_1 TEXT, command_2 TEXT, command_3 TEXT,
 	command_4 TEXT, command_5 TEXT, command_6 TEXT, command_7 TEXT,
+	-- (hole command-list-unknowns :tags importer :sev polish) unk_2c..unk_38 hold real values (200 to 500 distinct), not decoded.
 	unk_2c INTEGER, unk_30 INTEGER, unk_34 INTEGER, unk_38 INTEGER,
 	PRIMARY KEY (character, slot)
 );
@@ -489,6 +495,7 @@ CREATE TABLE tracking_row (
 	law        TEXT NOT NULL REFERENCES tracking_law(name),
 	start      TEXT NOT NULL REFERENCES tracking_phase(name),
 	target     TEXT NOT NULL REFERENCES tracking_target(name),
+	-- (hole tracking-stock-mode :tags (importer tools) :sev polish) stock_mode is data for the tk5decomp oracle and harness only, kept in a gameplay sheet that mods edit.
 	stock_mode INTEGER NOT NULL,  -- the game's mode byte (oracle and harness only)
 	gate_kind  TEXT NOT NULL REFERENCES tracking_gate(name),
 	gate_until INTEGER NOT NULL,
