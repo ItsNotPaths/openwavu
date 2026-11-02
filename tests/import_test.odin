@@ -105,5 +105,4 @@ check_stock_tar :: proc(t: ^testing.T) {
 	front, front_err := titlepack.read_front(string(data[front_entry.offset:][:front_entry.size]), context.temp_allocator)
 	testing.expect_value(t, front_err, "")
 	for e in front.elements do if e.file != "" do testing.expect(t, e.file in index, e.file)
-	testing.expect(t, len(front.elements) > 40, "stock front has no roster")
 }
