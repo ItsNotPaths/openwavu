@@ -15,6 +15,7 @@ EMPTY_MODULE :: "\x00asm\x01\x00\x00\x00"
 
 // The game's stock title pack: packs_dir/tekken5dr.tar. inputs are recorded so an openwavu update can rebuild it.
 // The unpacked files stay in packs_dir/tekken5dr/ when keep is set.
+// (hole gates-pack-root :tags (tools importer)) tk5decomp's gates (Makefile, oracle, scenario harness, test_stage.sh) read ../openwavu/content/tk5, an import from before today's schema; they need a fresh -keep import and PACK_ROOT at packs/tekken5dr.
 build_pack :: proc(inputs: []string, packs_dir: string, keep := false, progress: ^Progress = nil) -> (err: string) {
 	if progress != nil do sync.atomic_store(&progress.total, PROGRESS_STEPS)
 	if !make_dir(packs_dir) do return fmt.aprintf("cannot create %s", packs_dir)

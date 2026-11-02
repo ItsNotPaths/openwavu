@@ -1,4 +1,5 @@
 -- Tekken 5 DR movesets (motbin, tk5decomp data.md §4, code-map.md). Applied after ../schema.sql.
+-- (hole db-native :tags (importer tk5mod)) the tables are the game's layout as rows: keys are game indices, references are not declared (no FOREIGN KEY), code_ref stands in for typed param columns, and lists are runs of (list, pos) rows shared by number. Target: ws.md Workstream J.
 -- (hole tekken-schema :tags importer) the tables the sim loads are the TK5 sim's record layouts (modules/tk5/load.c); they are not yet one Tekken shape that every Tekken sim reads under its own names, with game-only tables optional.
 -- The tables the sim loads name their columns after the sim's fields (arrays: name_0, name_1, ...). "(not loaded)": the sim does not
 -- read the column. A row points to a list by its id; -1 is none.

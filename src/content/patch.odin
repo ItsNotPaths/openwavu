@@ -2,7 +2,7 @@
 // replace whole lists (docs/formats.md).
 package content
 
-// (hole patch-apply :tags content :needs pack-open :sev blocker) db patches are not applied: rows replace by key, a list in the patch replaces that whole list, and a new text key outside the pack's own `<id>/` namespace is not refused.
+// (hole patch-apply :tags content :needs (pack-open db-native) :sev blocker) db patches are not applied: rows replace by key, a list in the patch replaces that whole list, and a new text key outside the pack's own `<id>/` namespace is not refused.
 apply_patch :: proc(p: ^Pack, patch: []byte) -> (ok: bool) {
 	return false
 }
