@@ -237,13 +237,6 @@ static bool directions_match(uint16_t code, Words words) {
     return wanted & words.direction_held;  // one of the wanted directions is held
 }
 
-// The buttons half of a command: bits 0..11 as in the button word, then the mode bits.
-enum {
-    COMMAND_ANY_PRESS = 1 << 12,        // one of the presses is enough
-    COMMAND_HOLD_AFTER_PRESS = 1 << 13, // presses must be held, and one must be new
-    COMMAND_SUMMARY = 1 << 14,          // the buttons half is one of the summaries below
-};
-
 // Whole-word tests of the buttons half: no press, no hold, some press, some hold.
 typedef struct {
     uint16_t buttons;
@@ -251,10 +244,10 @@ typedef struct {
 } Summary;
 
 static const Summary summaries[] = {
-    {COMMAND_SUMMARY + 0, false, false},
-    {COMMAND_SUMMARY + 1, true, false},
-    {COMMAND_SUMMARY + 2, false, true},
-    {COMMAND_SUMMARY + 3, true, true},
+    {T5_COMMAND_SUMMARY + 0, false, false},
+    {T5_COMMAND_SUMMARY + 1, true, false},
+    {T5_COMMAND_SUMMARY + 2, false, true},
+    {T5_COMMAND_SUMMARY + 3, true, true},
 };
 
 // Shoulder buttons at `shift` of a word as buttons 5 and 6 of a set.
@@ -283,9 +276,9 @@ static bool buttons_match(T5Command command, Words words) {
                          | shoulders_of(words.direction_held, DIRECTION_SHOULDER_HELD_SHIFT)
                          | shoulders_of(words.buttons, BUTTON_SHOULDER_HELD_SHIFT);
     if (press) {  // the command needs button presses
-        if (command.buttons & COMMAND_ANY_PRESS) {  // any one of the buttons will do
+        if (command.buttons & T5_COMMAND_ANY_PRESS) {  // any one of the buttons will do
             if (!(pressed_now & press)) return false;  // none of them was pressed this frame
-        } else if (command.buttons & COMMAND_HOLD_AFTER_PRESS) {  // all must be down, at least one new
+        } else if (command.buttons & T5_COMMAND_HOLD_AFTER_PRESS) {  // all must be down, at least one new
             hold |= press;  // the buttons must also be held
             if (!(pressed_now & press)) return false;  // and at least one pressed this frame
         } else if ((pressed_now & press) != press) {  // default: every button pressed this frame
@@ -344,7 +337,7 @@ static Run run_back(const T5History *history, uint8_t start, uint16_t direction,
     return run;
 }
 
-// (hole strict-sequences :tags (sim tk5mod) :needs tk5-input-load) sequences have no strict joiner (':'), so dashes and taps need their own matchers; with it they become sequences ({f:n:^f}20), and the oracle shows whether that is exact or a deviation to record.
+// (hole strict-sequences :tags (sim tk5mod)) sequences have no strict joiner (':'), so dashes and taps need their own matchers; with it they become sequences ({f:n:^f}20), and the oracle shows whether that is exact or a deviation to record.
 // Dash: `direction` entered now; before it N for n frames, before that `direction` for m frames, n + m <= DASH_FRAMES.
 static bool dash_match(const T5Input *input, const T5History *history, uint16_t direction) {
     if ((input->direction_new & DIRECTIONS_COMPARED) != direction) return false;  // the direction must be entered this frame

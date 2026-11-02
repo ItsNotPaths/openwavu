@@ -73,8 +73,8 @@ CREATE TABLE move (
 );
 CREATE INDEX move_character ON move(character);
 
--- command_code 0x8000 ends a list; 0x8005 enters group_list, 0x8006 returns; 0x8007 reads the row's input_sequence.
--- (hole tk5-input-import :tags (importer tk5mod)) commands are TK5 bits (command_code, command_buttons, input_sequence and its input_extra lists, window_start/window_end/start_frame); they should be one `input` text cell (docs/commands.md), with the end, group and return rows as a `kind` column.
+-- input: the command and its timing as text (docs/commands.md). kind: NULL for a cancel; end ends the list, group
+-- enters group_list, return goes back after the group row; their input is timing only.
 CREATE TABLE cancel_list (
 	key       TEXT PRIMARY KEY,
 	character TEXT NOT NULL REFERENCES motbin(character)
@@ -84,21 +84,17 @@ CREATE INDEX cancel_list_character ON cancel_list(character);
 CREATE TABLE cancel (
 	list            TEXT NOT NULL REFERENCES cancel_list(key),
 	pos             INTEGER NOT NULL,
-	command_code    INTEGER NOT NULL,
-	command_buttons INTEGER NOT NULL,
+	kind            TEXT CHECK (kind IN ('end', 'group', 'return')),
+	input           TEXT NOT NULL,
 	requirements    TEXT NOT NULL REFERENCES requirement_list(key),
 	move            TEXT REFERENCES move(key),
 	alias           INTEGER,
 	group_list      TEXT REFERENCES group_cancel_list(key),  -- a group entry: the group cancel list it enters
 	unk_0a          INTEGER,           -- (not loaded)
 	extradata       INTEGER NOT NULL,
-	window_start    INTEGER NOT NULL,
-	window_end      INTEGER NOT NULL,
-	start_frame     INTEGER NOT NULL,
 	option          INTEGER NOT NULL,  -- as the loader computes it (0xc8508); the file value is ignored
-	-- (hole cancel-flag-words :tags (importer tk5mod) :needs tk5-input-import) option and extradata are TK5 bits; reversal, stop, lock skip, no move and unlocking a locked fighter should be words after the timing in `input` (docs/commands.md, Open).
+	-- (hole cancel-flag-words :tags (importer tk5mod)) option and extradata are TK5 bits; reversal, stop, lock skip, no move and unlocking a locked fighter should be words after the timing in `input` (docs/commands.md, Open).
 	tracking_override TEXT REFERENCES tracking_override(key),  -- NULL: the move's own tracking
-	input_sequence  TEXT REFERENCES input_sequence(key),        -- command_code 0x8007: the sequence it reads
 	PRIMARY KEY (list, pos)
 );
 
@@ -111,20 +107,16 @@ CREATE INDEX group_cancel_list_character ON group_cancel_list(character);
 CREATE TABLE group_cancel (
 	list            TEXT NOT NULL REFERENCES group_cancel_list(key),
 	pos             INTEGER NOT NULL,
-	command_code    INTEGER NOT NULL,
-	command_buttons INTEGER NOT NULL,
+	kind            TEXT CHECK (kind IN ('end', 'group', 'return')),
+	input           TEXT NOT NULL,
 	requirements    TEXT NOT NULL REFERENCES requirement_list(key),
 	move            TEXT REFERENCES move(key),
 	alias           INTEGER,
 	group_list      TEXT REFERENCES group_cancel_list(key),
 	unk_0a          INTEGER,           -- (not loaded)
 	extradata       INTEGER NOT NULL,
-	window_start    INTEGER NOT NULL,
-	window_end      INTEGER NOT NULL,
-	start_frame     INTEGER NOT NULL,
 	option          INTEGER NOT NULL,
 	tracking_override TEXT REFERENCES tracking_override(key),
-	input_sequence  TEXT REFERENCES input_sequence(key),
 	PRIMARY KEY (list, pos)
 );
 
@@ -282,30 +274,6 @@ CREATE TABLE voiceclip (
 	list      TEXT NOT NULL REFERENCES voiceclip_list(key),
 	pos       INTEGER NOT NULL,
 	value     INTEGER NOT NULL,
-	PRIMARY KEY (list, pos)
-);
-
--- Command 0x8007 + n reads input sequence n.
-CREATE TABLE input_sequence (
-	key       TEXT PRIMARY KEY,
-	character TEXT NOT NULL REFERENCES motbin(character),
-	window    INTEGER NOT NULL,  -- past input frames searched for the sequence
-	count     INTEGER NOT NULL,
-	first     TEXT NOT NULL REFERENCES input_extra_list(key)
-);
-CREATE INDEX input_sequence_character ON input_sequence(character);
-
-CREATE TABLE input_extra_list (
-	key       TEXT PRIMARY KEY,
-	character TEXT NOT NULL REFERENCES motbin(character)
-);
-CREATE INDEX input_extra_list_character ON input_extra_list(character);
-
-CREATE TABLE input_extra (
-	list      TEXT NOT NULL REFERENCES input_extra_list(key),
-	pos       INTEGER NOT NULL,
-	code      INTEGER NOT NULL,
-	buttons   INTEGER NOT NULL,
 	PRIMARY KEY (list, pos)
 );
 

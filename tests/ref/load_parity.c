@@ -23,8 +23,6 @@ static const Table tables[] = {  // end_properties: the .t5m files hold none
     TABLE(T5Cancel, cancels, cancel_count),
     TABLE(T5Cancel, group_cancels, group_cancel_count),
     TABLE(T5Requirement, requirements, requirement_count),
-    TABLE(T5InputSequence, input_sequences, input_sequence_count),
-    TABLE(T5Command, input_extras, input_extra_count),
     TABLE(uint16_t, id_pool, id_pool_count),
     TABLE(T5Pushback, pushbacks, pushback_count),
     TABLE(uint16_t, pushback_curves, pushback_curve_count),
@@ -78,6 +76,40 @@ static void drop_unread(T5Motbin *motbin) {
     for (int32_t index = 0; index < motbin->property_count; index++) motbin->properties[index].padding = 0;
 }
 
+// A one-button press matches alike in every mode (input.c buttons_match): the db writes one.
+static T5Command one_press_form(T5Command command) {
+    uint16_t press = command.buttons & 15;
+    if (command.buttons & T5_COMMAND_SUMMARY || !press || press & (press - 1)) return command;
+    command.buttons = (command.buttons & ~T5_COMMAND_ANY_PRESS) | T5_COMMAND_HOLD_AFTER_PRESS;
+    return command;
+}
+
+static bool same_command(T5Command a, T5Command b) {
+    a = one_press_form(a), b = one_press_form(b);
+    return a.code == b.code && a.buttons == b.buttons;
+}
+
+// The db numbers sequences by cancel where the file shares them, and drops the ones no cancel reads: a cancel that reads
+// a sequence must read the same steps. Matching commands then take the file's, so the tables compare byte for byte.
+static bool same_inputs(T5Cancel *db_cancels, int32_t db_count, const T5Cancel *file_cancels, int32_t file_count,
+                        const T5Motbin *db, const T5Motbin *file, const char *name) {
+    for (int32_t row = 0; row < db_count && row < file_count; row++) {
+        T5Command *ours = &db_cancels[row].command;
+        T5Command theirs = file_cancels[row].command;
+        bool same = ours->code >= T5_CANCEL_SEQUENCE && theirs.code >= T5_CANCEL_SEQUENCE;
+        if (same) {
+            const T5InputSequence *a = &db->input_sequences[ours->code - T5_CANCEL_SEQUENCE];
+            const T5InputSequence *b = &file->input_sequences[theirs.code - T5_CANCEL_SEQUENCE];
+            same = a->window == b->window && a->count == b->count;
+            for (uint16_t key = 0; same && key < a->count; key++)
+                same = same_command(db->input_extras[a->first + key], file->input_extras[b->first + key]);
+        } else same = same_command(*ours, theirs);
+        if (!same) return printf("%s: row %d reads another input\n", name, row), false;
+        *ours = theirs;
+    }
+    return true;
+}
+
 static bool same_table(const Table *table, const T5Motbin *db, const T5Motbin *file) {
     int32_t db_count = *(const int32_t *)((const char *)db + table->count);
     int32_t file_count = *(const int32_t *)((const char *)file + table->count);
@@ -128,6 +160,9 @@ int main(int argc, char **argv) {
 
     bool same = memcmp(from_db.aliases, from_file.aliases, sizeof from_db.aliases) == 0;
     if (!same) printf("aliases differ\n");
+    same &= same_inputs(from_db.cancels, from_db.cancel_count, from_file.cancels, from_file.cancel_count, &from_db, &from_file, "cancels");
+    same &= same_inputs(from_db.group_cancels, from_db.group_cancel_count, from_file.group_cancels, from_file.group_cancel_count, &from_db,
+                        &from_file, "group_cancels");
     for (size_t index = 0; index < sizeof tables / sizeof tables[0]; index++) same &= same_table(&tables[index], &from_db, &from_file);
     same &= same_skeleton(db, argv[2], argv[6]);
     return same ? 0 : 1;

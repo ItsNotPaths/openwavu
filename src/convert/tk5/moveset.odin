@@ -11,11 +11,11 @@ ALIAS_BASE :: 0x8000    // move id 0x8000 + n: alias n
 SIDE_BANDS :: 8  // header 0x140, 4 u16 each
 
 // The motbin tables that hold lists.
-List :: enum {Cancel, Group_Cancel, Requirement, Hit_Condition, Pushback_Curve, Extra_Prop, Start_Prop, End_Prop, Voiceclip, Input_Extra, Move_Pool}
+List :: enum {Cancel, Group_Cancel, Requirement, Hit_Condition, Pushback_Curve, Extra_Prop, Start_Prop, End_Prop, Voiceclip, Move_Pool}
 LIST_TABLES := [List]string{
 	.Cancel = "cancel", .Group_Cancel = "group_cancel", .Requirement = "requirement", .Hit_Condition = "hit_condition",
 	.Pushback_Curve = "pushback_curve", .Extra_Prop = "extra_prop", .Start_Prop = "start_prop", .End_Prop = "end_prop",
-	.Voiceclip = "voiceclip", .Input_Extra = "input_extra", .Move_Pool = "move_pool",
+	.Voiceclip = "voiceclip", .Move_Pool = "move_pool",
 }
 
 // The keys of one character's rows. A list starts at every index that a row points to, and after every end row.
@@ -120,13 +120,6 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, moveset: int
 		list, pos := in_list(w, &k, .Voiceclip, i)
 		if !is_end(m, .Voiceclip, i) do db.insert(w, "voiceclip", list, pos, n(v))
 	}
-	for s, i in m.input_sequences {
-		db.insert(w, "input_sequence", row_key(char, "input_sequence", i), char, n(s.unk_00), n(s.unk_02), list_ref(&k, .Input_Extra, s.inputs))
-	}
-	for x, i in m.input_extras {
-		list, pos := in_list(w, &k, .Input_Extra, i)
-		db.insert(w, "input_extra", list, pos, n(x.unk_00), n(x.unk_02))
-	}
 	for id, i in m.move_pool {
 		list, pos := in_list(w, &k, .Move_Pool, i)
 		if !is_end(m, .Move_Pool, i) do db.insert(w, "move_pool", list, pos, n(id))
@@ -193,7 +186,7 @@ keys_of :: proc(char: string, m: formats.Motbin) -> (k: Keys) {
 		.Cancel = len(m.cancels), .Group_Cancel = len(m.group_cancels), .Requirement = len(m.requirements),
 		.Hit_Condition = len(m.hit_conditions), .Pushback_Curve = len(m.pushback_extras), .Extra_Prop = len(m.extra_props),
 		.Start_Prop = len(m.start_props), .End_Prop = len(m.end_props), .Voiceclip = len(m.voiceclips),
-		.Input_Extra = len(m.input_extras), .Move_Pool = len(m.move_pool),
+		.Move_Pool = len(m.move_pool),
 	}
 	for count, list in counts do k.lists[list] = make([]string, count)
 
@@ -207,7 +200,6 @@ keys_of :: proc(char: string, m: formats.Motbin) -> (k: Keys) {
 		mark(&k, .End_Prop, mv.end_props, k.moves[i])
 	}
 	for p, i in m.pushbacks do mark(&k, .Pushback_Curve, p.extras, row_key(char, "pushback", i))
-	for s, i in m.input_sequences do mark(&k, .Input_Extra, s.inputs, row_key(char, "input_sequence", i))
 	for c in m.cancels do mark_cancel(&k, c)
 	for c in m.group_cancels do mark_cancel(&k, c)
 	for h in m.hit_conditions do mark(&k, .Requirement, h.requirements)
@@ -287,20 +279,18 @@ param_values :: proc(k: ^Keys, code, value: u16) -> (values: [7]db.Value) {
 	return
 }
 
-// (hole tk5-input-import) TK5 command bits, sequences, dash and tap codes are written as they are, not as steps printed with ow_input_text.
 @(private = "file")
 write_cancels :: proc(w: ^db.Writer, k: ^Keys, list: List, m: formats.Motbin, cancels: []formats.Cancel, picks: []u16) {
 	for c, i in cancels {
 		key, pos := in_list(w, k, list, i)
-		code := c.command >> 16
+		kind, input := cancel_input(m, c)
 		move, alias := move_ref(k, c.move)
-		group_list, sequence, tracking: db.Value = db.Null{}, db.Null{}, db.Null{}
-		if code == CMD_GROUP do move, alias, group_list = db.Null{}, db.Null{}, list_ref(k, .Group_Cancel, c.move)
-		if code >= CMD_SEQUENCE do code, sequence = CMD_SEQUENCE, row_key(k.char, "input_sequence", code - CMD_SEQUENCE)
+		kind_value, group_list, tracking: db.Value = db.Null{}, db.Null{}, db.Null{}
+		if kind != "" do kind_value = kind
+		if kind == "group" do move, alias, group_list = db.Null{}, db.Null{}, list_ref(k, .Group_Cancel, c.move)
 		if picks[i] != 0 do tracking = row_key(k.char, "tracking_override", picks[i] - 1)  // the game counts picks from 1
-		db.insert(w, LIST_TABLES[list], key, pos, n(code), n(c.command & 0xffff), list_ref(k, .Requirement, c.requirements), move, alias,
-			group_list, n(c.unk_0a), n(m.cancel_extras[c.extra]), n(c.window_start), n(c.window_end), n(c.start_frame),
-			n(cancel_option(m, c)), tracking, sequence)
+		db.insert(w, LIST_TABLES[list], key, pos, kind_value, input, list_ref(k, .Requirement, c.requirements), move, alias, group_list,
+			n(c.unk_0a), n(m.cancel_extras[c.extra]), n(cancel_option(m, c)), tracking)
 	}
 }
 

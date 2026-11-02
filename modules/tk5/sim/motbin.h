@@ -182,6 +182,13 @@ typedef struct {
     uint16_t buttons;  // buttons
 } T5Command;
 
+// T5Command.buttons: bits 0..11 as in the button word, then the mode bits.
+enum {
+    T5_COMMAND_ANY_PRESS = 1 << 12,         // one of the presses is enough
+    T5_COMMAND_HOLD_AFTER_PRESS = 1 << 13,  // presses must be held, and one must be new
+    T5_COMMAND_SUMMARY = 1 << 14,           // the buttons half is one of the summaries: no press, no hold, some press, some hold
+};
+
 // Cancel record. Table refs are indexes.
 typedef struct {
     T5Command command;

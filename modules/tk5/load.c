@@ -8,6 +8,8 @@
 
 #include "sim/requirements.h"
 #include "sqlite3.h"
+#define OW_INPUT_IMPLEMENTATION
+#include "ow_input.h"
 
 // A column is named after its field: the member path with '_' for '.', without the unit wrappers (.ticks, .degrees, .bits).
 // A column that is a declared foreign key holds a row key: the field gets the row's index in its table, or for a
@@ -87,35 +89,18 @@ static const Field move_fields[] = {
     FIELD_AS(T5Move, hits.launches, "hits_launches"),
 };
 
-// (hole tk5-input-load :tags (tk5mod content) :needs tk5-input-import) cancels read TK5 command bits and the input_sequence/input_extra tables; they should parse `input` (ow_input_parse) and map the steps to T5Command, T5InputSequence and the timing fields, with the stock parity test as the round trip.
+// The command and its timing come from `input` (load_inputs).
 static const Field cancel_fields[] = {
-    FIELD_AS(T5Cancel, command.code, "command_code"),
-    FIELD_AS(T5Cancel, command.buttons, "command_buttons"),
     FIELD(T5Cancel, requirements),
     FIELD(T5Cancel, move),
     ALIAS_AS(T5Cancel, move, "alias"),
     FIELD_AS(T5Cancel, move, "group_list"),  // a group entry: the group cancel list it enters
     FIELD_AS(T5Cancel, tracking_pick, "tracking_override", .bias = 1),  // tracking_pick counts from 1
-    FIELD_AS(T5Cancel, command.code, "input_sequence", .bias = T5_CANCEL_SEQUENCE),
     FIELD(T5Cancel, extradata),
-    FIELD(T5Cancel, window_start),
-    FIELD(T5Cancel, window_end),
-    FIELD(T5Cancel, start_frame),
     FIELD(T5Cancel, option),
 };
 
 static const Field requirement_fields[] = {FIELD(T5Requirement, id), PARAM(T5Requirement, param)};
-
-static const Field input_sequence_fields[] = {
-    FIELD(T5InputSequence, window),
-    FIELD(T5InputSequence, count),
-    FIELD(T5InputSequence, first),
-};
-
-static const Field command_fields[] = {
-    FIELD(T5Command, code),
-    FIELD(T5Command, buttons),
-};
 
 static const Field move_pool_fields[] = {{"compare_id", .size = sizeof(uint16_t), .count = 1, .kind = KIND_COMPARE}};
 
@@ -245,8 +230,6 @@ static const Table tables[] = {  // moves first: the first thing taken from the 
     TABLE("cancel", ROWS_LISTS, T5Cancel, cancels, cancel_count, cancel_fields, NULL),
     TABLE("group_cancel", ROWS_LISTS, T5Cancel, group_cancels, group_cancel_count, cancel_fields, NULL),
     TABLE("requirement", ROWS_LISTS, T5Requirement, requirements, requirement_count, requirement_fields, &REQUIREMENT_END),
-    TABLE("input_sequence", ROWS_KEYED, T5InputSequence, input_sequences, input_sequence_count, input_sequence_fields, NULL),
-    TABLE("input_extra", ROWS_LISTS, T5Command, input_extras, input_extra_count, command_fields, NULL),
     TABLE("move_pool", ROWS_LISTS, uint16_t, id_pool, id_pool_count, move_pool_fields, &POOL_END),
     TABLE("pushback", ROWS_KEYED, T5Pushback, pushbacks, pushback_count, pushback_fields, NULL),
     TABLE("pushback_curve", ROWS_LISTS, uint16_t, pushback_curves, pushback_curve_count, pushback_curve_fields, NULL),
@@ -352,6 +335,117 @@ static const char *count_rows(sqlite3 *db, const char *character, const Table *t
 // Every table ends with one zero record: a scan that runs one entry past the list reads zeros.
 static size_t table_bytes(int32_t count, size_t size) { return t5_arena_round(((size_t)count + 1) * size); }
 
+// --- cancel inputs (docs/commands.md)
+
+static const char *const BUTTON_NAMES[] = {"1", "2", "3", "4", NULL};
+
+// The codes after T5_CANCEL_END: dashes and taps, as the sequences they match.
+static const char *const SPECIAL_INPUTS[] = {"{f:n:^f}20@0..0>0", "{b:n:^b}20@0..0>0", "{n:u:n}16@0..0>0", "{n:d:n}16@0..0>0"};
+
+// The sequences the cancels read, numbered by cancel. NULL tables: only counted.
+typedef struct {
+    T5InputSequence *sequences;
+    T5Command *extras;
+    int32_t sequence_count, extra_count;
+} Sequences;
+
+// Inside a sequence a step without buttons is "no press".
+static T5Command step_command(const OwInputStep *step, bool in_sequence) {
+    T5Command command = {(uint16_t)(step->directions << 1 | (step->tap ? T5_DIRECTION_NEW_PRESS : 0)), 0};
+    bool no_buttons = !step->press && !step->held && !step->not_held;
+    if (step->summary || (in_sequence && no_buttons)) {
+        static const uint16_t summaries[] = {[OW_SUMMARY_NONE] = 0, [OW_SUMMARY_NO_PRESS] = 0, [OW_SUMMARY_NOTHING_HELD] = 1,
+                                             [OW_SUMMARY_SOME_PRESS] = 2, [OW_SUMMARY_SOME_HELD] = 3};
+        command.buttons = T5_COMMAND_SUMMARY + summaries[step->summary];
+        return command;
+    }
+    static const uint16_t modes[] = {[OW_PRESS_TOGETHER] = T5_COMMAND_HOLD_AFTER_PRESS, [OW_PRESS_SAME_FRAME] = 0,
+                                     [OW_PRESS_ANY] = T5_COMMAND_ANY_PRESS};
+    command.buttons = (uint16_t)(step->press | step->held << 4 | step->not_held << 8 | (step->press ? modes[step->press_mode] : 0));
+    return command;
+}
+
+static uint16_t special_code(OwInput input) {
+    char text[256];
+    input.open = input.close = input.start = 0;
+    ow_input_text(&input, BUTTON_NAMES, text, sizeof text);
+    for (uint16_t index = 0; index < sizeof SPECIAL_INPUTS / sizeof *SPECIAL_INPUTS; index++)
+        if (strcmp(text, SPECIAL_INPUTS[index]) == 0) return T5_CANCEL_DASH_F + index;
+    return 0;
+}
+
+static const char *cancel_input(const char *table, const char *kind, const char *text, T5Cancel *cancel, Sequences *sequences) {
+    OwInput input;
+    const char *failed = ow_input_parse(text, (uint32_t)strlen(text), BUTTON_NAMES, &input);
+    if (failed) return fail("%s.input %s: %s", table, text, failed);
+    cancel->window_start = input.open, cancel->window_end = input.close, cancel->start_frame = input.start;
+    if (kind) {
+        if (input.step_count) return fail("%s.input %s: a %s row takes timing only", table, text, kind);
+        cancel->command.code = strcmp(kind, "end") == 0 ? T5_CANCEL_END : strcmp(kind, "group") == 0 ? T5_CANCEL_GROUP : T5_CANCEL_GROUP_END;
+        return NULL;
+    }
+    if (input.step_count <= 1 && !input.window) {
+        if (input.step_count) cancel->command = step_command(&input.steps[0], false);
+        return NULL;
+    }
+    if ((cancel->command.code = special_code(input))) return NULL;
+    // (hole strict-sequences) a ':' sequence other than the stock dashes and taps fails the load.
+    for (int32_t step = 0; step < input.step_count; step++)
+        if (input.steps[step].strict) return fail("%s.input %s: ':' only in the stock dashes and taps", table, text);
+    if (sequences->sequence_count > UINT16_MAX - T5_CANCEL_SEQUENCE) return fail("%s: too many input sequences", table);
+    cancel->command.code = (uint16_t)(T5_CANCEL_SEQUENCE + sequences->sequence_count);
+    if (sequences->sequences) {
+        sequences->sequences[sequences->sequence_count] = (T5InputSequence){input.window, input.step_count, (uint32_t)sequences->extra_count};
+        for (int32_t step = 0; step < input.step_count; step++)
+            sequences->extras[sequences->extra_count + step] = step_command(&input.steps[step], true);
+    }
+    sequences->sequence_count++;
+    sequences->extra_count += input.step_count;
+    return NULL;
+}
+
+// Rows in the order load_table lays them out. No motbin: only counts the sequences.
+static const char *read_inputs(sqlite3 *db, const char *character, T5Motbin *motbin, Sequences *sequences) {
+    static const char *const names[] = {"cancel", "group_cancel"};
+    const char *failed = NULL;
+    for (int table = 0; table < 2 && !failed; table++) {
+        char sql[256];
+        snprintf(sql, sizeof sql, "SELECT kind, input FROM %s_list l JOIN %s ON list = l.key WHERE l.character = ?1 ORDER BY l.rowid, pos",
+                 names[table], names[table]);
+        sqlite3_stmt *rows;
+        if ((failed = prepare(db, sql, character, &rows))) break;
+        T5Cancel *cancels = !motbin ? NULL : table ? motbin->group_cancels : motbin->cancels;
+        for (int32_t row = 0; !failed && sqlite3_step(rows) == SQLITE_ROW; row++) {
+            T5Cancel unused;
+            failed = cancel_input(names[table], (const char *)sqlite3_column_text(rows, 0), (const char *)sqlite3_column_text(rows, 1),
+                                  cancels ? &cancels[row] : &unused, sequences);
+        }
+        sqlite3_finalize(rows);
+    }
+    return failed;
+}
+
+static void sequence_bytes(const Sequences *counted, size_t *sequences, size_t *extras) {
+    *sequences = table_bytes(counted->sequence_count, sizeof(T5InputSequence));
+    *extras = table_bytes(counted->extra_count, sizeof(T5Command));
+}
+
+static const char *load_inputs(sqlite3 *db, const char *character, T5Arena *arena, T5Motbin *motbin) {
+    Sequences counted = {0};
+    const char *failed = read_inputs(db, character, NULL, &counted);
+    if (failed) return failed;
+    size_t sequences_size, extras_size;
+    sequence_bytes(&counted, &sequences_size, &extras_size);
+    Sequences sequences = {t5_arena_take(arena, sequences_size), t5_arena_take(arena, extras_size), 0, 0};
+    if (!sequences.sequences || !sequences.extras) return fail("input sequences: arena full");
+    memset(sequences.sequences, 0, sequences_size);
+    memset(sequences.extras, 0, extras_size);
+    failed = read_inputs(db, character, motbin, &sequences);
+    motbin->input_sequences = sequences.sequences, motbin->input_sequence_count = sequences.sequence_count;
+    motbin->input_extras = sequences.extras, motbin->input_extra_count = sequences.extra_count;
+    return failed;
+}
+
 const char *t5_load_motbin_storage(sqlite3 *db, const char *character, size_t *bytes) {
     *bytes = 0;
     for (size_t index = 0; index < TABLE_COUNT; index++) {
@@ -360,7 +454,12 @@ const char *t5_load_motbin_storage(sqlite3 *db, const char *character, size_t *b
         if (failed) return failed;
         *bytes += table_bytes(count, tables[index].size);
     }
-    return NULL;
+    Sequences counted = {0};
+    const char *failed = read_inputs(db, character, NULL, &counted);
+    size_t sequences_size, extras_size;
+    sequence_bytes(&counted, &sequences_size, &extras_size);
+    *bytes += sequences_size + extras_size;
+    return failed;
 }
 
 // Keys and the index each stands for, sorted by key (SQLite's text order is strcmp's).
@@ -641,6 +740,7 @@ const char *t5_load_motbin(T5Motbin *motbin, sqlite3 *db, const char *character,
     const char *failed = load_aliases(db, character, motbin);
     if (!failed) failed = read_refs(db, character, &refs);
     for (size_t index = 0; index < TABLE_COUNT && !failed; index++) failed = load_table(db, character, &tables[index], &refs, arena, motbin);
+    if (!failed) failed = load_inputs(db, character, arena, motbin);
     free_refs(&refs);
     return failed;
 }

@@ -22,7 +22,7 @@ read_table :: proc() -> (table: []formats.Entry, ok: bool) {
 build_sim_tool :: proc(out: string, sources: ..string) -> bool {
 	sim :: "modules/tk5/sim/"
 	command := make([dynamic]string, context.temp_allocator)
-	append(&command, "cc", "-std=c23", "-fwrapv", "-ffp-contract=off", "-Imodules/tk5", "-o", out, sim + "math.c", sim + "quat.c", sim + "vec.c")
+	append(&command, "cc", "-std=c23", "-fwrapv", "-ffp-contract=off", "-Imodules/tk5", "-Isdk/include", "-o", out, sim + "math.c", sim + "quat.c", sim + "vec.c")
 	append(&command, ..sources)
 	append(&command, "-lm")
 	state, _, _, err := os.process_exec({command = command[:]}, context.temp_allocator)
