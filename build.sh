@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
+# ./build.sh [speed] [test]: speed optimizes the game and importer (slow build, ~5x faster import).
+optimize=() run_tests=0
+for arg in "$@"; do
+	case "$arg" in
+		speed) optimize=(-o:speed) ;;
+		test) run_tests=1 ;;
+		*) echo "usage: ./build.sh [speed] [test]" >&2; exit 2 ;;
+	esac
+done
 mkdir -p build
 ./download-deps.sh
 if [ ! -f vendor/sqlite/libsqlite3.a ] || [ vendor/sqlite/sqlite3.c -nt vendor/sqlite/libsqlite3.a ]; then
@@ -23,9 +32,11 @@ if [ ! -f build/libow_input.a ] || [ sdk/include/ow_input.h -nt build/libow_inpu
 	cc -std=c23 -O2 -DOW_INPUT_IMPLEMENTATION -x c -c sdk/include/ow_input.h -o build/ow_input.o
 	ar rcs build/libow_input.a build/ow_input.o
 fi
-odin build src/importer -out:build/openwavu-import -o:speed -vet -strict-style
+odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict-style
 # (hole module-build :tags (wasm tk5mod) :needs ow-cli) the stock gameplay.wasm and app.wasm are not built from modules/tk5 with ow build; the TK5 core needs -fwrapv -ffp-contract=off -fno-fast-math there too.
-odin build src/game -out:build/openwavu -vet -strict-style -extra-linker-flags:"-Lvendor/sdl3_ttf"
+odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/sdl3_ttf"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
-odin test tests -out:build/tests -o:speed -vet -strict-style
+if [ "$run_tests" = 1 ]; then
+	odin test tests -out:build/tests -o:speed -vet -strict-style
+fi
