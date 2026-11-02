@@ -21,7 +21,7 @@ lists_lay_out_in_sheet_order :: proc(t: ^testing.T) {
 		INSERT INTO start_prop (list, pos, requirements, id, value) VALUES ('x/s', 0, '%s', 5, 0);`
 	// x/a takes rows 0..2 and its end row, so x/b starts at row 4; the start_prop list ends with a zero row; moves have none
 	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "x/b")),
-		"move: 501/0/32769/-1\nrequirement: 1/0 1/0 1/0 327/0 2/0 327/0\nstart_prop: 4/5 0/0\n")
+		"move: 501/0/32769/-1/0x800/0/0\nrequirement: 1/0 1/0 1/0 327/0 2/0 327/0\nstart_prop: 4/5 0/0\n")
 	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "x/none")), "start_prop.requirements: no row x/none\n")
 }
 
@@ -47,7 +47,7 @@ mod_rows_follow_by_sheet_order :: proc(t: ^testing.T) {
 		UPDATE move SET anim_idx = 'mod/z', extra_props = 'x/e';`
 	// pools: x/pool rows 0..1 and its end, mod/pool at 3; requirement 148 names alias 4 (0x8004); the pushback mod/p is row 1;
 	// the cancel picks override 1 (counted from 1); anim mod/z follows anim 0 of its bank
-	testing.expect_value(t, load_lists(t, #procedure, rows), "move: 501/1/32769/0\ncancel: 0/0/2/0\nrequirement: 123/3 148/32772 327/0\n" +
+	testing.expect_value(t, load_lists(t, #procedure, rows), "move: 501/1/32769/0/0x800/0/0\ncancel: 0/0/2/0\nrequirement: 123/3 148/32772 327/0\n" +
 		"extra_prop: 1 0\nmove_pool: 7 7 0 7 0\n")
 	testing.expect_value(t, load_lists(t, #procedure, "INSERT INTO requirement_list VALUES ('x/r', 'x'); INSERT INTO requirement (list, pos, id, param) VALUES ('x/r', 0, 5, 'mod/pool');"),
 		"requirement.param: text in a number column\n")
@@ -67,7 +67,7 @@ cancel_inputs_load_as_commands :: proc(t: ^testing.T) {
 			('x/c', 1, NULL, '{{f:n:^f}}20@1..255>1', 'x/r', 'start', 'keep', 'none'),
 			('x/c', 2, NULL, '{{n,f+1}}10@1..255>1', 'x/r', 'start', 'keep', 'none'),
 			('x/c', 3, NULL, '%s', 'x/r', 'start', 'keep', 'none'), ('x/c', 4, 'end', '@50..255>50', 'x/r', 'start', 'keep', 'none');`
-	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "f+1@1..1>1")), "move: 501/0/32769/-1\ncancel: 0x8001/0/0/0 0x8007/0/0/0 0x8008/0/0/0 0x40/0/0/0 0x8000/0/0/0\n" +
+	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "f+1@1..1>1")), "move: 501/0/32769/-1/0x800/0/0\ncancel: 0x8001/0/0/0 0x8007/0/0/0 0x8008/0/0/0 0x40/0/0/0 0x8000/0/0/0\n" +
 		"requirement: 327/0\n")
 	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "f+5@1..1>1")), "cancel.input f+5@1..1>1: a direction or button is unknown\n")
 }
@@ -82,10 +82,24 @@ codes_load_by_name :: proc(t: ^testing.T) {
 		INSERT INTO requirement_list VALUES ('x/r', 'x');
 		INSERT INTO cancel (list, pos, input, requirements, transition, start_align, motion, turn, root_hips)
 			VALUES ('x/c', 0, '@0..0>0', 'x/r', '%s', 'to_opponent', 'sweep_locked', 1, 1);`
-	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "pass")), "move: 501/0/32769/-1\ncancel: 0/0/0/0x2a510\nrequirement: 327/0\n")
+	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "pass")), "move: 501/0/32769/-1/0x800/0/0\ncancel: 0/0/0/0x2a510\nrequirement: 327/0\n")
 	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "passing")), "cancel.transition: no row passing\n")
 	testing.expect_value(t, load_lists(t, #procedure, "INSERT INTO tracking_override VALUES ('x/o', 'x', 'x/t', 'x/t', 'sideways', 0);"),
 		"tracking_override.far_source: no row sideways\n")
+}
+
+// A move's state, attack and flag cells and its move_ai row load as the words the sim reads (state.h, hit.h, motbin.h):
+// launched 14 << 11 and downed bit 9, never picks bit 23; mid 2 << 8, hits standing bit 1, blocked by the stand guard bit 4,
+// throw bit 22; looks at the opponent bit 2, follow-up input bit 27. A name its sheet does not have fails the load.
+@(test)
+move_words_load_by_column :: proc(t: ^testing.T) {
+	if !build_load_lists(t, #procedure) do return
+	rows :: `
+		UPDATE move SET state_class = '%s', state_downed = 1, attack_kind = 'mid', attack_hits_standing = 1,
+			attack_blocked_by_stand_guard = 1, looks_at_opponent = 1 WHERE key = 'x/m';
+		INSERT INTO move_ai (move, ai_never_picks, ai_throw, ai_follow_up_input) VALUES ('x/m', 1, 1, 1);`
+	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "launched")), "move: 501/0/32769/-1/0x807200/0x400212/0x8000004\n")
+	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "flying")), "move.state_class: no row flying\n")
 }
 
 // A mod's move identity (compare id) is text, numbered after every stock one across all characters, so a pool or a
@@ -99,7 +113,7 @@ compare_ids_are_global :: proc(t: ^testing.T) {
 		INSERT INTO requirement_list VALUES ('x/r', 'x');
 		INSERT INTO requirement (list, pos, id, param_compare_id) VALUES ('x/r', 0, 224, '%s');`
 	// stock ids end at 500: mod/a_x is 501, mod/y_upper 502
-	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "mod/y_upper")), "move: 501/0/32769/-1\nrequirement: 224/502 327/0\nmove_pool: 502 0\n")
+	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "mod/y_upper")), "move: 501/0/32769/-1/0x800/0/0\nrequirement: 224/502 327/0\nmove_pool: 502 0\n")
 	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "mod/nobody")), "requirement.param_compare_id: no compare_id mod/nobody\n")
 }
 
@@ -116,13 +130,13 @@ build_load_lists :: proc(t: ^testing.T, test: string) -> bool {
 // moves with compare ids mod/y_upper and 500.
 @(private = "file")
 load_lists :: proc(t: ^testing.T, test, rows: string) -> string {
-	move :: `INSERT INTO move (key, character, name, anim_owner, anim_idx, anim, vuln, hit_level, cancels, next_alias, end_yaw,
-		compare_id, push_speed, hit_conditions, window_start, window_end, hold_frame, flags, hit_category, first_active, last_active,
+	move :: `INSERT INTO move (key, character, name, anim_owner, anim_idx, anim, state_class, attack_kind, cancels, next_alias, end_yaw,
+		compare_id, push_speed, hit_conditions, window_start, window_end, hold_frame, hit_category, first_active, last_active,
 		push_shape, tracking_row, tracking_far_row, tracking_far_source, tracking_far_angle, rides_partner, hit_pair_end_kind_0,
 		hit_pair_end_index_0, hit_pair_start_kind_0, hit_pair_start_index_0, hit_pair_end_kind_1, hit_pair_end_index_1,
 		hit_pair_start_kind_1, hit_pair_start_index_1, hits_attack_bones, hits_slots, hits_launches)
-		VALUES ('%s', '%s', 'm', '%s', 0, 0, 0, 0, 'x/c', 1, 0, %s, 0, 'x/h', 0, 0, 0, 0, 0, 0, 0, 0, 'x/t', 'x/t',
-		'never', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);`
+		VALUES ('%s', '%s', 'm', '%s', 0, 0, 'stand_open', 'none', 'x/c', 1, 0, %s, 0, 'x/h', 0, 0, 0, 0, 0, 0, 0, 'x/t', 'x/t',
+		'never', 0, 0, 'none', 0, 'none', 0, 'none', 0, 'none', 0, 0, 0, 0);`
 	tool, path := fmt.tprintf("build/%s", test), fmt.tprintf("build/%s.db", test)
 	defer os.remove(path)
 	w, err := db.create(path, TK5_SCHEMA)

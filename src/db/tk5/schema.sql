@@ -26,6 +26,23 @@ CREATE TABLE move_alias (  -- move id 0x8000 + slot
 	PRIMARY KEY (character, slot)
 );
 
+-- The class of a state (state.h): the game reads the number only for launched, launched_downed, jump, jump_alternate and
+-- air_guard; the others are labels of a fixed state bit pattern.
+CREATE TABLE state_class (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO state_class VALUES
+	('stand_open', 1), ('stand_guard', 2), ('stand_walk', 3), ('stand_wall_pose', 4), ('crouch_open', 5), ('crouch_guard', 6),
+	('crouch_guard_locked', 7), ('lying_face_up', 12), ('lying_face_down', 13), ('launched', 14), ('launched_downed', 15),
+	('invulnerable', 20),
+	('unknown_vuln_class_21', 21),  -- the bits of launched, read by nothing
+	('crouch_launched', 22), ('jump', 23), ('jump_alternate', 24), ('air_guard', 25);
+
+-- What an attack is (hit.h): the guards that block it and the reaction it gives.
+CREATE TABLE attack_kind (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO attack_kind VALUES
+	('none', 0), ('low', 1), ('mid', 2), ('mid_either_guard', 3), ('low_either_guard', 4), ('high', 5), ('mid_unblockable', 7),
+	('high_unblockable', 8), ('low_unblockable', 9), ('no_height', 10), ('air_only', 11),
+	('slide', 12);  -- no stock move
+
 CREATE TABLE move (
 	key            TEXT PRIMARY KEY,  -- <character>/<name>
 	character      TEXT NOT NULL REFERENCES motbin(character),
@@ -35,9 +52,25 @@ CREATE TABLE move (
 	anim_idx       INTEGER NOT NULL,
 	-- (hole move-copy-columns :tags (importer content) :sev polish) anim repeats anim_owner and anim_idx (every stock row); hit_category is the raw hitbox bytes hit_pair_* and hits_* are made from, not yet proven lossless. Both still in the sheet.
 	anim           INTEGER NOT NULL,  -- the raw anim id (not loaded)
-	-- (hole move-code-names :tags (importer tk5mod content) :sev polish) vuln, hit_level, flags and hit_pair_*_kind are numbers: no name sheets, and flags is a bitfield, not 0/1 columns.
-	vuln           INTEGER NOT NULL,
-	hit_level      INTEGER NOT NULL,
+	-- state_*: the fighter's state while in the move (state.h): which heights hit them, guard, which throws take them.
+	state_class    TEXT NOT NULL REFERENCES state_class(name),
+	state_hurt_crouching INTEGER NOT NULL DEFAULT 0 CHECK (state_hurt_crouching IN (0, 1)),
+	state_hurt_standing INTEGER NOT NULL DEFAULT 0 CHECK (state_hurt_standing IN (0, 1)),
+	state_hurt_lying INTEGER NOT NULL DEFAULT 0 CHECK (state_hurt_lying IN (0, 1)),
+	state_guard_crouch INTEGER NOT NULL DEFAULT 0 CHECK (state_guard_crouch IN (0, 1)),
+	state_guard_stand INTEGER NOT NULL DEFAULT 0 CHECK (state_guard_stand IN (0, 1)),
+	state_throw_crouching INTEGER NOT NULL DEFAULT 0 CHECK (state_throw_crouching IN (0, 1)),
+	state_throw_standing INTEGER NOT NULL DEFAULT 0 CHECK (state_throw_standing IN (0, 1)),
+	state_throw_lying INTEGER NOT NULL DEFAULT 0 CHECK (state_throw_lying IN (0, 1)),
+	state_guard_locked INTEGER NOT NULL DEFAULT 0 CHECK (state_guard_locked IN (0, 1)),
+	state_downed INTEGER NOT NULL DEFAULT 0 CHECK (state_downed IN (0, 1)),
+	state_launched INTEGER NOT NULL DEFAULT 0 CHECK (state_launched IN (0, 1)),
+	attack_kind    TEXT NOT NULL REFERENCES attack_kind(name),
+	attack_hits_crouching INTEGER NOT NULL DEFAULT 0 CHECK (attack_hits_crouching IN (0, 1)),
+	attack_hits_standing INTEGER NOT NULL DEFAULT 0 CHECK (attack_hits_standing IN (0, 1)),
+	attack_hits_lying INTEGER NOT NULL DEFAULT 0 CHECK (attack_hits_lying IN (0, 1)),
+	attack_blocked_by_crouch_guard INTEGER NOT NULL DEFAULT 0 CHECK (attack_blocked_by_crouch_guard IN (0, 1)),
+	attack_blocked_by_stand_guard INTEGER NOT NULL DEFAULT 0 CHECK (attack_blocked_by_stand_guard IN (0, 1)),
 	cancels        TEXT NOT NULL REFERENCES cancel_list(key),
 	next_move      TEXT REFERENCES move(key),  -- the move it goes to when it ends
 	next_alias     INTEGER,
@@ -52,7 +85,32 @@ CREATE TABLE move (
 	extra_props    TEXT REFERENCES extra_prop_list(key),
 	start_props    TEXT REFERENCES start_prop_list(key),
 	end_prop       TEXT REFERENCES end_prop_list(key),
-	flags          INTEGER NOT NULL,  -- +0x3c in the loader's bit order (0xc8508): bits 0..3 kept, file bit i (4..31) at 35 - i
+	-- The move's flags (motbin.h T5_MOVE_*).
+	keeps_hips INTEGER NOT NULL DEFAULT 0 CHECK (keeps_hips IN (0, 1)),
+	turns_at_end INTEGER NOT NULL DEFAULT 0 CHECK (turns_at_end IN (0, 1)),
+	looks_at_opponent INTEGER NOT NULL DEFAULT 0 CHECK (looks_at_opponent IN (0, 1)),
+	follows_floor INTEGER NOT NULL DEFAULT 0 CHECK (follows_floor IN (0, 1)),
+	no_blend_in INTEGER NOT NULL DEFAULT 0 CHECK (no_blend_in IN (0, 1)),
+	no_blend_out INTEGER NOT NULL DEFAULT 0 CHECK (no_blend_out IN (0, 1)),
+	hit_reaction INTEGER NOT NULL DEFAULT 0 CHECK (hit_reaction IN (0, 1)),
+	guard_by_input INTEGER NOT NULL DEFAULT 0 CHECK (guard_by_input IN (0, 1)),
+	no_leg_push INTEGER NOT NULL DEFAULT 0 CHECK (no_leg_push IN (0, 1)),
+	sets_hurt_lying INTEGER NOT NULL DEFAULT 0 CHECK (sets_hurt_lying IN (0, 1)),
+	throw_resync INTEGER NOT NULL DEFAULT 0 CHECK (throw_resync IN (0, 1)),
+	starts_on_partner INTEGER NOT NULL DEFAULT 0 CHECK (starts_on_partner IN (0, 1)),
+	thrown_stays INTEGER NOT NULL DEFAULT 0 CHECK (thrown_stays IN (0, 1)),
+	keeps_root_yaw INTEGER NOT NULL DEFAULT 0 CHECK (keeps_root_yaw IN (0, 1)),
+	no_ko_cut INTEGER NOT NULL DEFAULT 0 CHECK (no_ko_cut IN (0, 1)),
+	holds_face_expression INTEGER NOT NULL DEFAULT 0 CHECK (holds_face_expression IN (0, 1)),
+	no_start_shift INTEGER NOT NULL DEFAULT 0 CHECK (no_start_shift IN (0, 1)),
+	no_sword_trail INTEGER NOT NULL DEFAULT 0 CHECK (no_sword_trail IN (0, 1)),
+	forces_sword_trail INTEGER NOT NULL DEFAULT 0 CHECK (forces_sword_trail IN (0, 1)),
+	grounded_reaction INTEGER NOT NULL DEFAULT 0 CHECK (grounded_reaction IN (0, 1)),
+	keeps_took_damage INTEGER NOT NULL DEFAULT 0 CHECK (keeps_took_damage IN (0, 1)),
+	string_move INTEGER NOT NULL DEFAULT 0 CHECK (string_move IN (0, 1)),
+	practice_dummy_recovery INTEGER NOT NULL DEFAULT 0 CHECK (practice_dummy_recovery IN (0, 1)),
+	reaction_continues INTEGER NOT NULL DEFAULT 0 CHECK (reaction_continues IN (0, 1)),
+	blends_in_active INTEGER NOT NULL DEFAULT 0 CHECK (blends_in_active IN (0, 1)),
 	hit_category   INTEGER NOT NULL,  -- +0x40, the game's 4 hitbox bytes (not loaded: hit_pair_* and hits_* hold what they mean)
 	first_active   INTEGER NOT NULL,
 	last_active    INTEGER NOT NULL,
@@ -64,16 +122,35 @@ CREATE TABLE move (
 	rides_partner  INTEGER NOT NULL,  -- the thrower rides on the partner (Xiaoyu's Hien throws)
 	-- The hitbox of slot n ends at the end point and starts at the start point: a kind (none, bone, special, effect, keep,
 	-- fixed, hitscan, projectile) and an index.
-	hit_pair_end_kind_0 INTEGER NOT NULL, hit_pair_end_index_0 INTEGER NOT NULL,
-	hit_pair_start_kind_0 INTEGER NOT NULL, hit_pair_start_index_0 INTEGER NOT NULL,
-	hit_pair_end_kind_1 INTEGER NOT NULL, hit_pair_end_index_1 INTEGER NOT NULL,
-	hit_pair_start_kind_1 INTEGER NOT NULL, hit_pair_start_index_1 INTEGER NOT NULL,
+	hit_pair_end_kind_0 TEXT NOT NULL REFERENCES hit_point_kind(name), hit_pair_end_index_0 INTEGER NOT NULL,
+	hit_pair_start_kind_0 TEXT NOT NULL REFERENCES hit_point_kind(name), hit_pair_start_index_0 INTEGER NOT NULL,
+	hit_pair_end_kind_1 TEXT NOT NULL REFERENCES hit_point_kind(name), hit_pair_end_index_1 INTEGER NOT NULL,
+	hit_pair_start_kind_1 TEXT NOT NULL REFERENCES hit_point_kind(name), hit_pair_start_index_1 INTEGER NOT NULL,
 	hits_attack_bones INTEGER NOT NULL,  -- bit b: the move attacks with bone b of skeleton B
 	hits_slots     INTEGER NOT NULL,     -- hitbox slots that get points while active: 0..2
 	hits_launches  INTEGER NOT NULL,     -- a hitbox runs from the projectile's point
 	FOREIGN KEY (anim_owner, anim_idx) REFERENCES anim(character, idx)
 );
 CREATE INDEX move_character ON move(character);
+
+-- The stock CPU's reading of a move (rows only for moves with one set).
+-- (hole cpu-ai-rewrite :tags (sim tk5mod) :sev gap) not final: openwavu rewrites the CPU AI and ghosts behind an API of its own; these columns are the stock AI's inputs, kept until then.
+CREATE TABLE move_ai (
+	move TEXT PRIMARY KEY REFERENCES move(key),
+	ai_any_range INTEGER NOT NULL DEFAULT 0 CHECK (ai_any_range IN (0, 1)),
+	ai_not_an_attack INTEGER NOT NULL DEFAULT 0 CHECK (ai_not_an_attack IN (0, 1)),
+	ai_attack_move INTEGER NOT NULL DEFAULT 0 CHECK (ai_attack_move IN (0, 1)),
+	ai_treat_as_unblockable INTEGER NOT NULL DEFAULT 0 CHECK (ai_treat_as_unblockable IN (0, 1)),
+	ai_evading INTEGER NOT NULL DEFAULT 0 CHECK (ai_evading IN (0, 1)),
+	ai_never_picks INTEGER NOT NULL DEFAULT 0 CHECK (ai_never_picks IN (0, 1)),
+	ai_low_attack INTEGER NOT NULL DEFAULT 0 CHECK (ai_low_attack IN (0, 1)),
+	ai_reach_short INTEGER NOT NULL DEFAULT 0 CHECK (ai_reach_short IN (0, 1)),
+	ai_reach_medium INTEGER NOT NULL DEFAULT 0 CHECK (ai_reach_medium IN (0, 1)),
+	ai_reach_long INTEGER NOT NULL DEFAULT 0 CHECK (ai_reach_long IN (0, 1)),
+	ai_strike_option INTEGER NOT NULL DEFAULT 0 CHECK (ai_strike_option IN (0, 1)),
+	ai_throw INTEGER NOT NULL DEFAULT 0 CHECK (ai_throw IN (0, 1)),
+	ai_follow_up_input INTEGER NOT NULL DEFAULT 0 CHECK (ai_follow_up_input IN (0, 1))
+);
 
 -- How a cancel starts its move (modules/tk5/sim/transition.h): which frame (transition), how the fighter re-aligns
 -- (start_align) and what turns it after (motion, the stock tracking of tools/tracking.py). no_move in all three: a
@@ -445,6 +522,18 @@ CREATE TABLE skeleton_b (
 	x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
 	PRIMARY KEY (character, slot)
 );
+
+-- Where a hitbox point lies (modules/tk5/sim/motbin.h T5HitPointKind); hit_pair_*_index is read by the kind.
+CREATE TABLE hit_point_kind (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO hit_point_kind VALUES
+	('none', 0),        -- no point: the hitbox starts where its end point was before the motion step
+	('bone', 1),        -- index: a bone of skeleton B
+	('special', 2),     -- index: a special point slot
+	('effect', 3),      -- the effect hitboxes of the move's side; the previous point stays
+	('keep', 4),        -- the previous point stays
+	('fixed', 5),       -- index: a fixed bone point of the character (body_points)
+	('hitscan', 6),     -- index: 0 tip, 1 tail
+	('projectile', 7);  -- index: 0 front, 1 back left, 2 back right
 
 -- The names of the tracking codes (modules/tk5/sim/tracking.h).
 CREATE TABLE tracking_law (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);

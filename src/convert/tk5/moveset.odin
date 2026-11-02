@@ -44,18 +44,35 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, moveset: int
 		hits, hits_ok := move_hits(mv, moveset)
 		if !hits_ok do return fmt.tprintf("%s move %d: a hitbox on a special slot its row leaves unwritten", char, i)
 		next, next_alias := move_ref(&k, mv.transition)
+		words := [Move_Word]u32{.Vuln = mv.vuln, .Hit_Level = mv.hit_level, .Flags = live_flags(mv.flags)}
+		if left := unnamed_bits(words); left != {} do return fmt.tprintf("%s move %d: bits with no column %v", char, i, left)
 		values := make([dynamic]db.Value)
-		append(&values, k.moves[i], char, mv.name, mv.anim_name, owner, n(idx), n(mv.anim), n(mv.vuln), n(mv.hit_level),
-			list_ref(&k, .Cancel, mv.cancels), next, next_alias, n(mv.unk_1a), n(mv.unk_1c >> 16), n(mv.unk_1c & 0xffff),
+		append(&values, k.moves[i], char, mv.name, mv.anim_name, owner, n(idx), n(mv.anim),
+			named(sheets["state_class"], words[.Vuln] >> STATE_CLASS_SHIFT & 31))
+		for bit in STATE_BITS do append(&values, n(words[.Vuln] >> bit & 1))
+		append(&values, named(sheets["attack_kind"], words[.Hit_Level] >> ATTACK_KIND_SHIFT & 0xff))
+		for bit in ATTACK_BITS do append(&values, n(words[.Hit_Level] >> bit & 1))
+		append(&values, list_ref(&k, .Cancel, mv.cancels), next, next_alias, n(mv.unk_1a), n(mv.unk_1c >> 16), n(mv.unk_1c & 0xffff),
 			list_ref(&k, .Hit_Condition, mv.hit_conditions), n(mv.unk_26), n(mv.unk_28 >> 16), n(mv.unk_28 & 0xffff),
 			list_ref(&k, .Voiceclip, mv.voiceclips), list_ref(&k, .Extra_Prop, mv.extra_props),
-			list_ref(&k, .Start_Prop, mv.start_props), list_ref(&k, .End_Prop, mv.end_props),
-			n(live_flags(mv.flags)), n(mv.hit_category), n(mv.active_first), n(mv.active_last), n(mv.unk_48 >> 16),
+			list_ref(&k, .Start_Prop, mv.start_props), list_ref(&k, .End_Prop, mv.end_props))
+		for bit in FLAG_BITS do append(&values, n(words[.Flags] >> bit & 1))
+		append(&values, n(mv.hit_category), n(mv.active_first), n(mv.active_last), n(mv.unk_48 >> 16),
 			row_key(char, "tracking_row", t.default[i].row), row_key(char, "tracking_row", t.default[i].far_row),
 			named(sheets["tracking_far_source"], t.default[i].far_source), n(t.default[i].far_angle), n(rides_partner(mv)))
-		for pair in hits.pairs do append(&values, n(pair.end.kind), n(pair.end.index), n(pair.start.kind), n(pair.start.index))
+		kinds := sheets["hit_point_kind"]
+		for pair in hits.pairs do append(&values, named(kinds, pair.end.kind), n(pair.end.index), named(kinds, pair.start.kind), n(pair.start.index))
 		append(&values, n(hits.attack_bones), n(hits.slots), n(hits.launches))
 		db.insert(w, "move", ..values[:])
+		ai := make([dynamic]db.Value)
+		append(&ai, k.moves[i])
+		set := false
+		for x in AI_BITS {
+			bit := words[x.word] >> x.bit & 1
+			set ||= bit != 0
+			append(&ai, n(bit))
+		}
+		if set do db.insert(w, "move_ai", ..ai[:])
 	}
 	write_cancels(w, &k, sheets, .Cancel, m, m.cancels, t.cancel_pick)
 	write_cancels(w, &k, sheets, .Group_Cancel, m, m.group_cancels, t.group_pick)
@@ -276,6 +293,34 @@ param_values :: proc(k: ^Keys, code, value: u16) -> (values: [7]db.Value) {
 	case "compare_id": values[6] = n(value)
 	case: values[0] = n(value)
 	}
+	return
+}
+
+// A move's packed words as columns (schema move, move_ai): the bits each column takes, in schema order.
+Move_Word :: enum {Vuln, Hit_Level, Flags}
+Word_Bit :: struct {word: Move_Word, bit: u32}
+STATE_CLASS_SHIFT :: 11  // vuln bits 11..15: state_class
+ATTACK_KIND_SHIFT :: 8   // hit_level bits 8..15: attack_kind
+STATE_BITS :: [?]u32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+ATTACK_BITS :: [?]u32{0, 1, 2, 3, 4}
+FLAG_BITS :: [?]u32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 21, 23, 24, 26, 28, 30}  // flags in the loader order (live_flags)
+AI_BITS :: [?]Word_Bit{  // not final: the stock CPU's inputs
+	{.Vuln, 16}, {.Vuln, 17}, {.Vuln, 19}, {.Vuln, 21}, {.Vuln, 22}, {.Vuln, 23},
+	{.Hit_Level, 16}, {.Hit_Level, 18}, {.Hit_Level, 19}, {.Hit_Level, 20}, {.Hit_Level, 21}, {.Hit_Level, 22}, {.Flags, 27},
+}
+DEAD_BITS :: [Move_Word]u32{.Vuln = 1 << 18 | 1 << 20 | 1 << 24, .Hit_Level = 1 << 17 | 1 << 23, .Flags = 1 << 20 | 1 << 22 | 1 << 25 | 1 << 29}  // read by nothing
+
+// The bits of each word that no column holds and that the game reads.
+@(private = "file")
+unnamed_bits :: proc(words: [Move_Word]u32) -> (left: [Move_Word]u32) {
+	known := DEAD_BITS
+	known[.Vuln] |= 31 << STATE_CLASS_SHIFT
+	known[.Hit_Level] |= 0xff << ATTACK_KIND_SHIFT
+	for bit in STATE_BITS do known[.Vuln] |= 1 << bit
+	for bit in ATTACK_BITS do known[.Hit_Level] |= 1 << bit
+	for bit in FLAG_BITS do known[.Flags] |= 1 << bit
+	for x in AI_BITS do known[x.word] |= 1 << x.bit
+	for word in Move_Word do left[word] = words[word] &~ known[word]
 	return
 }
 

@@ -22,8 +22,8 @@ int main(int argc, char **argv) {
     T5Motbin m;
     if (!failed) failed = t5_load_motbin(&m, db, argv[2], (T5AnimBases){}, &arena);
     if (failed) return printf("%s\n", failed), 1;
-    LINE("move", m.move_count, "%d/%u/%d/%d", m.moves[index].compare_id, m.moves[index].anim, m.moves[index].next_move,
-         m.moves[index].extra_props);
+    LINE("move", m.move_count, "%d/%u/%d/%d/%#x/%#x/%#x", m.moves[index].compare_id, m.moves[index].anim, m.moves[index].next_move,
+         m.moves[index].extra_props, m.moves[index].vuln, m.moves[index].hit_level, m.moves[index].flags);
     LINE("cancel", m.cancel_count, "%#x/%d/%d/%#x", m.cancels[index].command.code, m.cancels[index].move, m.cancels[index].tracking_pick,
          m.cancels[index].extradata);
     LINE("requirement", m.requirement_count, "%d/%d", m.requirements[index].id, m.requirements[index].param);

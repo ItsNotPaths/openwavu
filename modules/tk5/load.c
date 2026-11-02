@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "sim/requirements.h"
+#include "sim/state.h"
 #include "sim/transition.h"
 #include "sqlite3.h"
 #define OW_INPUT_IMPLEMENTATION
@@ -21,6 +22,7 @@ typedef enum : uint8_t {
     KIND_COMPARE,  // a move identity (T5Move.compare_id): a number as it is; a text key gets a number above every stock
                    // one, the same in every character, since moves compare the opponent's identity
     KIND_ANIM,     // two columns, anim_owner and anim_idx, stored as the index in the fighter's anim list
+    KIND_BITS,     // value << shift, ORed into a 32-bit word: a 0/1 column, or a name sheet's code in a part of the word
 } Kind;
 
 typedef struct {
@@ -30,6 +32,7 @@ typedef struct {
     Kind kind;
     int32_t bias;  // added to the value
     int32_t none;  // written for NULL when not 0
+    uint8_t shift;  // KIND_BITS
 } Field;
 
 #define MEMBER(type, path) (((type *)0)->path)
@@ -48,6 +51,7 @@ typedef struct {
 #define COMPARE_AS(type, path, name) {name, AT(type, path), .kind = KIND_COMPARE}
 #define VALUE(type, name) {name, .size = sizeof(type), .count = 1, .kind = KIND_INT}  // a table of plain integers
 #define ANIM(type, member) {NULL, AT(type, member), .kind = KIND_ANIM}
+#define BIT(type, member, name, bit) {name, AT(type, member), .kind = KIND_BITS, .shift = bit}
 #define ALIAS_AS(type, path, name) FIELD_AS(type, path, name, .bias = T5_ALIAS_BASE)  // a move slot n: 0x8000 + n
 // A requirement param or property value: plain, or a row of the table its code names, in that table's column.
 #define PARAM(type, member)                                                                                                \
@@ -57,8 +61,14 @@ typedef struct {
 
 static const Field move_fields[] = {
     ANIM(T5Move, anim),
-    FIELD(T5Move, vuln),
-    FIELD(T5Move, hit_level),
+    BIT(T5Move, vuln, "state_class", STATE_CLASS_SHIFT),
+    BIT(T5Move, vuln, "state_hurt_crouching", 0), BIT(T5Move, vuln, "state_hurt_standing", 1), BIT(T5Move, vuln, "state_hurt_lying", 2),
+    BIT(T5Move, vuln, "state_guard_crouch", 3), BIT(T5Move, vuln, "state_guard_stand", 4), BIT(T5Move, vuln, "state_throw_crouching", 5),
+    BIT(T5Move, vuln, "state_throw_standing", 6), BIT(T5Move, vuln, "state_throw_lying", 7), BIT(T5Move, vuln, "state_guard_locked", 8),
+    BIT(T5Move, vuln, "state_downed", 9), BIT(T5Move, vuln, "state_launched", 10),
+    BIT(T5Move, hit_level, "attack_kind", 8),
+    BIT(T5Move, hit_level, "attack_hits_crouching", 0), BIT(T5Move, hit_level, "attack_hits_standing", 1), BIT(T5Move, hit_level, "attack_hits_lying", 2),
+    BIT(T5Move, hit_level, "attack_blocked_by_crouch_guard", 3), BIT(T5Move, hit_level, "attack_blocked_by_stand_guard", 4),
     FIELD(T5Move, cancels),
     FIELD(T5Move, next_move),
     ALIAS_AS(T5Move, next_move, "next_alias"),
@@ -72,7 +82,15 @@ static const Field move_fields[] = {
     FIELD(T5Move, extra_props, .none = -1),
     FIELD(T5Move, start_props, .none = -1),
     FIELD(T5Move, end_prop, .none = -1),
-    FIELD(T5Move, flags),
+    BIT(T5Move, flags, "keeps_hips", 0), BIT(T5Move, flags, "turns_at_end", 1), BIT(T5Move, flags, "looks_at_opponent", 2),
+    BIT(T5Move, flags, "follows_floor", 3), BIT(T5Move, flags, "no_blend_in", 4), BIT(T5Move, flags, "no_blend_out", 5),
+    BIT(T5Move, flags, "hit_reaction", 6), BIT(T5Move, flags, "guard_by_input", 7), BIT(T5Move, flags, "no_leg_push", 8),
+    BIT(T5Move, flags, "sets_hurt_lying", 9), BIT(T5Move, flags, "throw_resync", 10), BIT(T5Move, flags, "starts_on_partner", 11),
+    BIT(T5Move, flags, "thrown_stays", 12), BIT(T5Move, flags, "keeps_root_yaw", 13), BIT(T5Move, flags, "no_ko_cut", 15),
+    BIT(T5Move, flags, "holds_face_expression", 16), BIT(T5Move, flags, "no_start_shift", 17), BIT(T5Move, flags, "no_sword_trail", 18),
+    BIT(T5Move, flags, "forces_sword_trail", 19), BIT(T5Move, flags, "grounded_reaction", 21), BIT(T5Move, flags, "keeps_took_damage", 23),
+    BIT(T5Move, flags, "string_move", 24), BIT(T5Move, flags, "practice_dummy_recovery", 26), BIT(T5Move, flags, "reaction_continues", 28),
+    BIT(T5Move, flags, "blends_in_active", 30),
     FIELD(T5Move, first_active),
     FIELD(T5Move, last_active),
     FIELD(T5Move, push_shape),
@@ -91,6 +109,15 @@ static const Field move_fields[] = {
 };
 
 // The command and its timing come from `input`, the extradata from the transition columns (load_inputs).
+// Not final: the stock CPU's inputs (schema move_ai), until the CPU AI is rewritten.
+static const Field move_ai_fields[] = {
+    BIT(T5Move, vuln, "ai_any_range", 16), BIT(T5Move, vuln, "ai_not_an_attack", 17), BIT(T5Move, vuln, "ai_attack_move", 19),
+    BIT(T5Move, vuln, "ai_treat_as_unblockable", 21), BIT(T5Move, vuln, "ai_evading", 22), BIT(T5Move, vuln, "ai_never_picks", 23),
+    BIT(T5Move, hit_level, "ai_low_attack", 16), BIT(T5Move, hit_level, "ai_reach_short", 18), BIT(T5Move, hit_level, "ai_reach_medium", 19),
+    BIT(T5Move, hit_level, "ai_reach_long", 20), BIT(T5Move, hit_level, "ai_strike_option", 21), BIT(T5Move, hit_level, "ai_throw", 22),
+    BIT(T5Move, flags, "ai_follow_up_input", 27),
+};
+
 static const Field cancel_fields[] = {
     FIELD(T5Cancel, requirements),
     FIELD(T5Cancel, move),
@@ -735,7 +762,12 @@ static const char *copy_row(sqlite3_stmt *row, const Table *table, const Keys *t
             if (field->kind == KIND_ANIM) failed = anim_value(row, column++, table->name, refs, &value);
             else if (!null) failed = cell_value(row, column, table->name, field, targets[index].foreign ? &targets[index] : NULL, refs, &value);
             if (failed) return failed;
-            memcpy(at, &value, field->size);  // little endian: the low bytes
+            if (field->kind == KIND_BITS) {
+                uint32_t word;
+                memcpy(&word, at, sizeof word);
+                word |= (uint32_t)value << field->shift;
+                memcpy(at, &word, sizeof word);
+            } else memcpy(at, &value, field->size);  // little endian: the low bytes
         }
     }
     return NULL;
@@ -790,12 +822,35 @@ static const char *load_aliases(sqlite3 *db, const char *character, T5Motbin *mo
     return failed;
 }
 
+// The move_ai rows OR their bits into the moves they name.
+static const char *load_move_ai(sqlite3 *db, const char *character, T5Motbin *motbin) {
+    static const Table table = {.name = "move_ai", .fields = move_ai_fields, .field_count = sizeof move_ai_fields / sizeof *move_ai_fields};
+    static const Field ai_move = {.column = "move"};
+    Keys moves = {0}, targets[sizeof move_ai_fields / sizeof *move_ai_fields] = {0};
+    char sql[2048];
+    size_t used = (size_t)snprintf(sql, sizeof sql, "SELECT a.move, 0, 0");
+    select_fields(&table, ", \"%s\"", sql, sizeof sql, &used);
+    snprintf(sql + used, sizeof sql - used, " FROM move_ai a JOIN move m ON m.key = a.move WHERE m.character = ?1");
+    sqlite3_stmt *rows = NULL;
+    const char *failed = read_target_keys(db, character, "move_ai", "move", &moves);
+    if (!failed) failed = prepare(db, sql, character, &rows);
+    while (!failed && sqlite3_step(rows) == SQLITE_ROW) {
+        int64_t move;
+        if (!(failed = cell_value(rows, 0, "move_ai", &ai_move, &moves, NULL, &move)))
+            failed = copy_row(rows, &table, targets, NULL, (uint8_t *)&motbin->moves[move]);
+    }
+    sqlite3_finalize(rows);
+    free_keys(&moves);
+    return failed;
+}
+
 const char *t5_load_motbin(T5Motbin *motbin, sqlite3 *db, const char *character, T5AnimBases anims, T5Arena *arena) {
     memset(motbin, 0, sizeof *motbin);
     Refs refs = {.bases = anims};
     const char *failed = load_aliases(db, character, motbin);
     if (!failed) failed = read_refs(db, character, &refs);
     for (size_t index = 0; index < TABLE_COUNT && !failed; index++) failed = load_table(db, character, &tables[index], &refs, arena, motbin);
+    if (!failed) failed = load_move_ai(db, character, motbin);
     if (!failed) failed = load_inputs(db, character, arena, motbin);
     if (!failed) set_options(motbin);
     free_refs(&refs);

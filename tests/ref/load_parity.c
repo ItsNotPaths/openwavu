@@ -65,10 +65,18 @@ static void match_head_top(T5Motbin *db, const T5Motbin *file) {
     if (fabsf(db->body->head_top - file->body->head_top) <= HEAD_TOP_TOLERANCE) db->body->head_top = file->body->head_top;
 }
 
+// Move bits nothing in the game reads: the db drops them.
+enum : uint32_t {
+    DEAD_STATE_BITS = 1u << 18 | 1u << 20 | 1u << 24,
+    DEAD_HIT_LEVEL_BITS = 1u << 17 | 1u << 23,
+    DEAD_FLAG_BITS = 1u << 20 | 1u << 22 | 1u << 25 | 1u << 29,
+};
+
 static void drop_unread(T5Motbin *motbin) {
     for (int32_t index = 0; index < motbin->move_count; index++) {
         T5Move *move = &motbin->moves[index];
         move->voiceclips = 0, move->padding = 0;
+        move->vuln &= ~DEAD_STATE_BITS, move->hit_level &= ~DEAD_HIT_LEVEL_BITS, move->flags &= ~DEAD_FLAG_BITS;
         memset(move->hitbox, 0, sizeof move->hitbox);
     }
     for (int32_t index = 0; index < motbin->hit_condition_count; index++) motbin->hit_conditions[index].padding = 0;
