@@ -3,10 +3,23 @@ package tests
 import "core:bytes"
 import "core:encoding/endian"
 import "core:encoding/json"
+import "core:image/png"
 import "core:os"
 import "core:slice"
 import "core:testing"
 import "../src/convert"
+
+@(test)
+png_round_trips :: proc(t: ^testing.T) {
+	w, h := 5, 3
+	rgba := make([]byte, w * h * 4, context.temp_allocator)
+	for &b, i in rgba do b = u8(i * 7)
+	data := convert.encode_png(rgba, w, h, context.temp_allocator)
+	img, err := png.load_from_bytes(data, {.alpha_add_if_missing}, context.temp_allocator)
+	testing.expect_value(t, err, nil)
+	if err != nil do return
+	testing.expect(t, img.width == w && img.height == h && bytes.equal(img.pixels.buf[:], rgba), "PNG pixels differ")
+}
 
 // DXT blocks go in as stored, behind a header any DDS reader takes: size, four cc, linear size.
 @(test)
