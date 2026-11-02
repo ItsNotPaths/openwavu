@@ -100,7 +100,9 @@ static bool same_inputs(T5Cancel *db_cancels, int32_t db_count, const T5Cancel *
         if (same) {
             const T5InputSequence *a = &db->input_sequences[ours->code - T5_CANCEL_SEQUENCE];
             const T5InputSequence *b = &file->input_sequences[theirs.code - T5_CANCEL_SEQUENCE];
-            same = a->window == b->window && a->count == b->count;
+            uint16_t a_joints = db->input_joints ? db->input_joints[ours->code - T5_CANCEL_SEQUENCE] : 0;
+            uint16_t b_joints = file->input_joints ? file->input_joints[theirs.code - T5_CANCEL_SEQUENCE] : 0;
+            same = a->window == b->window && a->count == b->count && a_joints == b_joints;
             for (uint16_t key = 0; same && key < a->count; key++)
                 same = same_command(db->input_extras[a->first + key], file->input_extras[b->first + key]);
         } else same = same_command(*ours, theirs);

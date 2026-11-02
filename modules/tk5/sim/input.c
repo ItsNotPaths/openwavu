@@ -321,41 +321,61 @@ static bool sequence_match(const T5Input *input, const T5History *history, const
     return false;  // ran out of window before the oldest key
 }
 
-typedef struct {
-    int length;
-    uint8_t end;  // the first slot that does not belong to the run
-} Run;
+// The frame `back` frames before the live one; 0 is the live input.
+static Words frame_words(const T5Input *input, const T5History *history, int back) {
+    return back == 0 ? words_of(input) : history_words(history, (uint8_t)(history->next - 1 - back));
+}
 
-// Slots from `start` backward that hold exactly `direction`, at most `limit`.
-static Run run_back(const T5History *history, uint8_t start, uint16_t direction, int limit) {
-    Run run = {0, start};
-    while (run.length < limit  // go back frame by frame while the held direction is exactly `direction`
-           && (history->direction_held[run.end] & DIRECTIONS_COMPARED) == direction) {
-        run.length++;  // one more frame in the run
-        run.end--;  // one slot back (a byte, wraps around the ring)
+static bool holds(T5Command key, Words words) { return directions_match(key.code & ~T5_DIRECTION_NEW_PRESS, words); }
+
+// Frame `back` goes on the run of `key`: its directions held, nothing pressed.
+static bool run_goes_on(const T5Input *input, const T5History *history, T5Command key, int back) {
+    Words words = frame_words(input, history, back);
+    return holds(key, words) && !t5_buttons_pressed(words.buttons);
+}
+
+// A sequence with ':' joints (bit k: key k follows key k - 1 directly). Each key sits on one frame; after a ':' key the
+// frames up to the next key hold its directions and press nothing, and it sits on the first frame of that run; the
+// newest key's run reaches the live frame, a newest '^' key sits on it. A ',' key is searched for as in sequence_match. All keys within `window`
+// frames before the live one.
+static bool strict_sequence_match(const T5Input *input, const T5History *history, const T5InputSequence *sequence,
+                                  const T5Command *keys, uint16_t joints, bool lock) {
+    int back = 0;  // the frame tested, counted back from the live one
+    for (int index = sequence->count - 1; index >= 0; index--) {
+        T5Command key = keys[index];
+        bool newest = index == sequence->count - 1;
+        if (newest || (joints >> (index + 1) & 1)) {  // its run starts right here
+            if (!holds(key, frame_words(input, history, back))) return false;
+        } else {  // ',': frames that do not fit are skipped, a press on one breaks the sequence
+            for (Words words; !key_match(key, words = frame_words(input, history, back), lock); back++)
+                if (t5_buttons_pressed(words.buttons) || back >= sequence->window) return false;
+        }
+        if (newest && (key.code & T5_DIRECTION_NEW_PRESS)) {  // a newest '^' key sits on the live frame
+            if (!key_match(key, frame_words(input, history, back), lock)) return false;
+        } else if (index > 0 && (joints >> index & 1)) {  // ':' to the older key: sit on the first frame of the run
+            while (back < sequence->window && run_goes_on(input, history, key, back + 1)) back++;
+            if (!key_match(key, frame_words(input, history, back), lock)) return false;
+        } else {  // the newest frame of the run that fits
+            while (!key_match(key, frame_words(input, history, back), lock))
+                if (back >= sequence->window || !run_goes_on(input, history, key, ++back)) return false;
+        }
+        if (back > sequence->window) return false;
+        back++;  // the older key starts one frame further back
     }
-    return run;
+    return true;
 }
 
-// (hole strict-sequences :tags (sim tk5mod)) sequences have no strict joiner (':'), so dashes and taps need their own matchers; with it they become sequences ({f:n:^f}20), and the oracle shows whether that is exact or a deviation to record.
-// Dash: `direction` entered now; before it N for n frames, before that `direction` for m frames, n + m <= DASH_FRAMES.
-static bool dash_match(const T5Input *input, const T5History *history, uint16_t direction) {
-    if ((input->direction_new & DIRECTIONS_COMPARED) != direction) return false;  // the direction must be entered this frame
-    Run neutral = run_back(history, (uint8_t)(history->next - 2), T5_DIRECTION_N, DASH_FRAMES.ticks);  // neutral before now
-    if (neutral.length == 0) return false;  // the stick must have been released first
-    Run held = run_back(history, neutral.end, direction, DASH_FRAMES.ticks + 1 - neutral.length);  // the first tap before that
-    return held.length > 0 && neutral.length + held.length <= DASH_FRAMES.ticks;  // there was a first tap, all within dash time
-}
-
-// Tap: N now and before (n frames in all), `direction` for m frames before that, n + m <= TAP_FRAMES, then N again.
-static bool tap_match(const T5Input *input, const T5History *history, uint16_t direction) {
-    if ((input->direction_held & DIRECTIONS_COMPARED) != T5_DIRECTION_N) return false;  // the stick must be neutral now
-    Run neutral = run_back(history, (uint8_t)(history->next - 2), T5_DIRECTION_N, TAP_FRAMES.ticks - 1);  // neutral before now
-    int neutral_frames = 1 + neutral.length;  // plus this frame
-    Run held = run_back(history, neutral.end, direction, TAP_FRAMES.ticks + 1 - neutral_frames);  // the tap before the neutral
-    return held.length > 0 && neutral_frames + held.length <= TAP_FRAMES.ticks  // a tap happened, all within tap time,
-           && (history->direction_held[held.end] & DIRECTIONS_COMPARED) == T5_DIRECTION_N;  // and neutral came before it
-}
+// The game's dash and tap codes as ':' sequences (docs/commands.md): {^f:n:^f}20, {^b:n:^b}20, {n:u:n}16, {n:d:n}16.
+enum { NO_PRESS = T5_COMMAND_SUMMARY };
+static const T5Command SPECIAL_KEYS[] = {
+    {T5_DIRECTION_F | T5_DIRECTION_NEW_PRESS, NO_PRESS}, {T5_DIRECTION_N, NO_PRESS}, {T5_DIRECTION_F | T5_DIRECTION_NEW_PRESS, NO_PRESS},
+    {T5_DIRECTION_B | T5_DIRECTION_NEW_PRESS, NO_PRESS}, {T5_DIRECTION_N, NO_PRESS}, {T5_DIRECTION_B | T5_DIRECTION_NEW_PRESS, NO_PRESS},
+    {T5_DIRECTION_N, NO_PRESS}, {T5_DIRECTION_U, NO_PRESS}, {T5_DIRECTION_N, NO_PRESS},
+    {T5_DIRECTION_N, NO_PRESS}, {T5_DIRECTION_D, NO_PRESS}, {T5_DIRECTION_N, NO_PRESS},
+};
+static const T5InputSequence SPECIAL_SEQUENCES[] = {  // DASH_F, DASH_B, TAP_U, TAP_D
+    {DASH_FRAMES.ticks, 3, 0}, {DASH_FRAMES.ticks, 3, 3}, {TAP_FRAMES.ticks, 3, 6}, {TAP_FRAMES.ticks, 3, 9}};
+static const uint16_t SPECIAL_JOINTS[] = {0b110, 0b110, 0b110, 0b110};
 
 bool t5_command_match(const T5Input *input, const T5History *history, const T5Motbin *motbin, const T5Cancel *cancel) {
     if (cancel->option & T5_OPTION_NO_INPUT) return true;  // the cancel asks for no input
@@ -363,18 +383,20 @@ bool t5_command_match(const T5Input *input, const T5History *history, const T5Mo
                 && !(cancel->extradata & EXTRA_UNLOCKS_COMMAND);  // unless the cancel unlocks them
     uint16_t kind = cancel->command.code;  // plain key, or a special kind above the end code
     if (kind < T5_CANCEL_END) return key_match(cancel->command, words_of(input), lock);  // plain stick and button command
+    if (kind > T5_CANCEL_END && kind < T5_CANCEL_GROUP) {  // a dash or a tap
+        const T5InputSequence *special = &SPECIAL_SEQUENCES[kind - T5_CANCEL_DASH_F];
+        return strict_sequence_match(input, history, special, &SPECIAL_KEYS[special->first], SPECIAL_JOINTS[kind - T5_CANCEL_DASH_F], lock);
+    }
     switch (kind) {
-    case T5_CANCEL_DASH_F: return dash_match(input, history, T5_DIRECTION_F);  // forward dash: forward, neutral, forward
-    case T5_CANCEL_DASH_B: return dash_match(input, history, T5_DIRECTION_B);  // back dash: back, neutral, back
-    case T5_CANCEL_TAP_U: return tap_match(input, history, T5_DIRECTION_U);  // quick tap up
-    case T5_CANCEL_TAP_D: return tap_match(input, history, T5_DIRECTION_D);  // quick tap down
     case T5_CANCEL_END:
     case T5_CANCEL_GROUP:
     case T5_CANCEL_GROUP_END: return false;  // the game prints "Illegal KEY condition" for the group codes
     }
-    const T5InputSequence *sequence =  // codes from SEQUENCE up pick one of the moveset's input sequences
-        &motbin->input_sequences[kind - T5_CANCEL_SEQUENCE];
-    return sequence_match(input, history, sequence, &motbin->input_extras[sequence->first], lock);  // its keys are in the extras
+    int32_t index = kind - T5_CANCEL_SEQUENCE;  // codes from SEQUENCE up pick one of the moveset's input sequences
+    const T5InputSequence *sequence = &motbin->input_sequences[index];
+    const T5Command *keys = &motbin->input_extras[sequence->first];  // its keys are in the extras
+    uint16_t joints = motbin->input_joints ? motbin->input_joints[index] : 0;
+    return joints ? strict_sequence_match(input, history, sequence, keys, joints, lock) : sequence_match(input, history, sequence, keys, lock);
 }
 
 // --- cancel scan

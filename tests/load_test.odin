@@ -55,16 +55,16 @@ mod_rows_follow_by_sheet_order :: proc(t: ^testing.T) {
 		"requirement.param_move: no row 3\n")
 }
 
-// A cancel's input text loads as the command the sim matches: a dash, a sequence of its own, a key command, a list's end
-// row. Text that does not parse fails the load.
+// A cancel's input text loads as the command the sim matches: the stock dash, a sequence of its own (':' ones too), a key
+// command, a list's end row. Text that does not parse fails the load.
 @(test)
 cancel_inputs_load_as_commands :: proc(t: ^testing.T) {
 	if !build_load_lists(t, #procedure) do return
 	rows :: `
 		INSERT INTO requirement_list VALUES ('x/r', 'x');
 		INSERT INTO cancel (list, pos, kind, input, requirements, extradata, option) VALUES
-			('x/c', 0, NULL, '{{f:n:^f}}20@1..255>1', 'x/r', 0, 0), ('x/c', 1, NULL, '{{n,f+1}}10@1..255>1', 'x/r', 0, 0),
-			('x/c', 2, NULL, '{{n,f+2}}10@1..255>1', 'x/r', 0, 0), ('x/c', 3, NULL, '%s', 'x/r', 0, 0),
+			('x/c', 0, NULL, '{{^f:n:^f}}20@1..255>1', 'x/r', 0, 0), ('x/c', 1, NULL, '{{f:n:^f}}20@1..255>1', 'x/r', 0, 0),
+			('x/c', 2, NULL, '{{n,f+1}}10@1..255>1', 'x/r', 0, 0), ('x/c', 3, NULL, '%s', 'x/r', 0, 0),
 			('x/c', 4, 'end', '@50..255>50', 'x/r', 0, 0);`
 	testing.expect_value(t, load_lists(t, #procedure, fmt.tprintf(rows, "f+1@1..1>1")), "move: 501/0/32769/-1\ncancel: 0x8001/0/0 0x8007/0/0 0x8008/0/0 0x40/0/0 0x8000/0/0\n" +
 		"requirement: 327/0\n")

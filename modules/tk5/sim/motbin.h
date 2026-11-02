@@ -269,6 +269,7 @@ typedef struct {
     int32_t requirement_count;
     T5InputSequence *input_sequences;  // sequence command code + i
     int32_t input_sequence_count;
+    uint16_t *input_joints;            // per sequence, bit k: key k follows key k - 1 directly (':'); NULL: none, as in sim files
     T5Command *input_extras;
     int32_t input_extra_count;
     uint16_t *id_pool;                 // 0-terminated runs (reqs 123, 218, 296)

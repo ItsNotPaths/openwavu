@@ -340,11 +340,12 @@ static size_t table_bytes(int32_t count, size_t size) { return t5_arena_round(((
 static const char *const BUTTON_NAMES[] = {"1", "2", "3", "4", NULL};
 
 // The codes after T5_CANCEL_END: dashes and taps, as the sequences they match.
-static const char *const SPECIAL_INPUTS[] = {"{f:n:^f}20@0..0>0", "{b:n:^b}20@0..0>0", "{n:u:n}16@0..0>0", "{n:d:n}16@0..0>0"};
+static const char *const SPECIAL_INPUTS[] = {"{^f:n:^f}20@0..0>0", "{^b:n:^b}20@0..0>0", "{n:u:n}16@0..0>0", "{n:d:n}16@0..0>0"};
 
 // The sequences the cancels read, numbered by cancel. NULL tables: only counted.
 typedef struct {
     T5InputSequence *sequences;
+    uint16_t *joints;
     T5Command *extras;
     int32_t sequence_count, extra_count;
 } Sequences;
@@ -389,15 +390,14 @@ static const char *cancel_input(const char *table, const char *kind, const char 
         return NULL;
     }
     if ((cancel->command.code = special_code(input))) return NULL;
-    // (hole strict-sequences) a ':' sequence other than the stock dashes and taps fails the load.
-    for (int32_t step = 0; step < input.step_count; step++)
-        if (input.steps[step].strict) return fail("%s.input %s: ':' only in the stock dashes and taps", table, text);
     if (sequences->sequence_count > UINT16_MAX - T5_CANCEL_SEQUENCE) return fail("%s: too many input sequences", table);
     cancel->command.code = (uint16_t)(T5_CANCEL_SEQUENCE + sequences->sequence_count);
     if (sequences->sequences) {
         sequences->sequences[sequences->sequence_count] = (T5InputSequence){input.window, input.step_count, (uint32_t)sequences->extra_count};
-        for (int32_t step = 0; step < input.step_count; step++)
+        for (int32_t step = 0; step < input.step_count; step++) {
             sequences->extras[sequences->extra_count + step] = step_command(&input.steps[step], true);
+            sequences->joints[sequences->sequence_count] |= (uint16_t)(input.steps[step].strict << step);
+        }
     }
     sequences->sequence_count++;
     sequences->extra_count += input.step_count;
@@ -425,8 +425,9 @@ static const char *read_inputs(sqlite3 *db, const char *character, T5Motbin *mot
     return failed;
 }
 
-static void sequence_bytes(const Sequences *counted, size_t *sequences, size_t *extras) {
+static void sequence_bytes(const Sequences *counted, size_t *sequences, size_t *joints, size_t *extras) {
     *sequences = table_bytes(counted->sequence_count, sizeof(T5InputSequence));
+    *joints = table_bytes(counted->sequence_count, sizeof(uint16_t));
     *extras = table_bytes(counted->extra_count, sizeof(T5Command));
 }
 
@@ -434,14 +435,16 @@ static const char *load_inputs(sqlite3 *db, const char *character, T5Arena *aren
     Sequences counted = {0};
     const char *failed = read_inputs(db, character, NULL, &counted);
     if (failed) return failed;
-    size_t sequences_size, extras_size;
-    sequence_bytes(&counted, &sequences_size, &extras_size);
-    Sequences sequences = {t5_arena_take(arena, sequences_size), t5_arena_take(arena, extras_size), 0, 0};
-    if (!sequences.sequences || !sequences.extras) return fail("input sequences: arena full");
+    size_t sequences_size, joints_size, extras_size;
+    sequence_bytes(&counted, &sequences_size, &joints_size, &extras_size);
+    Sequences sequences = {t5_arena_take(arena, sequences_size), t5_arena_take(arena, joints_size), t5_arena_take(arena, extras_size), 0, 0};
+    if (!sequences.sequences || !sequences.joints || !sequences.extras) return fail("input sequences: arena full");
     memset(sequences.sequences, 0, sequences_size);
+    memset(sequences.joints, 0, joints_size);
     memset(sequences.extras, 0, extras_size);
     failed = read_inputs(db, character, motbin, &sequences);
     motbin->input_sequences = sequences.sequences, motbin->input_sequence_count = sequences.sequence_count;
+    motbin->input_joints = sequences.joints;
     motbin->input_extras = sequences.extras, motbin->input_extra_count = sequences.extra_count;
     return failed;
 }
@@ -456,9 +459,9 @@ const char *t5_load_motbin_storage(sqlite3 *db, const char *character, size_t *b
     }
     Sequences counted = {0};
     const char *failed = read_inputs(db, character, NULL, &counted);
-    size_t sequences_size, extras_size;
-    sequence_bytes(&counted, &sequences_size, &extras_size);
-    *bytes += sequences_size + extras_size;
+    size_t sequences_size, joints_size, extras_size;
+    sequence_bytes(&counted, &sequences_size, &joints_size, &extras_size);
+    *bytes += sequences_size + joints_size + extras_size;
     return failed;
 }
 

@@ -8,7 +8,7 @@ import formats "../../formats/tk5"
 TK5_BUTTONS := []cstring{"1", "2", "3", "4", nil}
 
 // The codes after CMD_END: dashes and taps, as the sequences they match.
-SPECIAL_INPUTS := [4]string{"{f:n:^f}20", "{b:n:^b}20", "{n:u:n}16", "{n:d:n}16"}
+SPECIAL_INPUTS := [4]string{"{^f:n:^f}20", "{^b:n:^b}20", "{n:u:n}16", "{n:d:n}16"}
 
 COMMAND_ANY_PRESS :: 1 << 12
 COMMAND_HOLD_AFTER_PRESS :: 1 << 13
