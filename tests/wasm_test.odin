@@ -3,20 +3,19 @@ package tests
 import "core:testing"
 import "../src/wasm"
 
-// A seam-shaped module: shared world, a host import, its own memory and a global.
-SEAM_WAT :: `(module
-	(import "openwavu" "world" (memory 1 1))
+// A module with its own memory, a host import and a global: each step adds 1 to its counter through the host.
+COUNTER_WAT :: `(module
 	(import "openwavu" "add1" (func $add1 (param i32) (result i32)))
-	(memory $own (export "private") 1)
+	(memory (export "memory") 1)
 	(global (export "steps") (mut i32) (i32.const 0))
 	(func (export "step")
 		(i32.store (i32.const 0) (call $add1 (i32.load (i32.const 0))))
-		(i32.store $own (i32.const 0) (i32.add (i32.load $own (i32.const 0)) (i32.const 1)))
 		(global.set 0 (i32.add (global.get 0) (i32.const 1)))))`
 
-READER_WAT :: `(module
-	(import "openwavu" "world" (memory 1 1))
-	(func (export "read") (result i32) (i32.load (i32.const 0))))`
+// Grows its memory by n pages; the old page count, or -1.
+GROW_WAT :: `(module
+	(memory (export "memory") 1)
+	(func (export "grow") (param i32) (result i32) (memory.grow (local.get 0))))`
 
 // NaN with a payload, plus 1: the hardware keeps the payload unless the engine canonicalizes.
 NAN_WAT :: `(module (func (export "nan") (result i32)
@@ -36,9 +35,9 @@ Rig :: struct {
 	linker: wasm.Linker,
 }
 
-rig_create :: proc() -> (r: Rig) {
+rig_create :: proc(memory_cap: i64 = 4 * wasm.PAGE) -> (r: Rig) {
 	r.engine = wasm.engine_create()
-	r.store = wasm.store_create(r.engine)
+	r.store = wasm.store_create(r.engine, memory_cap)
 	r.linker = wasm.linker_create(r.engine)
 	wasm.set_fuel(r.store, 1_000_000)
 	return r
@@ -62,30 +61,51 @@ load :: proc(t: ^testing.T, r: Rig, wat: string) -> (inst: wasm.Instance, ok: bo
 }
 
 @(test)
-modules_share_the_world :: proc(t: ^testing.T) {
+host_reads_and_writes_module_state :: proc(t: ^testing.T) {
 	r := rig_create()
 	defer rig_destroy(r)
-	world, err := wasm.define_memory(r.linker, r.store, "world", 1)
-	testing.expect_value(t, err, "")
 	testing.expect_value(t, wasm.define_func(r.linker, "add1", {wasm.I32}, {wasm.I32}, add1), "")
-	seam, ok := load(t, r, SEAM_WAT)
-	reader, ok2 := load(t, r, READER_WAT)
-	if !ok || !ok2 do return
+	inst, ok := load(t, r, COUNTER_WAT)
+	if !ok do return
+	memory, has_memory := wasm.export_memory(r.store, inst, "memory")
+	steps, has_steps := wasm.export_global(r.store, inst, "steps")
+	if !testing.expect(t, has_memory && has_steps) do return
 
-	(^i32)(raw_data(wasm.bytes(r.store, world)))^ = 41
-	testing.expect_value(t, wasm.call(r.store, seam, "step"), "")
-	testing.expect_value(t, wasm.call(r.store, seam, "step"), "")
-	got := []wasm.Val{{}}
-	testing.expect_value(t, wasm.call(r.store, reader, "read", nil, got), "")
-	testing.expect_value(t, got[0].of.i32, 43)
-
-	own, has_own := wasm.export_memory(r.store, seam, "private")
-	steps, has_steps := wasm.export_global(r.store, seam, "steps")
-	testing.expect(t, has_own && has_steps)
-	testing.expect_value(t, (^i32)(raw_data(wasm.bytes(r.store, own)))^, 2)
+	(^i32)(raw_data(wasm.bytes(r.store, memory)))^ = 41
+	testing.expect_value(t, wasm.call(r.store, inst, "step"), "")
+	testing.expect_value(t, wasm.call(r.store, inst, "step"), "")
+	testing.expect_value(t, (^i32)(raw_data(wasm.bytes(r.store, memory)))^, 43)
 	testing.expect_value(t, wasm.global_get(r.store, steps).of.i32, 2)
 	testing.expect_value(t, wasm.global_set(r.store, steps, wasm.i32_val(0)), "")
 	testing.expect_value(t, wasm.global_get(r.store, steps).of.i32, 0)
+}
+
+@(test)
+modules_do_not_share_memory :: proc(t: ^testing.T) {
+	r := rig_create()
+	defer rig_destroy(r)
+	testing.expect_value(t, wasm.define_func(r.linker, "add1", {wasm.I32}, {wasm.I32}, add1), "")
+	a, ok_a := load(t, r, COUNTER_WAT)
+	b, ok_b := load(t, r, COUNTER_WAT)
+	if !ok_a || !ok_b do return
+	testing.expect_value(t, wasm.call(r.store, a, "step"), "")
+	memory_a, _ := wasm.export_memory(r.store, a, "memory")
+	memory_b, _ := wasm.export_memory(r.store, b, "memory")
+	testing.expect_value(t, (^i32)(raw_data(wasm.bytes(r.store, memory_a)))^, 1)
+	testing.expect_value(t, (^i32)(raw_data(wasm.bytes(r.store, memory_b)))^, 0)
+}
+
+@(test)
+memory_stops_at_the_cap :: proc(t: ^testing.T) {
+	r := rig_create()
+	defer rig_destroy(r)
+	inst, ok := load(t, r, GROW_WAT)
+	if !ok do return
+	got := []wasm.Val{{}}
+	testing.expect_value(t, wasm.call(r.store, inst, "grow", {wasm.i32_val(3)}, got), "")
+	testing.expect_value(t, got[0].of.i32, 1)
+	testing.expect_value(t, wasm.call(r.store, inst, "grow", {wasm.i32_val(1)}, got), "")
+	testing.expect_value(t, got[0].of.i32, -1)
 }
 
 @(test)

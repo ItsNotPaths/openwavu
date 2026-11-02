@@ -13,7 +13,7 @@ World :: struct {
 	memory:   []byte,  // the gameplay module's own memory
 }
 
-// (hole world-memory :tags sim :needs module-memory :sev blocker) no sim instance; the param, loadout and match_seed imports are not served to its init export.
+// (hole world-memory :tags sim :sev blocker) no sim instance; the param, loadout and match_seed imports are not served to its init export.
 create :: proc(module: ^wasm.Module, params: map[string]f64, loadouts: [2][]byte) -> (w: ^World) {
 	return nil
 }

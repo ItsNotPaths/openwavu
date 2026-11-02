@@ -40,8 +40,6 @@ engine_create :: proc() -> Engine {
 	config := wasm_config_new()
 	wasmtime_config_cranelift_nan_canonicalization_set(config, true)
 	wasmtime_config_consume_fuel_set(config, true)
-	// (hole module-memory :tags (wasm mech)) the host still defines a shared world memory with multi-memory on; each module should own its memory, with a cap per store.
-	wasmtime_config_wasm_multi_memory_set(config, true)
 	return {wasm_engine_new_with_config(config)}
 }
 
@@ -49,8 +47,10 @@ engine_destroy :: proc(e: Engine) {
 	wasm_engine_delete(e.handle)
 }
 
-store_create :: proc(e: Engine) -> Store {
+// memory_cap: the most bytes any one module memory may grow to; memory.grow past it returns -1.
+store_create :: proc(e: Engine, memory_cap: i64) -> Store {
 	s := wasmtime_store_new(e.handle, nil, nil)
+	wasmtime_store_limiter(s, memory_cap, -1, -1, -1, -1)  // -1: no limit
 	return {s, wasmtime_store_context(s)}
 }
 
@@ -110,22 +110,19 @@ define_func :: proc(l: Linker, name: string, params, results: []u8, cb: Callback
 	return take_error(wasmtime_linker_define_func(l.handle, raw_data(HOST), len(HOST), raw_data(name), len(name), type, cb, data, nil))
 }
 
-// A memory that the host owns, offered to modules as "openwavu" `name`.
-define_memory :: proc(l: Linker, s: Store, name: string, pages: u64) -> (m: Memory, err: string) {
-	type: ^C_Memorytype
-	if err = take_error(wasmtime_memorytype_new(pages, true, pages, false, false, 16, &type)); err != "" do return
-	defer wasm_memorytype_delete(type)
-	if err = take_error(wasmtime_memory_new(s.ctx, type, &m.handle)); err != "" do return
-	item := C_Extern{kind = EXTERN_MEMORY}
-	item.of.memory = m.handle
-	err = take_error(wasmtime_linker_define(l.handle, s.ctx, raw_data(HOST), len(HOST), raw_data(name), len(name), &item))
-	return
-}
-
+// Instantiates, then runs the module's _initialize (a WASI reactor's libc setup) when it has one.
 instantiate :: proc(l: Linker, s: Store, m: Module) -> (inst: Instance, err: string) {
 	trap: ^C_Trap
 	if err = take_error(wasmtime_linker_instantiate(l.handle, s.ctx, m.handle, &inst.handle, &trap)); err != "" do return
-	return inst, take_trap(trap)
+	if err = take_trap(trap); err != "" do return
+	if has_func(s, inst, "_initialize") do err = call(s, inst, "_initialize")
+	return
+}
+
+has_func :: proc(s: Store, inst: Instance, name: string) -> bool {
+	inst := inst
+	item: C_Extern
+	return wasmtime_instance_export_get(s.ctx, &inst.handle, raw_data(name), len(name), &item) && item.kind == EXTERN_FUNC
 }
 
 // Calls an exported function. A trap (out of fuel, out of bounds, ...) comes back as err.
@@ -154,6 +151,21 @@ export_global :: proc(s: Store, inst: Instance, name: string) -> (g: Global, ok:
 	return {item.of.global}, ok
 }
 
+// Inside a host function: the calling module's exported "memory"; nil if it has none. Valid until the memory grows.
+caller_memory :: proc "contextless" (caller: ^C_Caller) -> []byte {
+	item: C_Extern
+	name := "memory"
+	if !wasmtime_caller_export_get(caller, raw_data(name), len(name), &item) || item.kind != EXTERN_MEMORY do return nil
+	ctx := wasmtime_caller_context(caller)
+	return wasmtime_memory_data(ctx, &item.of.memory)[:wasmtime_memory_data_size(ctx, &item.of.memory)]
+}
+
+// The bytes [offset, offset + size) of memory; ok is false when any of them is outside it.
+span :: proc "contextless" (memory: []byte, offset, size: u32) -> (bytes: []byte, ok: bool) {
+	if u64(offset) + u64(size) > u64(len(memory)) do return nil, false
+	return memory[offset:][:size], true
+}
+
 // The memory's bytes. Valid until the memory grows.
 bytes :: proc(s: Store, m: Memory) -> []byte {
 	m := m
@@ -171,8 +183,8 @@ global_set :: proc(s: Store, g: Global, v: Val) -> (err: string) {
 	return take_error(wasmtime_global_set(s.ctx, &g.handle, &v))
 }
 
-i32_val :: proc(v: i32) -> (out: Val) {out.kind = I32; out.of.i32 = v; return}
-f32_val :: proc(v: f32) -> (out: Val) {out.kind = F32; out.of.f32 = v; return}
+i32_val :: proc "contextless" (v: i32) -> (out: Val) {out.kind = I32; out.of.i32 = v; return}
+f32_val :: proc "contextless" (v: f32) -> (out: Val) {out.kind = F32; out.of.f32 = v; return}
 
 // Host functions return this to stop the module with a message.
 trap :: proc "contextless" (message: string) -> ^C_Trap {
