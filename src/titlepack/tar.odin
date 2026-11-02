@@ -7,15 +7,20 @@ import "core:strconv"
 import "core:strings"
 
 TAR_BLOCK :: 512
+MANIFEST :: "pack.toml"
+MANIFEST_READ :: 8 * TAR_BLOCK  // one read holds the header and a usual pack.toml
+MANIFEST_MAX :: 1 << 20
 
 Tar_Entry :: struct {
 	offset, size: int,
 }
 
 // Every file under dir into one tar at out_path. Same files, same bytes: paths sorted, times and owners zero.
+// pack.toml goes first, so read_manifest finds it with one read.
 write_tar :: proc(dir, out_path: string) -> (err: string) {
 	paths: []string
 	if paths, err = files_under(dir, context.temp_allocator); err != "" do return
+	if i, found := slice.linear_search(paths, MANIFEST); found do slice.rotate_right(paths[:i + 1], 1)
 	part := strings.concatenate({out_path, ".part"}, context.temp_allocator)
 	out, open_err := os.open(part, {.Write, .Create, .Trunc}, os.Permissions_Read_All + {.Write_User})
 	if open_err != nil do return strings.concatenate({"cannot write ", part})
@@ -70,6 +75,28 @@ read_tar :: proc(data: []byte, allocator := context.allocator) -> (files: map[st
 	}
 	destroy_tar(files)
 	return nil, false
+}
+
+// pack.toml of the tar at path, read from the first entry only; a tar that does not start with it has none.
+read_manifest :: proc(path: string, allocator := context.allocator) -> (text: string, ok: bool) {
+	f, open_err := os.open(path)
+	if open_err != nil do return
+	defer os.close(f)
+	buf: [MANIFEST_READ]byte
+	n, _ := os.read_at(f, buf[:], 0)
+	if n < TAR_BLOCK do return
+	header := buf[:TAR_BLOCK]
+	kind := header[156]
+	if field(header[0:100]) != MANIFEST || field(header[345:500]) != "" || (kind != '0' && kind != 0) || !checksum_ok(header) do return
+	size, has_size := strconv.parse_int(field(header[124:136]), 8)
+	if !has_size || size < 0 || size > MANIFEST_MAX do return
+	if TAR_BLOCK + size <= n do return strings.clone(string(buf[TAR_BLOCK:][:size]), allocator), true
+	data := make([]byte, size, allocator)
+	if got, _ := os.read_at(f, data, TAR_BLOCK); got != size {
+		delete(data, allocator)
+		return
+	}
+	return string(data), true
 }
 
 destroy_tar :: proc(files: map[string]Tar_Entry) {

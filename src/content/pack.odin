@@ -21,7 +21,7 @@ View :: struct {
 	layers: []Pack,
 }
 
-// (hole content-view :tags (content titlepack) :needs (pack-open patch-apply titlepack-format)) no file view of a pack over its bases behind content_read, with each layer's db patches applied to the database below.
+// (hole content-view :tags (content titlepack) :needs (pack-open patch-apply)) no file view of a pack over its bases behind content_read, with each layer's db patches applied to the database below.
 open_view :: proc(tars: []string) -> (v: View, ok: bool) {
 	return {}, false
 }

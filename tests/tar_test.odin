@@ -93,3 +93,30 @@ tar_of :: proc(blocks: [][]byte) -> []byte {
 	resize(&out, len(out) + 2 * titlepack.TAR_BLOCK)
 	return out[:]
 }
+
+// pack.toml is the tar's first entry, whatever sorts before it, and read_manifest reads it, small or past the first read.
+@(test)
+manifest_is_first_entry :: proc(t: ^testing.T) {
+	dir :: TAR_DIR + "_manifest"
+	os.remove_all(dir)
+	defer os.remove_all(dir)
+	os.make_directory_all(dir + "/in")
+	testing.expect_value(t, os.write_entire_file(dir + "/in/app.wasm", "\x00asm"), nil)
+	for manifest in ([]string{"id = \"x\"\nversion = \"1\"\n", strings.repeat("# padding\n", 1000, context.temp_allocator)}) {
+		testing.expect_value(t, os.write_entire_file(dir + "/in/pack.toml", manifest), nil)
+		testing.expect_value(t, titlepack.write_tar(dir + "/in", dir + "/p.tar"), "")
+		data, _ := os.read_entire_file(dir + "/p.tar", context.temp_allocator)
+		testing.expect_value(t, string(data[:len(titlepack.MANIFEST)]), titlepack.MANIFEST)
+		text, ok := titlepack.read_manifest(dir + "/p.tar", context.temp_allocator)
+		testing.expect(t, ok && text == manifest, "pack.toml did not read back")
+	}
+}
+
+@(test)
+titlepack_reads_manifest :: proc(t: ^testing.T) {
+	tp, ok := titlepack.read_titlepack("id = \"mod\"\nversion = \"2\"\nbases = [\"tekken5dr\"]\n", context.temp_allocator)
+	testing.expect(t, ok && tp.id == "mod" && tp.name == "mod" && tp.version == "2", "id, version, name fallback")
+	testing.expect(t, len(tp.bases) == 1 && tp.bases[0] == "tekken5dr", "bases")
+	_, no_version := titlepack.read_titlepack("id = \"mod\"\n", context.temp_allocator)
+	testing.expect(t, !no_version, "a pack.toml without version reads")
+}

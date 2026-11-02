@@ -54,6 +54,7 @@ import_status :: proc(l: ^Launcher, u: ^ui.Ui) {
 	}
 	if ui.button(u, clay.ID("ImportDone"), "OK") {
 		import_destroy(job)
+		titlepack.destroy_installed(l.packs)
 		l.packs = titlepack.installed()
 	}
 }

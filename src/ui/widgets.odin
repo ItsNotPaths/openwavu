@@ -58,7 +58,7 @@ list_row :: proc(ui: ^Ui, id: clay.ElementId, text: string, picked: bool) -> boo
 }
 
 // A pack slot: a steel box, a glass window over the pack's art, an engraved name plate.
-// (hole slot-badges :tags game :needs titlepack-installed) no favourite star on installed slots, no size or installed badge on store slots.
+// (hole slot-badges :tags game) no favourite star on installed slots, no size or installed badge on store slots.
 slot :: proc(ui: ^Ui, id: clay.ElementId, name: string, art: ^sdl.Texture, selected: bool) -> bool {
 	return slot_box_ui(ui, id, name, art, "", selected)
 }

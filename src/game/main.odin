@@ -3,6 +3,7 @@ package game
 
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import sdl "vendor:sdl3"
 import "../render"
 import "../titlepack"
@@ -13,6 +14,9 @@ VERSION :: "openwavu 0.0.0-dev"
 // (hole app-shell :tags game :needs (render-gpu content-cache registry-verify)) no ROM import, join path for lobby links, or system overlay (controls, video, audio, leave pack).
 // (hole app-host :tags (game wasm) :needs (module-memory render-api)) the pack's app module is not run: no instance, no frame export call, no events from host requests.
 main :: proc() {
+	if len(os.args) == 3 && os.args[1] == "--package" {
+		os.exit(package_folder(os.args[2]))
+	}
 	r, ok := render.init("openwavu", 1280, 720)
 	if !ok {
 		fmt.eprintln("openwavu:", sdl.GetError())
@@ -25,7 +29,7 @@ main :: proc() {
 		os.exit(1)
 	}
 	defer ui.destroy(&u)
-	// (hole stock-rebuild :tags (game importer) :needs titlepack-installed) the stock pack is not rebuilt when its pack.toml version differs from this openwavu's importer; the [import] inputs are recorded for it.
+	// (hole stock-rebuild :tags (game importer)) the stock pack is not rebuilt when its pack.toml version differs from this openwavu's importer; the [import] inputs are recorded for it.
 	l := Launcher{packs = titlepack.installed()}
 	defer launcher_destroy(&l)
 
@@ -59,4 +63,26 @@ main :: proc() {
 			play(&r, l.packs[pack])
 		}
 	}
+}
+
+// --package <folder>: the folder as <folder>.tar, once its pack.toml reads.
+package_folder :: proc(path: string) -> (exit_code: int) {
+	dir := strings.trim_right(path, "/\\")
+	manifest, read_err := os.read_entire_file(fmt.tprintf("%s/%s", dir, titlepack.MANIFEST), context.temp_allocator)
+	if read_err != nil {
+		fmt.eprintfln("openwavu: no %s in %s", titlepack.MANIFEST, dir)
+		return 1
+	}
+	tp, ok := titlepack.read_titlepack(string(manifest), context.temp_allocator)
+	if !ok {
+		fmt.eprintfln("openwavu: %s needs a string id and version", titlepack.MANIFEST)
+		return 1
+	}
+	out := fmt.tprintf("%s.tar", dir)
+	if err := titlepack.write_tar(dir, out); err != "" {
+		fmt.eprintln("openwavu:", err)
+		return 1
+	}
+	fmt.printfln("%s %s -> %s", tp.id, tp.version, out)
+	return 0
 }

@@ -26,6 +26,7 @@ Launcher :: struct {
 Install_Screen :: struct {}
 
 launcher_destroy :: proc(l: ^Launcher) {
+	titlepack.destroy_installed(l.packs)
 	browser_destroy(&l.browser)
 	import_destroy(&l.importer)
 	strings.builder_destroy(&l.url)
@@ -127,7 +128,7 @@ install_screen :: proc(l: ^Launcher, u: ^ui.Ui) {
 	}
 }
 
-// (hole pack-front :tags (game titlepack) :needs titlepack-installed) a picked pack shows only its name and Play: its front.txt is not read or drawn.
+// (hole pack-front :tags (game titlepack)) a picked pack shows only its name and Play: its front.txt is not read or drawn.
 pack_page :: proc(l: ^Launcher, u: ^ui.Ui, pack: int) {
 	if clay.UI()({
 		layout = {sizing = {clay.SizingGrow({}), clay.SizingGrow({})}, childGap = 10, childAlignment = {.Center, .Center}, layoutDirection = .TopToBottom},
@@ -191,7 +192,7 @@ matches :: proc(name, search: string) -> bool {
 	return strings.contains(strings.to_lower(name, context.temp_allocator), strings.to_lower(search, context.temp_allocator))
 }
 
-// (hole titlepack-install :tags (titlepack game) :needs titlepack-format) install does nothing: no file picker, no URL download, no verify, no copy into the packs folder.
+// (hole titlepack-install :tags (titlepack game)) install does nothing: no file picker, no URL download, no verify, no copy into the packs folder.
 install_pack :: proc() {}
 
 clock :: proc() -> string {
