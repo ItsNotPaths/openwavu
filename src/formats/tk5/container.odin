@@ -23,22 +23,23 @@ CHAR_GROUPS_END :: 2125  // the last character's groups end here
 Character :: struct {
 	id, name:  string,
 	container: int,  // first group; the costumes follow until the next character's container
+	model:     int,  // the body model requirements compare: the char id, shifted past Mokujin's 18; Panda has Kuma's
 }
 
-// Index = char id. Kuma and Panda, and both Jinpachi motbins, share a container.
+// Index = char id. Kuma and Panda, and both Jinpachi motbins, share a container and a model.
 CHARACTERS :: [?]Character{
-	{"paul", "Paul", 1528}, {"law", "Marshall Law", 1542}, {"lei", "Lei Wulong", 1563},
-	{"king", "King", 1577}, {"yoshimitsu", "Yoshimitsu", 1591}, {"nina", "Nina Williams", 1612},
-	{"hwoarang", "Hwoarang", 1626}, {"xiaoyu", "Ling Xiaoyu", 1640}, {"christie", "Christie Monteiro", 1675},
-	{"jin", "Jin Kazama", 1703}, {"julia", "Julia Chang", 1724}, {"kuma", "Kuma", 1738},
-	{"bryan", "Bryan Fury", 1752}, {"heihachi", "Heihachi Mishima", 1766}, {"kazuya", "Kazuya Mishima", 1780},
-	{"lee", "Lee Chaolan", 1794}, {"steve", "Steve Fox", 1815}, {"marduk", "Craig Marduk", 1829},
-	{"jack5", "Jack-5", 1857}, {"roger", "Roger Jr.", 1871}, {"anna", "Anna Williams", 1885},
-	{"wang", "Wang Jinrei", 1906}, {"ganryu", "Ganryu", 1920}, {"asuka", "Asuka Kazama", 1941},
-	{"bruce", "Bruce Irvin", 1969}, {"baek", "Baek Doo San", 1990}, {"devil_jin", "Devil Jin", 2004},
-	{"raven", "Raven", 2018}, {"feng", "Feng Wei", 2039}, {"armor_king", "Armor King", 2053},
-	{"lili", "Lili", 2067}, {"dragunov", "Sergei Dragunov", 2081}, {"panda", "Panda", 1738},
-	{"eddy", "Eddy Gordo", 1689}, {"jinpachi", "Jinpachi Mishima", 2095}, {"jinpachi2", "Jinpachi Mishima (boss)", 2095},
+	{"paul", "Paul", 1528, 0}, {"law", "Marshall Law", 1542, 1}, {"lei", "Lei Wulong", 1563, 2},
+	{"king", "King", 1577, 3}, {"yoshimitsu", "Yoshimitsu", 1591, 4}, {"nina", "Nina Williams", 1612, 5},
+	{"hwoarang", "Hwoarang", 1626, 6}, {"xiaoyu", "Ling Xiaoyu", 1640, 7}, {"christie", "Christie Monteiro", 1675, 8},
+	{"jin", "Jin Kazama", 1703, 9}, {"julia", "Julia Chang", 1724, 10}, {"kuma", "Kuma", 1738, 11},
+	{"bryan", "Bryan Fury", 1752, 12}, {"heihachi", "Heihachi Mishima", 1766, 13}, {"kazuya", "Kazuya Mishima", 1780, 14},
+	{"lee", "Lee Chaolan", 1794, 15}, {"steve", "Steve Fox", 1815, 16}, {"marduk", "Craig Marduk", 1829, 17},
+	{"jack5", "Jack-5", 1857, 19}, {"roger", "Roger Jr.", 1871, 20}, {"anna", "Anna Williams", 1885, 21},
+	{"wang", "Wang Jinrei", 1906, 22}, {"ganryu", "Ganryu", 1920, 23}, {"asuka", "Asuka Kazama", 1941, 24},
+	{"bruce", "Bruce Irvin", 1969, 25}, {"baek", "Baek Doo San", 1990, 26}, {"devil_jin", "Devil Jin", 2004, 27},
+	{"raven", "Raven", 2018, 28}, {"feng", "Feng Wei", 2039, 29}, {"armor_king", "Armor King", 2053, 30},
+	{"lili", "Lili", 2067, 31}, {"dragunov", "Sergei Dragunov", 2081, 32}, {"panda", "Panda", 1738, 11},
+	{"eddy", "Eddy Gordo", 1689, 33}, {"jinpachi", "Jinpachi Mishima", 2095, 34}, {"jinpachi2", "Jinpachi Mishima (boss)", 2095, 34},
 }
 
 // Model groups of the container that starts at `container`.

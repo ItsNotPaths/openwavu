@@ -17,7 +17,8 @@ CREATE TABLE code_name (
 CREATE TABLE character (
 	id         TEXT PRIMARY KEY,
 	name       TEXT NOT NULL,
-	game_index INTEGER
+	game_index INTEGER,
+	model      INTEGER  -- the game's body model id, which move requirements compare
 );
 
 CREATE TABLE bone (

@@ -110,7 +110,7 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 
 import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> (err: string) {
 	w := &im.w
-	db.insert(w, "character", c.id, c.name, i64(char_index))
+	db.insert(w, "character", c.id, c.name, i64(char_index), i64(c.model))
 	owner := formats.container_owner(c.container)
 
 	packed := read_entry(im.archive, formats.MOTBIN_FIRST + 2 * char_index) or_else nil

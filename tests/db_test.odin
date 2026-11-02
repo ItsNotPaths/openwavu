@@ -11,7 +11,7 @@ write_sample :: proc(t: ^testing.T, path: string) -> []byte {
 	w, err := db.create(path, TK5_SCHEMA)
 	testing.expect_value(t, err, "")
 	db.insert(&w, "source", "title_id", "NPUB30009")
-	db.insert(&w, "character", "kazuya", "Kazuya", i64(14))
+	db.insert(&w, "character", "kazuya", "Kazuya", i64(14), i64(14))
 	testing.expect_value(t, db.finish(&w), "")
 	data, _ := os.read_entire_file(path, context.temp_allocator)
 	return data
