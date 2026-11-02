@@ -1,7 +1,8 @@
 // What a pack's front draws with: its images, faded backgrounds and its buttons (docs/launcher-spec.md, Front).
 package ui
 
-import "core:image/png"
+import "core:c"
+import stbi "vendor:stb/image"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
 
@@ -26,13 +27,15 @@ Front_Button :: struct {
 CANVAS_WIDTH :: 1000
 BACKDROP_WIDTH :: 1400
 
-// PNG bytes -> a texture, nil when they do not decode.
-load_png :: proc(ui: ^Ui, data: []byte) -> ^sdl.Texture {
-	img, err := png.load_from_bytes(data, {.alpha_add_if_missing}, context.temp_allocator)
-	if err != nil || img.depth != 8 || img.channels != 4 do return nil
-	texture := sdl.CreateTexture(ui.renderer, .RGBA32, .STATIC, i32(img.width), i32(img.height))
+// PNG or JPEG bytes -> a texture, nil when they do not decode. stb_image: core:image/png is slow in debug builds.
+load_image :: proc(ui: ^Ui, data: []byte) -> ^sdl.Texture {
+	w, h, channels: c.int
+	pixels := stbi.load_from_memory(raw_data(data), c.int(len(data)), &w, &h, &channels, 4)
+	if pixels == nil do return nil
+	defer stbi.image_free(pixels)
+	texture := sdl.CreateTexture(ui.renderer, .RGBA32, .STATIC, w, h)
 	if texture == nil do return nil
-	sdl.UpdateTexture(texture, nil, raw_data(img.pixels.buf), i32(img.width * 4))
+	sdl.UpdateTexture(texture, nil, pixels, w * 4)
 	sdl.SetTextureBlendMode(texture, sdl.BLENDMODE_BLEND)
 	return texture
 }

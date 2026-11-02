@@ -6,8 +6,7 @@ import "core:fmt"
 import "core:strconv"
 import "core:strings"
 
-// (hole front-name :tags titlepack :sev polish) the front's file name is a placeholder; docs/formats.md still says front.txt.
-FRONT :: "front.ow"
+FRONT :: "front.owf"
 FRONT_WIDTH :: 1000
 FRONT_MAX_HEIGHT :: 20000
 
@@ -29,6 +28,7 @@ Kind :: enum u8 {
 Action :: enum u8 {
 	None,
 	Install,
+	Uninstall,
 	Play,
 	Credits,
 	Url,
@@ -173,7 +173,7 @@ read_element :: proc(words: []Word) -> (e: Element, err: string) {
 	}
 	switch {
 	case (e.kind == .Bg || e.kind == .Image) && e.file == "": err = fmt.tprintf("%s needs a file", KIND_NAMES[e.kind])
-	case e.kind == .Button && e.action == .None: err = "button needs install, play, credits, url= or toggle="
+	case e.kind == .Button && e.action == .None: err = "button needs install, uninstall, play, credits, url= or toggle="
 	}
 	return
 }
@@ -186,6 +186,7 @@ read_bare :: proc(e: ^Element, w: Word) -> bool {
 	case (e.kind == .Bg || e.kind == .Image) && e.file == "": e.file = w.text
 	case e.kind == .Text && e.text == "" && w.quoted: e.text = w.text
 	case e.kind == .Button && !w.quoted && w.text == "install": e.action = .Install
+	case e.kind == .Button && !w.quoted && w.text == "uninstall": e.action = .Uninstall
 	case e.kind == .Button && !w.quoted && w.text == "play": e.action = .Play
 	case e.kind == .Button && !w.quoted && w.text == "credits": e.action = .Credits
 	case: return false

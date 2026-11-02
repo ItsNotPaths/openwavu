@@ -39,6 +39,8 @@ Ui :: struct {
 	time:      f32,
 	focus:     clay.ElementId,
 	focusable: [dynamic]clay.ElementId,
+	scrolls:   map[u32]clay.Vector2,    // scroll positions, read before layout
+	scrolling: [dynamic]clay.ElementId,  // scroll containers laid out this frame
 	memory:    []u8,
 }
 
@@ -58,6 +60,8 @@ init :: proc(ui: ^Ui, renderer: ^sdl.Renderer, size: [2]f32) -> bool {
 destroy :: proc(ui: ^Ui) {
 	destroy_text(ui)
 	unbake(ui.textures)
+	delete(ui.scrolls)
+	delete(ui.scrolling)
 	delete(ui.motion)
 	delete(ui.typing.edits)
 	delete(ui.focusable)
@@ -72,6 +76,13 @@ begin :: proc(ui: ^Ui, size: [2]f32, dt: f32) {
 	clay.SetLayoutDimensions({size.x, size.y})
 	clay.SetPointerState(ui.input.mouse, ui.input.mouse_down)
 	clay.UpdateScrollContainers(false, ui.input.wheel * WHEEL_SPEED, dt)
+	// Last frame's elements are still whole here; during layout their slots are reused.
+	clear(&ui.scrolls)
+	for id in ui.scrolling {
+		data := clay.GetScrollContainerData(id)
+		if data.found do ui.scrolls[id.id] = data.scrollPosition^
+	}
+	clear(&ui.scrolling)
 	clay.BeginLayout()
 }
 

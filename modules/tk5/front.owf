@@ -1,0 +1,49 @@
+// Tekken 5: Dark Resurrection, built on this machine from your own game files.
+page version=1 height=1345
+
+bg     ui/pic1.png y=0
+image  ui/33.png x=40 y=60 w=420
+image  ui/select_renders/jin_left.png x=430 y=20 w=400  // feet behind the uninstall button
+rect   x=28 y=304 w=400 h=72 color=#000000b0  // under the logo (ends y=291), two lines of text
+text   "Built on this machine from your own game files." x=40 y=316 w=380 size=16 color=#c8cad0
+button play    x=40  y=400 w=220 h=56 label="Play"
+button install x=280 y=400 w=220 h=56 label="Install"
+button uninstall x=520 y=400 w=220 h=56 label="Uninstall"
+
+rect   x=0 y=620 w=1000 h=685 color=#00000080
+image  ui/select_renders/paul_right.png x=20 y=640 w=120
+image  ui/select_renders/law_right.png x=140 y=640 w=120
+image  ui/select_renders/lei_right.png x=260 y=640 w=120
+image  ui/select_renders/king_right.png x=380 y=640 w=120
+image  ui/select_renders/yoshimitsu_right.png x=500 y=640 w=120
+image  ui/select_renders/nina_right.png x=620 y=640 w=120
+image  ui/select_renders/hwoarang_right.png x=740 y=640 w=120
+image  ui/select_renders/xiaoyu_left.png x=860 y=640 w=120
+image  ui/select_renders/christie_right.png x=20 y=769 w=120
+image  ui/select_renders/jin_right.png x=140 y=769 w=120
+image  ui/select_renders/julia_right.png x=260 y=769 w=120
+image  ui/select_renders/kuma_right.png x=380 y=769 w=120
+image  ui/select_renders/panda_right.png x=500 y=769 w=120
+image  ui/select_renders/bryan_left.png x=620 y=769 w=120
+image  ui/select_renders/heihachi_right.png x=740 y=769 w=120
+image  ui/select_renders/kazuya_right.png x=860 y=769 w=120
+image  ui/select_renders/lee_right.png x=20 y=898 w=120
+image  ui/select_renders/steve_right.png x=140 y=898 w=120
+image  ui/select_renders/marduk_right.png x=260 y=898 w=120
+image  ui/select_renders/mokujin_right.png x=380 y=898 w=120
+image  ui/select_renders/eddy_right.png x=500 y=898 w=120
+image  ui/select_renders/jack5_left.png x=620 y=898 w=120
+image  ui/select_renders/roger_right.png x=740 y=898 w=120
+image  ui/select_renders/anna_right.png x=860 y=898 w=120
+image  ui/select_renders/wang_right.png x=20 y=1027 w=120
+image  ui/select_renders/ganryu_right.png x=140 y=1027 w=120
+image  ui/select_renders/asuka_right.png x=260 y=1027 w=120
+image  ui/select_renders/bruce_right.png x=380 y=1027 w=120
+image  ui/select_renders/baek_right.png x=500 y=1027 w=120
+image  ui/select_renders/devil_jin_right.png x=620 y=1027 w=120
+image  ui/select_renders/raven_right.png x=740 y=1027 w=120
+image  ui/select_renders/feng_right.png x=860 y=1027 w=120
+image  ui/select_renders/armor_king_left.png x=20 y=1156 w=120
+image  ui/select_renders/lili_right.png x=140 y=1156 w=120
+image  ui/select_renders/dragunov_right.png x=260 y=1156 w=120
+image  ui/select_renders/jinpachi_right.png x=380 y=1156 w=120

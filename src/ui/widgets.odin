@@ -83,7 +83,7 @@ spacer :: proc() {
 }
 
 // Vertical scroll area filling its parent. Clay moves it with the wheel.
-scroll :: proc(id: clay.ElementId, padding: clay.Padding = {}, gap: u16 = 0) -> clay.ElementDeclaration {
+scroll :: proc(ui: ^Ui, id: clay.ElementId, padding: clay.Padding = {}, gap: u16 = 0) -> clay.ElementDeclaration {
 	return {
 		id = id,
 		layout = {
@@ -92,8 +92,15 @@ scroll :: proc(id: clay.ElementId, padding: clay.Padding = {}, gap: u16 = 0) -> 
 			childGap = gap,
 			layoutDirection = .TopToBottom,
 		},
-		clip = {vertical = true, childOffset = clay.GetScrollOffset()},
+		clip = {vertical = true, childOffset = scroll_offset(ui, id)},
 	}
+}
+
+// The scroll position of the container with this id, for its childOffset. Not clay.GetScrollOffset:
+// that matches the element's slot from last frame, which moves when the elements before it change.
+scroll_offset :: proc(ui: ^Ui, id: clay.ElementId) -> clay.Vector2 {
+	append(&ui.scrolling, id)
+	return ui.scrolls[id.id]
 }
 
 @(private)

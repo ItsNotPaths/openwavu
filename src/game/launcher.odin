@@ -27,10 +27,9 @@ Launcher :: struct {
 
 Install_Screen :: struct {}
 
-// --front <tar or folder>: just that front, for creators.
-// (hole front-reload :tags game :sev polish) the preview reads the front once; edits need a restart.
+// --front <tar or folder> [front file]: just that front, for creators. It reopens when its source changes.
 Front_Preview :: struct {
-	path: string,
+	path, file: string,
 }
 
 launcher_destroy :: proc(l: ^Launcher) {
@@ -52,13 +51,15 @@ Install_Source :: enum u8 {
 // Installed packs left, the store right, whatever is selected in the middle; columns have no panel.
 // A front replaces the spotlight with its own backgrounds.
 launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
-	path := ""
+	path, file := "", ""
 	switch pick in l.selected {
 	case int: path = l.packs[pick].path
-	case Front_Preview: path = pick.path
+	case Front_Preview:
+		path, file = pick.path, pick.file
+		if front_changed(path, file) != l.front.changed do front_close(&l.front)
 	case Install_Screen:
 	}
-	if path != "" && path != l.front.path do front_open(&l.front, u, path)
+	if path != "" && path != l.front.path do front_open(&l.front, u, path, file)
 	showing_front := path != "" && l.front.err == ""
 	if clay.UI()({
 		id = clay.ID("Root"),
@@ -75,7 +76,7 @@ launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 installed_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 	if clay.UI()(side_column()) {
 		column_head(u, "INSTALLED", clay.ID("SearchInstalled"), &l.search_installed)
-		if clay.UI()(slot_list(clay.ID("InstalledList"))) {
+		if clay.UI()(slot_list(u, clay.ID("InstalledList"))) {
 			for pack, i in l.packs {
 				if !matches(pack.id, strings.to_string(l.search_installed)) {
 					continue
@@ -97,7 +98,7 @@ installed_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 store_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 	if clay.UI()(side_column()) {
 		column_head(u, "STORE", clay.ID("SearchStore"), &l.search_store)
-		if clay.UI()(slot_list(clay.ID("StoreList"))) {}
+		if clay.UI()(slot_list(u, clay.ID("StoreList"))) {}
 	}
 }
 
@@ -154,7 +155,7 @@ pack_page :: proc(l: ^Launcher, u: ^ui.Ui, name: string, pack: Maybe(int)) {
 		switch action {
 		case .Play: l.play = pack
 		case .Url: _ = sdl.OpenURL(strings.clone_to_cstring(target, context.temp_allocator))
-		case .None, .Install, .Credits, .Toggle:
+		case .None, .Install, .Uninstall, .Credits, .Toggle:
 		}
 		return
 	}
@@ -212,8 +213,8 @@ column_head :: proc(u: ^ui.Ui, title: string, search: clay.ElementId, text: ^str
 	}
 }
 
-slot_list :: proc(id: clay.ElementId) -> clay.ElementDeclaration {
-	return ui.scroll(id, {16, 16, 6, 24}, ui.SLOT_GAP)
+slot_list :: proc(u: ^ui.Ui, id: clay.ElementId) -> clay.ElementDeclaration {
+	return ui.scroll(u, id, {16, 16, 6, 24}, ui.SLOT_GAP)
 }
 
 // Case-blind substring match; an empty search matches everything.

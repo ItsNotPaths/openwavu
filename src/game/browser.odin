@@ -92,7 +92,7 @@ browser :: proc(b: ^Browser, u: ^ui.Ui) -> (import_picked: bool) {
 				pick(b, b.dir)
 			}
 		}
-		if clay.UI()(ui.scroll(clay.ID("Files"))) {
+		if clay.UI()(ui.scroll(u, clay.ID("Files"))) {
 			if parent, ok := up(b.dir); ok && ui.list_row(u, clay.ID("Up"), "../", false) {
 				b.next = strings.clone(parent)
 			}

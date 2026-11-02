@@ -23,13 +23,14 @@ button toggle=map x=280 y=460 w=200 h=56 label="Show map"
 button install    x=40  y=460 w=220 h=56 label="Install"
 button credits    x=40  y=540 w=220 h=56 label="Credits" image=btn/credits.png
 image  edge.png   x=0 y=840 w=1000  // a comment
+button uninstall  x=280 y=540
 `
 	front, err := titlepack.read_front(text, context.temp_allocator)
 	if !testing.expect_value(t, err, "") do return
 	testing.expect_value(t, front.height, 2200)
 	testing.expect_value(t, front.glow, [4]u8{0xe6, 0x46, 0x3c, 0xff})
 	testing.expect_value(t, front.font, "fonts/title.ttf")
-	if !testing.expect_value(t, len(front.elements), 10) do return
+	if !testing.expect_value(t, len(front.elements), 11) do return
 	e := front.elements
 	testing.expect(t, e[0].kind == .Bg && e[0].file == "bg/arena.png" && e[1].y == 900)
 	testing.expect(t, e[3].kind == .Rect && e[3].color == {0, 0, 0, 0xa0} && e[3].h == 140)
@@ -37,6 +38,7 @@ image  edge.png   x=0 y=840 w=1000  // a comment
 	testing.expect(t, e[5].id == "map" && e[5].hidden)
 	testing.expect(t, e[6].action == .Toggle && e[6].target == "map" && e[6].text == "Show map")
 	testing.expect(t, e[7].action == .Install && e[8].action == .Credits && e[8].file == "btn/credits.png")
+	testing.expect(t, e[10].action == .Uninstall)
 }
 
 // A creator sees which line is wrong.
