@@ -290,11 +290,18 @@ static void ow_put_names(OwWriter *w, uint16_t bits) {
     }
 }
 
-// The shortest of: a plain list, a group, a group and the rest, all but a group.
+// The shortest of: a plain list, all but a plain list, a group, a group and the rest, all but a group.
 static void ow_put_directions(OwWriter *w, uint16_t bits, bool tap) {
     char best[64], candidate[64];
     OwWriter shortest = {best, sizeof best, 0};
     ow_put_names(&shortest, bits);
+    OwWriter negated = {candidate, sizeof candidate, 0};
+    ow_put(&negated, "!");
+    ow_put_names(&negated, OW_DIR_ALL & ~bits);
+    if (bits != OW_DIR_ALL && negated.length < shortest.length) {
+        for (uint32_t i = 0; i < negated.length; i++) best[i] = candidate[i];
+        shortest.length = negated.length;
+    }
     for (int32_t g = 0; g < 5; g++) {
         uint16_t group = ow_direction_groups[g].bits, rest = bits & ~group;
         OwWriter option = {candidate, sizeof candidate, 0};

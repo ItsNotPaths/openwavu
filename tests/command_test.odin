@@ -9,7 +9,8 @@ TK5_BUTTONS := []cstring{"1", "2", "3", "4", nil}
 @(test)
 stock_commands_print_as_written :: proc(t: ^testing.T) {
 	texts := []string {
-		"{f:n:^f}20@1..255>1",
+		"{^f:n:^f}20@1..255>1",
+		"{!f:f:n:^f}21@1..255>1",
 		"{n:u:n}16@5..15>15",
 		"n+1+2@1..255>1",
 		"^b@1..255>1",
