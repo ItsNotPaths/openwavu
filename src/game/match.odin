@@ -11,7 +11,7 @@ import "../titlepack"
 // Runs a match until Escape or window close, then returns to the launcher.
 // (hole game-loop :tags game :needs (pack-open fighter-data-load sim-step render-fighter render-stage input-pad) :sev blocker) no playable local match.
 play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack) {
-	pack, ok := content.open_pack("content/tk5")
+	pack, ok := content.open_pack("packs/tekken5dr.tar")
 	if !ok {
 		fmt.eprintln("openwavu: no content pack; run openwavu-import first")
 		return

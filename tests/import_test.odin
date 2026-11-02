@@ -7,21 +7,19 @@ import "core:testing"
 import "../src/convert"
 import "../src/db"
 import tk5 "../src/importer/tk5"
+import "../src/titlepack"
 
-// Full import of the reference game: every character, costume, anim and stage lands in the pack.
+// Full import of the reference game: every character, costume, anim and stage lands in the stock pack.
 @(test)
 import_writes_full_pack :: proc(t: ^testing.T) {
-	game, err := tk5.find_game({TK5 + "/game"})
-	if err == "no supported game found (Tekken 5 DR, NPUB30009)" || !os.exists(TK5 + "/game") do return
-	testing.expect_value(t, err, "")
-	if err != "" do return
-	defer tk5.destroy_game(game)
-	os.remove_all("build/test_content")
-	defer os.remove_all("build/test_content")
-	testing.expect_value(t, tk5.run(game, "build/test_content"), "")
+	if !os.exists(TK5 + "/game") do return
+	os.remove_all("build/test_packs")
+	defer os.remove_all("build/test_packs")
+	if !testing.expect_value(t, tk5.build_pack({TK5 + "/game"}, "build/test_packs", keep = true), "") do return
+	check_stock_tar(t)
 
 	handle: ^db.Sqlite
-	if !testing.expect(t, db.open_v2("build/test_content/tk5/tk5.db", &handle, db.OPEN_READWRITE, nil) == db.OK) do return
+	if !testing.expect(t, db.open_v2("build/test_packs/tekken5dr/tk5.db", &handle, db.OPEN_READWRITE, nil) == db.OK) do return
 	defer db.close_v2(handle)
 	count :: proc(h: ^db.Sqlite, sql: cstring) -> i64 {
 		s: ^db.Stmt
@@ -34,16 +32,16 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part WHERE slot = 'body'"), 85)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 17556)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage"), 37)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 4)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 8)
 	images: ^db.Stmt
-	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT id, file FROM image ORDER BY id", -1, &images, nil), db.OK) do return
+	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT id, file FROM image WHERE id GLOB '[0-9]*' ORDER BY id", -1, &images, nil), db.OK) do return
 	defer db.finalize(images)
 	for index in 33 ..< 37 {
 		if !testing.expect_value(t, db.step(images), db.ROW) do break
-		file := fmt.tprintf("images/%d.png", index)
+		file := fmt.tprintf("ui/%d.png", index)
 		testing.expect_value(t, string(db.column_text(images, 0)), fmt.tprintf("%d", index))
 		testing.expect_value(t, string(db.column_text(images, 1)), file)
-		data, read_err := os.read_entire_file(fmt.tprintf("build/test_content/tk5/%s", file), context.temp_allocator)
+		data, read_err := os.read_entire_file(fmt.tprintf("build/test_packs/tekken5dr/%s", file), context.temp_allocator)
 		if !testing.expect_value(t, read_err, nil) do continue
 		image, png_err := png.load_from_bytes(data, {.alpha_add_if_missing}, context.temp_allocator)
 		testing.expect_value(t, png_err, nil)
@@ -53,8 +51,26 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM move m LEFT JOIN anim a ON a.character = m.anim_owner AND a.idx = m.anim_idx WHERE a.idx IS NULL"), 0)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part p WHERE NOT EXISTS (SELECT 1 FROM costume_part c WHERE c.part = p.id)"), 0)
 
-	data, read_err := os.read_entire_file("build/test_content/tk5/anims/kazuya/0.anim", context.temp_allocator)
+	data, read_err := os.read_entire_file("build/test_packs/tekken5dr/anims/kazuya/0.anim", context.temp_allocator)
 	if !testing.expect_value(t, read_err, nil) do return
 	a, ok := convert.read_anim(data, context.temp_allocator)
 	testing.expect(t, ok && a.layout == "tk5" && len(a.channels) == 23 && a.frames > 0, "kazuya anim 0 is not a tk5 .anim")
+}
+
+// The pack file holds the root files every pack needs, and the import's files byte for byte.
+check_stock_tar :: proc(t: ^testing.T) {
+	data, err := os.read_entire_file("build/test_packs/" + tk5.STOCK_PACK, context.temp_allocator)
+	if !testing.expect_value(t, err, nil) do return
+	index, ok := titlepack.read_tar(data)
+	if !testing.expect(t, ok, "stock pack did not read") do return
+	defer titlepack.destroy_tar(index)
+	for path in ([]string{"pack.toml", "front.txt", "gameplay.wasm", "app.wasm", "tk5.db", "ui/pic1.png", "anims/kazuya/0.anim"}) {
+		entry, has := index[path]
+		if !testing.expect(t, has, path) do continue
+		file, _ := os.read_entire_file(fmt.tprintf("build/test_packs/tekken5dr/%s", path), context.temp_allocator)
+		testing.expect(t, string(data[entry.offset:][:entry.size]) == string(file), path)
+	}
+	toml, toml_err := titlepack.read_toml(string(data[index["pack.toml"].offset:][:index["pack.toml"].size]))
+	testing.expect_value(t, toml_err, "")
+	if toml != nil do titlepack.destroy_toml(toml)
 }

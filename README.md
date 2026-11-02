@@ -29,11 +29,11 @@ Code for one game goes in a `tk5/` subfolder, so that a `tk6/` can come later.
 ```
 ./download-deps.sh         # vendor/wasmtime (the build runs it when missing)
 ./build.sh                 # build/openwavu-import, then the tests
-build/openwavu-import <rpcs3 dir | game dir [file.rap]> -o content/
+build/openwavu-import <rpcs3 dir | game dir [file.rap]> [-o packs] [-keep]
 ```
 
 The importer finds the RAP in the game's `USRDIR` or in RPCS3's `dev_hdd0/home/*/exdata/`.
-A full import takes about 10 s and writes about 500 MB. It links the system `libsqlite3` and `libz`.
+A full import takes about 45 s and writes a 500 MB tar. It links the system `libsqlite3` and `libz`.
 
 The tests compare against the Python tools and the game files in `../tk5decomp`. Without them,
 the tests skip.

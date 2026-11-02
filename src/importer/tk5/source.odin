@@ -11,6 +11,7 @@ import "../../ps3"
 
 Game :: struct {
 	build:       formats.Build,
+	dir:         string,  // holds PARAM.SFO and the PS3 menu art
 	eboot:       []byte,  // decrypted ELF, read for the archive file table
 	data:        string,  // path to T55DATA1.BIN (574 MB, read per entry)
 	data_sha256: string,
@@ -62,6 +63,7 @@ find_game :: proc(inputs: []string) -> (game: Game, err: string) {
 	if sha256_hex(elf) != build.elf_sha256 do return game, fmt.tprintf("%s EBOOT is a different version (game update?)", title_id)
 
 	game.build = build
+	game.dir = strings.clone(game_dir)
 	game.eboot = elf
 	game.data = strings.clone(join(game_dir, "USRDIR", "T55DATA1.BIN"))
 	digest, io_err := hash.hash_file_by_name(.SHA256, game.data, allocator = context.temp_allocator)
@@ -72,6 +74,7 @@ find_game :: proc(inputs: []string) -> (game: Game, err: string) {
 
 destroy_game :: proc(game: Game) {
 	delete(game.eboot)
+	delete(game.dir)
 	delete(game.data)
 	delete(game.data_sha256)
 }

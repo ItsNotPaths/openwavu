@@ -16,6 +16,7 @@ Launcher :: struct {
 	},
 	source:   Install_Source,
 	browser:  Browser,
+	importer: Import_Job,
 	url:      strings.Builder,
 	search_installed, search_store: strings.Builder,
 	play:     Maybe(int),
@@ -26,6 +27,7 @@ Install_Screen :: struct {}
 
 launcher_destroy :: proc(l: ^Launcher) {
 	browser_destroy(&l.browser)
+	import_destroy(&l.importer)
 	strings.builder_destroy(&l.url)
 	strings.builder_destroy(&l.search_installed)
 	strings.builder_destroy(&l.search_store)
@@ -108,7 +110,11 @@ install_screen :: proc(l: ^Launcher, u: ^ui.Ui) {
 		switch l.source {
 		case .None:
 		case .Game_Files:
-			browser(&l.browser, u)
+			if l.importer.thread != nil {
+				import_status(l, u)
+			} else if browser(&l.browser, u) {
+				import_start(&l.importer, l.browser.picked[:])
+			}
 		case .Url:
 			if clay.UI()(ui.row(8)) {
 				submitted := ui.field(u, clay.ID("Url"), &l.url, "https://.../pack.tar")

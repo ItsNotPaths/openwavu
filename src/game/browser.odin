@@ -72,7 +72,8 @@ browser_destroy :: proc(b: ^Browser) {
 	}
 }
 
-browser :: proc(b: ^Browser, u: ^ui.Ui) {
+// True when Import is pressed; the picked paths are the importer's inputs.
+browser :: proc(b: ^Browser, u: ^ui.Ui) -> (import_picked: bool) {
 	if !b.opened {
 		home, _ := os.user_home_dir(context.temp_allocator)
 		browser_open(b, home)
@@ -119,12 +120,11 @@ browser :: proc(b: ^Browser, u: ^ui.Ui) {
 					}
 					clear(&b.picked)
 				}
-				if ui.button(u, clay.ID("Import"), "Import") {
-					import_game(b.picked[:])
-				}
+				import_picked = ui.button(u, clay.ID("Import"), "Import")
 			}
 		}
 	}
+	return
 }
 
 // The folder above dir. Above a root is the root list, shown only when there are several roots.
@@ -148,9 +148,6 @@ pick :: proc(b: ^Browser, path: string) {
 		append(&b.picked, strings.clone(path))
 	}
 }
-
-// (hole launcher-import :tags (game importer) :needs titlepack-synth) Import does nothing: the picked paths are not passed to the importer (tk5.find_game, tk5.run), and there is no progress screen.
-import_game :: proc(paths: []string) {}
 
 @(private = "file")
 join :: proc(a, b: string) -> string {

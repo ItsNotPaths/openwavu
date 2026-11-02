@@ -3,6 +3,7 @@ package tk5_importer
 import "core:fmt"
 import "core:os"
 import "core:strings"
+import "core:sync"
 import "../../db"
 import convert "../../convert/tk5"
 import formats "../../formats/tk5"
@@ -22,13 +23,23 @@ Archive :: struct {
 }
 
 Import :: struct {
-	archive: Archive,
-	root:    string,  // out/tk5
-	w:       db.Writer,
+	archive:  Archive,
+	game:     Game,
+	root:     string,
+	w:        db.Writer,
+	progress: ^Progress,
 }
 
-// Archive -> content pack under out/tk5/.
-run :: proc(game: Game, out: string) -> (err: string) {
+// Steps of one import, counted with atomics so another thread can show them.
+Progress :: struct {
+	done, total: int,
+}
+
+// One step per character and stage, one for the rest, one for the pack file.
+PROGRESS_STEPS :: len(formats.CHARACTERS) + formats.STAGE_COUNT + 2
+
+// Archive -> the stock pack's files under root.
+run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string) {
 	table, ok := formats.read_file_table(game.eboot, game.build)
 	if !ok do return "file table not found in EBOOT"
 	defer delete(table)
@@ -36,9 +47,8 @@ run :: proc(game: Game, out: string) -> (err: string) {
 	if open_err != nil do return "cannot open T55DATA1.BIN"
 	defer os.close(file)
 
-	im := Import{archive = {table, file}, root = strings.clone(join(out, "tk5"))}
-	defer delete(im.root)
-	for dir in ([]string{"anims", "parts", "stages", "images"}) {
+	im := Import{archive = {table, file}, game = game, root = root, progress = progress}
+	for dir in ([]string{"anims", "parts", "stages", "ui"}) {
 		if !make_dir(join(im.root, dir)) do return fmt.tprintf("cannot create %s", join(im.root, dir))
 	}
 	im.w, err = db.create(join(im.root, "tk5.db"), TK5_SCHEMA)
@@ -54,53 +64,68 @@ run :: proc(game: Game, out: string) -> (err: string) {
 	if err = import_characters(&im); err != "" do return err
 	common := read_entry(im.archive, formats.COMMON_ANIMS) or_else nil
 	write_bank(&im, "common", common)
-	for id in 0 ..< formats.STAGE_COUNT do import_stage(&im, id)
+	for id in 0 ..< formats.STAGE_COUNT {
+		import_stage(&im, id)
+		step(&im)
+	}
 	import_sounds(&im)
 	import_images(&im)
+	step(&im)
 	return db.finish(w)
+}
+
+step :: proc(im: ^Import) {
+	if im.progress != nil do sync.atomic_add(&im.progress.done, 1)
 }
 
 import_characters :: proc(im: ^Import) -> (err: string) {
 	for c, char_index in formats.CHARACTERS {
-		defer free_all(context.temp_allocator)
-		w := &im.w
-		db.insert(w, "character", c.id, c.name, i64(char_index))
-		owner := formats.container_owner(c.container)
+		// errors are temp strings: clone before the temp memory goes
+		if err = import_character(im, c, char_index); err != "" do return strings.clone(err)
+		free_all(context.temp_allocator)
+		step(im)
+	}
+	return ""
+}
 
-		packed := read_entry(im.archive, formats.MOTBIN_FIRST + 2 * char_index) or_else nil
-		data, unpacked := formats.unlz(packed, context.temp_allocator)
-		m, read := formats.read_motbin(data, context.temp_allocator)
-		if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
-		if err = convert.write_moveset_rows(w, c.id, owner, char_index, m); err != "" do return err
-		if m.bank_offsets[0] < len(data) do write_bank(im, convert.embedded_owner(c.id), data[m.bank_offsets[0]:])
-		if m.bank_offsets[formats.BANK_HANDS] < len(data) do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), data[m.bank_offsets[formats.BANK_HANDS]:])
-		skeleton, has_skeleton := character_skeleton(im, c)
-		if !has_skeleton do return fmt.tprintf("%s: skeleton did not read", c.id)
-		convert.write_skeleton_rows(w, c.id, skeleton)
-		top, measured := idle_head_top(im, c, m, data, &skeleton)
-		if !measured do return fmt.tprintf("%s: standing idle did not read", c.id)
-		if err = convert.write_stock_rows(w, c.id, char_index, m, top); err != "" do return err
+import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> (err: string) {
+	w := &im.w
+	db.insert(w, "character", c.id, c.name, i64(char_index))
+	owner := formats.container_owner(c.container)
 
-		first, count := formats.costume_groups(c.container)
-		for k in 0 ..< count {
-			model, has := read_entry(im.archive, first + k * formats.GROUP_SIZE + formats.GROUP_MODEL)
-			if !has do continue
-			costume := fmt.tprintf("%d", k + 1)
-			part := fmt.tprintf("%s_%s", owner, costume)
-			parts := []string{part, fmt.tprintf("%s_lod", part)}
-			if owner == c.id && !import_parts(im, owner, parts, model) do continue
-			db.insert(w, "costume", c.id, costume)
-			for p in parts do db.insert(w, "costume_part", c.id, costume, p)
-		}
-		if owner == c.id {
-			container := read_entry(im.archive, c.container) or_else nil
-			sections, _ := formats.sections(container, context.temp_allocator)
-			// (hole face-anims :tags importer) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
-			// (hole intro-re :tags importer) intros, win poses and outros are not located: motbin moves or separate data, and where their camera tracks live. Leads: move properties 0x8001..0x8008 (camera, dropped by the sim), the type-1 anim sections 1..5 (tk5decomp docs/data.md), the flashback angles, the fight camera 0x75724 (for sdk-camera params only).
-			// (hole camera-anims :tags importer :needs intro-re) camera tracks are not imported (.anim layout tk5cam: position, target, roll, fov).
-			if len(sections) > 0 do write_bank(im, owner, sections[0])
-			if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
-		}
+	packed := read_entry(im.archive, formats.MOTBIN_FIRST + 2 * char_index) or_else nil
+	data, unpacked := formats.unlz(packed, context.temp_allocator)
+	m, read := formats.read_motbin(data, context.temp_allocator)
+	if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
+	if err = convert.write_moveset_rows(w, c.id, owner, char_index, m); err != "" do return err
+	if m.bank_offsets[0] < len(data) do write_bank(im, convert.embedded_owner(c.id), data[m.bank_offsets[0]:])
+	if m.bank_offsets[formats.BANK_HANDS] < len(data) do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), data[m.bank_offsets[formats.BANK_HANDS]:])
+	skeleton, has_skeleton := character_skeleton(im, c)
+	if !has_skeleton do return fmt.tprintf("%s: skeleton did not read", c.id)
+	convert.write_skeleton_rows(w, c.id, skeleton)
+	top, measured := idle_head_top(im, c, m, data, &skeleton)
+	if !measured do return fmt.tprintf("%s: standing idle did not read", c.id)
+	if err = convert.write_stock_rows(w, c.id, char_index, m, top); err != "" do return err
+
+	first, count := formats.costume_groups(c.container)
+	for k in 0 ..< count {
+		model, has := read_entry(im.archive, first + k * formats.GROUP_SIZE + formats.GROUP_MODEL)
+		if !has do continue
+		costume := fmt.tprintf("%d", k + 1)
+		part := fmt.tprintf("%s_%s", owner, costume)
+		parts := []string{part, fmt.tprintf("%s_lod", part)}
+		if owner == c.id && !import_parts(im, owner, parts, model) do continue
+		db.insert(w, "costume", c.id, costume)
+		for p in parts do db.insert(w, "costume_part", c.id, costume, p)
+	}
+	if owner == c.id {
+		container := read_entry(im.archive, c.container) or_else nil
+		sections, _ := formats.sections(container, context.temp_allocator)
+		// (hole face-anims :tags importer) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
+		// (hole intro-re :tags importer) intros, win poses and outros are not located: motbin moves or separate data, and where their camera tracks live. Leads: move properties 0x8001..0x8008 (camera, dropped by the sim), the type-1 anim sections 1..5 (tk5decomp docs/data.md), the flashback angles, the fight camera 0x75724 (for sdk-camera params only).
+		// (hole camera-anims :tags importer :needs intro-re) camera tracks are not imported (.anim layout tk5cam: position, target, roll, fov).
+		if len(sections) > 0 do write_bank(im, owner, sections[0])
+		if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
 	}
 	return ""
 }
@@ -260,15 +285,23 @@ import_stage :: proc(im: ^Import, index: int) {
 import_sounds :: proc(im: ^Import) {}
 
 // (hole tim2-textures :tags importer :sev polish) model section 17 (TIM2) is not decoded.
-// (hole ui-images :tags (importer titlepack) :needs tim2-textures) only entries 33..36 (two logos, Panda and Kuma renders) are pulled; the rest of the game's 2D art is not found or dumped into ui/.
+// (hole ui-images :tags (importer titlepack) :needs tim2-textures) only entries 33..36 (two logos, Panda and Kuma renders) and the PS3 menu art next to PARAM.SFO are pulled; the rest of the game's 2D art is not found or dumped into ui/.
 import_images :: proc(im: ^Import) {
 	for index in 33 ..< 37 {
 		defer free_all(context.temp_allocator)
 		data, has := read_entry(im.archive, index)
-		if !has do continue
-		file := fmt.tprintf("images/%d.png", index)
-		if os.write_entire_file(join(im.root, file), data) == nil do db.insert(&im.w, "image", fmt.tprintf("%d", index), file)
+		if has do write_image(im, fmt.tprintf("%d", index), data)
 	}
+	for name in ([]string{"icon0", "pic0", "pic1", "pic2"}) {
+		defer free_all(context.temp_allocator)
+		data, err := os.read_entire_file(join(im.game.dir, fmt.tprintf("%s.PNG", strings.to_upper(name, context.temp_allocator))), context.temp_allocator)
+		if err == nil do write_image(im, name, data)
+	}
+}
+
+write_image :: proc(im: ^Import, id: string, png: []byte) {
+	file := fmt.tprintf("ui/%s.png", id)
+	if os.write_entire_file(join(im.root, file), png) == nil do db.insert(&im.w, "image", id, file)
 }
 
 // Unpacked archive entry in temp memory. The LZ layer, if any, stays.

@@ -25,6 +25,7 @@ main :: proc() {
 		os.exit(1)
 	}
 	defer ui.destroy(&u)
+	// (hole stock-rebuild :tags (game importer) :needs titlepack-installed) the stock pack is not rebuilt when its pack.toml version differs from this openwavu's importer; the [import] inputs are recorded for it.
 	l := Launcher{packs = titlepack.installed()}
 	defer launcher_destroy(&l)
 

@@ -18,19 +18,21 @@ Param_Set :: struct {
 
 Title_Pack :: struct {
 	id, version: string,
-	// (hole pack-base :tags titlepack :needs titlepack-format) the base import (game id, import schema version) is not checked; a pack for an import the player lacks fails inside the sim, not at join.
-	base:        string,  // e.g. "tk5/1"
+	// (hole pack-base :tags titlepack :needs titlepack-format) bases are not checked; a pack whose base the player lacks, or has at another version, fails inside the sim, not at join.
+	bases:       []string,  // pack ids, bottom first; a stock pack has none
 	sim, app:    [32]u8,  // module hashes; stock modules are hashes too
 	files:       map[string][32]u8,  // pack path -> hash
 	mirrors:     []string,
 	params:      map[string]Param_Set,
-	overlays:    [][32]u8,
 }
 
-// (hole titlepack-format :tags titlepack :sev blocker) pack.toml is not read: id, version, optional base, module hashes, files, mirrors, params, overlays.
+// (hole titlepack-format :tags titlepack :sev blocker) pack.toml is not read: id, version, bases, module hashes, files, mirrors, params.
 read_titlepack :: proc(manifest: []byte, allocator := context.allocator) -> (tp: Title_Pack, ok: bool) {
 	return {}, false
 }
+
+// (hole data-dir :tags titlepack :sev polish) packs live in the working directory, not a per-user data folder.
+PACKS_DIR :: "packs"
 
 // (hole titlepack-installed :tags titlepack :needs titlepack-format) installed packs are not listed; the launcher grid only shows the install tile.
 installed :: proc(allocator := context.allocator) -> []Title_Pack {
@@ -50,9 +52,4 @@ resolve_params :: proc(declared: []Param, layers: []map[string]Param_Set) -> (fi
 // (hole titlepack-hash :tags titlepack :needs (titlepack-format param-layers)) the lobby hash (manifest hash + final params) is not computed.
 lobby_hash :: proc(manifest_hash: [32]u8, final: map[string]f64) -> (hash: [32]u8) {
 	return {}
-}
-
-// (hole titlepack-synth :tags (titlepack importer) :needs (titlepack-format ui-images)) the importer does not write the stock pack .tar (game data, ui/ images, openwavu's wasm modules, pack.toml); openwavu updates do not rebuild it.
-stock_pack :: proc(import_dir, out_path: string) -> (ok: bool) {
-	return false
 }
