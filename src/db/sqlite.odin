@@ -14,6 +14,9 @@ DONE :: 101
 OPEN_READWRITE :: 0x02
 OPEN_CREATE :: 0x04
 TRANSIENT :: rawptr(~uintptr(0))
+DESERIALIZE_FREEONCLOSE :: 1
+DESERIALIZE_RESIZEABLE :: 2
+SERIALIZE_NOCOPY :: 1
 
 @(default_calling_convention = "c", link_prefix = "sqlite3_")
 foreign sqlite {
@@ -34,4 +37,7 @@ foreign sqlite {
 	column_int64 :: proc(stmt: ^Stmt, i: c.int) -> i64 ---
 	column_double :: proc(stmt: ^Stmt, i: c.int) -> f64 ---
 	column_text :: proc(stmt: ^Stmt, i: c.int) -> cstring ---
+	malloc64 :: proc(n: u64) -> rawptr ---
+	deserialize :: proc(db: ^Sqlite, schema: cstring, data: [^]u8, size, buffer_size: i64, flags: c.uint) -> c.int ---
+	serialize :: proc(db: ^Sqlite, schema: cstring, size: ^i64, flags: c.uint) -> [^]u8 ---
 }

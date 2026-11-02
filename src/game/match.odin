@@ -9,11 +9,11 @@ import "../sim"
 import "../titlepack"
 
 // Runs a match until Escape or window close, then returns to the launcher.
-// (hole game-loop :tags game :needs (pack-open fighter-data-load sim-step render-fighter render-stage input-pad mod-scene mod-ui mod-menus match-local bot-input stock-modules) :sev blocker) no offline match vs the CPU in the stock pack, started from its menus.
+// (hole game-loop :tags game :needs (fighter-data-load sim-step render-fighter render-stage input-pad mod-scene mod-ui mod-menus match-local bot-input stock-modules) :sev blocker) no offline match vs the CPU in the stock pack, started from its menus.
 play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack) {
 	pack, ok := content.open_pack("packs/tekken5dr.tar")
 	if !ok {
-		fmt.eprintln("openwavu: playing a pack is not built yet (hole pack-open)")
+		fmt.eprintln("openwavu: the pack did not open")
 		return
 	}
 	defer content.close_pack(&pack)
