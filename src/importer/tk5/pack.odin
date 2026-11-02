@@ -18,8 +18,12 @@ EMPTY_MODULE :: "\x00asm\x01\x00\x00\x00"
 build_pack :: proc(inputs: []string, packs_dir: string, keep := false, progress: ^Progress = nil) -> (err: string) {
 	if progress != nil do sync.atomic_store(&progress.total, PROGRESS_STEPS)
 	if !make_dir(packs_dir) do return fmt.aprintf("cannot create %s", packs_dir)
+	scratch := strings.clone(join(packs_dir, PACK_ID + ".source"))  // an unpacked .pkg
+	defer delete(scratch)
+	os.remove_all(scratch)
+	defer os.remove_all(scratch)
 	game: Game
-	if game, err = find_game(inputs); err != "" do return
+	if game, err = find_game(inputs, scratch); err != "" do return
 	defer destroy_game(game)
 	stage := strings.clone(join(packs_dir, PACK_ID))  // run frees temp memory
 	defer delete(stage)

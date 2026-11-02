@@ -14,21 +14,27 @@ Game :: struct {
 	dir:         string,  // holds PARAM.SFO and the PS3 menu art
 	eboot:       []byte,  // decrypted ELF, read for the archive file table
 	data:        string,  // path to T55DATA1.BIN (574 MB, read per entry)
-	data_sha256: string,
 }
 
-// Inputs: an RPCS3 dir (holds dev_hdd0/), or a game dir (holds PARAM.SFO) and optionally a .rap.
-// Without a .rap input, the RAP is searched in the game's USRDIR and in RPCS3's exdata.
-find_game :: proc(inputs: []string) -> (game: Game, err: string) {
-	game_dir, rap_path, rpcs3_hdd: string
+// Inputs: an RPCS3 dir (holds dev_hdd0/), a game dir (holds PARAM.SFO), or a .pkg (or a dir holding one), and optionally a .rap.
+// A .pkg is unpacked into scratch. Without a .rap input, the RAP is searched next to the .pkg, in the game's USRDIR and in RPCS3's exdata.
+find_game :: proc(inputs: []string, scratch: string) -> (game: Game, err: string) {
+	game_dir, pkg_path, rap_path, rpcs3_hdd: string
 	for in_path in inputs {
+		path := in_path
+		if pkg := dir_pkg(path); pkg != "" do path = pkg
 		switch {
-		case strings.has_suffix(strings.to_lower(in_path, context.temp_allocator), ".rap"): rap_path = in_path
-		case os.exists(join(in_path, "PARAM.SFO")): game_dir = in_path
-		case os.is_dir(join(in_path, "dev_hdd0")):
-			rpcs3_hdd = join(in_path, "dev_hdd0")
-		case: return game, fmt.tprintf("%s is not an RPCS3 dir, a game dir or a .rap file", in_path)
+		case has_extension(path, ".rap"): rap_path = path
+		case has_extension(path, ".pkg"): pkg_path = path
+		case os.exists(join(path, "PARAM.SFO")): game_dir = path
+		case os.is_dir(join(path, "dev_hdd0")):
+			rpcs3_hdd = join(path, "dev_hdd0")
+		case: return game, fmt.tprintf("%s is not an RPCS3 dir, a game dir, a .pkg or a .rap file", path)
 		}
+	}
+	if pkg_path != "" {
+		if err = ps3.unpack_pkg(pkg_path, scratch); err != "" do return
+		game_dir = scratch
 	}
 	if game_dir == "" && rpcs3_hdd != "" {
 		for b in formats.BUILDS {
@@ -47,6 +53,7 @@ find_game :: proc(inputs: []string) -> (game: Game, err: string) {
 	if rap_path == "" {
 		patterns := make([dynamic]string, context.temp_allocator)
 		append(&patterns, join(game_dir, "USRDIR", "*.rap"))
+		if pkg_path != "" do append(&patterns, join(filepath.dir(pkg_path), "*.rap"))
 		if rpcs3_hdd != "" do append(&patterns, join(rpcs3_hdd, "home", "*", "exdata", "*.rap"))
 		for pattern in patterns {
 			matches, _ := filepath.glob(pattern, context.temp_allocator)
@@ -66,9 +73,6 @@ find_game :: proc(inputs: []string) -> (game: Game, err: string) {
 	game.dir = strings.clone(game_dir)
 	game.eboot = elf
 	game.data = strings.clone(join(game_dir, "USRDIR", "T55DATA1.BIN"))
-	digest, io_err := hash.hash_file_by_name(.SHA256, game.data, allocator = context.temp_allocator)
-	if io_err != nil do return game, "cannot read T55DATA1.BIN"
-	game.data_sha256 = string(hex.encode(digest))
 	return game, ""
 }
 
@@ -76,7 +80,17 @@ destroy_game :: proc(game: Game) {
 	delete(game.eboot)
 	delete(game.dir)
 	delete(game.data)
-	delete(game.data_sha256)
+}
+
+// The .pkg inside dir, or "".
+dir_pkg :: proc(dir: string) -> string {
+	if !os.is_dir(dir) do return ""
+	matches, _ := filepath.glob(join(dir, "*.pkg"), context.temp_allocator)
+	return len(matches) > 0 ? matches[0] : ""
+}
+
+has_extension :: proc(path, extension: string) -> bool {
+	return strings.has_suffix(strings.to_lower(path, context.temp_allocator), extension)
 }
 
 sha256_hex :: proc(data: []byte) -> string {

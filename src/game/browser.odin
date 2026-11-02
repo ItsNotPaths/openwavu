@@ -6,16 +6,17 @@ import "core:path/filepath"
 import "core:slice"
 import "core:strings"
 import clay "../../vendor/clay"
+import tk5 "../importer/tk5"
 import "../ui"
 
-// Picks what the importer takes: an RPCS3 folder, or a game folder and optionally a .rap file.
+// Picks what the importer takes: an RPCS3 folder, a game folder or a .pkg, and optionally a .rap file.
 // dir "" is the list of filesystem roots (drive letters on Windows).
 Browser :: struct {
 	opened:  bool,
 	dir:     string,
-	entries: []os.File_Info,  // folders first, then .rap files
+	entries: []os.File_Info,  // folders first, then .pkg and .rap files
 	picked:  [dynamic]string,
-	is_game: bool,  // dir holds PARAM.SFO or dev_hdd0
+	is_game: bool,  // dir holds PARAM.SFO, dev_hdd0 or a .pkg
 	next:    Maybe(string),  // opened next frame; Clay still points at this frame's names
 }
 
@@ -34,10 +35,7 @@ browser_open :: proc(b: ^Browser, dir: string) {
 	}
 	all, _ := os.read_all_directory_by_path(dir, context.temp_allocator)
 	for entry in all {
-		if strings.has_prefix(entry.name, ".") {
-			continue
-		}
-		if entry.type == .Directory || strings.has_suffix(strings.to_lower(entry.name, context.temp_allocator), ".rap") {
+		if entry.type == .Directory || tk5.has_extension(entry.name, ".pkg") || tk5.has_extension(entry.name, ".rap") {
 			append(&entries, os.File_Info{fullpath = strings.clone(entry.fullpath), name = strings.clone(entry.name), type = entry.type})
 		}
 	}
@@ -48,7 +46,7 @@ browser_open :: proc(b: ^Browser, dir: string) {
 		return a.name < b.name
 	})
 	b.entries = entries[:]
-	b.is_game = os.exists(join(dir, "PARAM.SFO")) || os.is_dir(join(dir, "dev_hdd0"))
+	b.is_game = os.exists(join(dir, "PARAM.SFO")) || os.is_dir(join(dir, "dev_hdd0")) || tk5.dir_pkg(dir) != ""
 }
 
 browser_close :: proc(b: ^Browser) {

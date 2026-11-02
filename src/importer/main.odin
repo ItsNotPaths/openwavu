@@ -7,7 +7,7 @@ import "core:os"
 import tk5 "tk5"
 
 Args :: struct {
-	inputs: []string,  // an RPCS3 dir, or a game dir and optionally a .rap
+	inputs: []string,  // an RPCS3 dir, a game dir or a .pkg, and optionally a .rap
 	out:    string,
 	keep:   bool,  // keep the unpacked files in <out>/tekken5dr/
 }
@@ -32,7 +32,7 @@ parse_args :: proc(argv: []string) -> (args: Args, ok: bool) {
 main :: proc() {
 	args, ok := parse_args(os.args)
 	if !ok {
-		fmt.eprintln("usage: openwavu-import <rpcs3 dir | game dir [file.rap]> [-o packs] [-keep]")
+		fmt.eprintln("usage: openwavu-import <rpcs3 dir | game dir | file.pkg [file.rap]> [-o packs] [-keep]")
 		os.exit(2)
 	}
 	if err := tk5.build_pack(args.inputs, args.out, args.keep); err != "" {
