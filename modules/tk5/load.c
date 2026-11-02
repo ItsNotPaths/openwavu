@@ -977,6 +977,41 @@ const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *charac
     return failed;
 }
 
+static const char *anim_total(sqlite3 *db, const char *character, uint32_t *total) {
+    char owners[BANKS][OWNER_BYTES];
+    const char *failed = bank_owners(db, character, owners);
+    *total = 0;
+    for (int bank = 0; bank < BANKS && !failed; bank++) {
+        int32_t numbered;
+        uint32_t count;
+        failed = bank_count(db, owners[bank], &numbered, &count);
+        *total += count;
+    }
+    return failed;
+}
+
+const char *t5_load_fighter_storage(sqlite3 *db, const char *character, size_t *bytes) {
+    size_t anims, motbin;
+    uint32_t anim_count;
+    int32_t move_count;
+    const char *failed = t5_load_anims_storage(db, character, &anims);
+    if (!failed) failed = t5_load_motbin_storage(db, character, &motbin);
+    if (!failed) failed = anim_total(db, character, &anim_count);
+    if (!failed) failed = count_rows(db, character, &tables[0], &move_count);  // tables[0]: the moves
+    *bytes = failed ? 0 : anims + motbin + t5_fighter_finish_storage(anim_count, move_count);
+    return failed;
+}
+
+const char *t5_load_fighter(T5FighterData *data, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena) {
+    memset(data, 0, sizeof *data);
+    T5FighterFiles files = {0};
+    const char *failed = t5_load_anims(&files, db, character, read, context, arena);
+    if (!failed) failed = t5_load_motbin(&data->moves, db, character, t5_anim_bases(&files), arena);
+    if (!failed) failed = t5_load_skeleton(&data->skeleton, db, character);
+    if (!failed && t5_fighter_finish(data, &files, arena)) failed = fail("fighter %s: a move has no anim, or the arena is full", character);
+    return failed;
+}
+
 // The pose bank is the character's, the gestures belong to the owner of its own anim bank.
 static const char *hand_owners(sqlite3 *db, const char *character, char owners[2][HAND_OWNER_BYTES]) {
     char banks[3][OWNER_BYTES];

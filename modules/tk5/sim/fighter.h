@@ -456,8 +456,12 @@ typedef struct {
     T5AnimBank character, common, embedded;  // embedded.anim_count 0 = no embedded bank
 } T5FighterFiles;
 
+// (hole sim-files-drop :tags (tk5mod port)) tk5decomp's gates still load fighters from .t5m and .t5b: switch them to t5_load_fighter behind the parity gate, then drop these parsers and the Python installers.
 bool t5_fighter_storage(const T5FighterFiles *files, size_t *bytes);  // arena bytes that t5_fighter_build takes
 int t5_fighter_build(T5FighterData *data, const T5FighterFiles *files, T5Arena *arena);  // 0 on success
+// The steps after data's moves and skeleton are read: the anim list, the rig, the move lengths, the copy of the moves.
+size_t t5_fighter_finish_storage(uint32_t anim_count, int32_t move_count);  // arena bytes t5_fighter_finish takes
+int t5_fighter_finish(T5FighterData *data, const T5FighterFiles *files, T5Arena *arena);  // 0 on success
 static inline const T5Anim *t5_fighter_anim(const T5FighterData *data, uint32_t index) {
     return index < data->anim_count ? data->anims[index] : NULL;  // an index past the bank gives no anim
 }

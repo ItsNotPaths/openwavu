@@ -41,8 +41,7 @@ db_loads_like_sim_files :: proc(t: ^testing.T) {
 	if !testing.expect_value(t, db.finish(&w), "") do return
 	defer os.remove(STOCK_DB)
 
-	built := build_sim_tool(LOAD_PARITY, "-Ivendor/sqlite", "tests/ref/load_parity.c", "modules/tk5/load.c", "modules/tk5/sim/stage_file.c", "modules/tk5/sim/motbin.c",
-		"modules/tk5/sim/anim.c", "modules/tk5/sim/skel.c", "vendor/sqlite/libsqlite3.a", "-lpthread")
+	built := build_loader_tool(LOAD_PARITY, "tests/ref/load_parity.c")
 	if !testing.expect(t, built, "tests/ref/load_parity.c did not build") do return
 	for name in MOTBIN_NAMES {
 		defer free_all(context.temp_allocator)

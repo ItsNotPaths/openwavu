@@ -29,6 +29,13 @@ build_sim_tool :: proc(out: string, sources: ..string) -> bool {
 	return err == nil && state.exit_code == 0
 }
 
+// A tool that links the db loader (modules/tk5/load.c) and what it calls.
+build_loader_tool :: proc(out, tool: string) -> bool {
+	sim :: "modules/tk5/sim/"
+	return build_sim_tool(out, "-Ivendor/sqlite", tool, "modules/tk5/load.c", sim + "stage_file.c", sim + "anim.c", sim + "fighter_data.c",
+		sim + "motbin.c", sim + "skel.c", "vendor/sqlite/libsqlite3.a", "-lpthread")
+}
+
 // The tool's output for one file; nil when it fails.
 run_sim_tool :: proc(tool, file: string) -> []byte {
 	state, stdout, _, err := os.process_exec({command = {tool, file}}, context.temp_allocator)

@@ -119,8 +119,7 @@ compare_ids_are_global :: proc(t: ^testing.T) {
 
 @(private = "file")
 build_load_lists :: proc(t: ^testing.T, test: string) -> bool {
-	built := build_sim_tool(fmt.tprintf("build/%s", test), "-Ivendor/sqlite", "tests/ref/load_lists.c", "modules/tk5/load.c", "modules/tk5/sim/stage_file.c",
-		"modules/tk5/sim/anim.c", "vendor/sqlite/libsqlite3.a", "-lpthread")
+	built := build_loader_tool(fmt.tprintf("build/%s", test), "tests/ref/load_lists.c")
 	return testing.expect(t, built, "tests/ref/load_lists.c did not build")
 }
 
@@ -161,8 +160,7 @@ LOAD_ANIMS_ROOT :: "build/load_anims_pack"
 // key order; a file that is not a tk5 .anim fails the load.
 @(test)
 anims_share_by_file :: proc(t: ^testing.T) {
-	built := build_sim_tool(LOAD_ANIMS, "-Ivendor/sqlite", "tests/ref/load_anims.c", "modules/tk5/load.c", "modules/tk5/sim/stage_file.c", "modules/tk5/sim/anim.c",
-		"vendor/sqlite/libsqlite3.a", "-lpthread")
+	built := build_loader_tool(LOAD_ANIMS, "tests/ref/load_anims.c")
 	if !testing.expect(t, built, "tests/ref/load_anims.c did not build") do return
 	os.make_directory(LOAD_ANIMS_ROOT)
 	defer os.remove_all(LOAD_ANIMS_ROOT)

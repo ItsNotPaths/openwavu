@@ -35,6 +35,9 @@ const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *charac
 // The finger pose library and gestures of the character (owners <character>/hand_poses, <its bank>/hand_gestures).
 const char *t5_load_hands_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t5_load_hands takes
 const char *t5_load_hands(T5HandBanks *banks, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena);
+// The whole fighter of a character: its anim banks, moves and skeleton, and the steps after them (t5_fighter_finish).
+const char *t5_load_fighter_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t5_load_fighter takes
+const char *t5_load_fighter(T5FighterData *data, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena);
 // A stage's collision: the collision glb and .surfaces file of its stage row.
 const char *t5_load_stage_storage(sqlite3 *db, const char *stage, T5ReadFile read, void *context, size_t *bytes);
 const char *t5_load_stage(T5Stage *out, sqlite3 *db, const char *stage, T5ReadFile read, void *context, T5Arena *arena);
