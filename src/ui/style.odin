@@ -9,7 +9,7 @@ DISPLAY_FONT :: #load("../../vendor/fonts/Michroma-Regular.ttf")
 // Colours are 0xRRGGBBAA, as in docs/launcher-spec.md.
 
 BACKGROUND :: 0x000000ff
-LED        :: 0xc4a2ffff
+LED        :: 0xff5a4aff
 TEXT       :: 0xecebe6ff
 TEXT_DIM   :: 0x94969cff
 TEXT_OFF   :: 0x5c6372ff
