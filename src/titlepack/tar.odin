@@ -170,7 +170,7 @@ pax_path :: proc(records: []byte) -> (path: string) {
 	return
 }
 
-@(private = "file")
+@(private)
 safe_path :: proc(path: string) -> bool {
 	if path == "" || path[0] == '/' || strings.contains_any(path, ":\\") do return false
 	rest := path
