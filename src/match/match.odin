@@ -16,6 +16,7 @@ Match :: struct {
 	bot_sides: bit_set[0 ..< 2; u32],
 	view:      [dynamic]byte,  // the sim view of the last tick: the presenter's ow_view
 	behind:    u64,            // display time in ns not stepped yet
+	ticked:    bool,           // the last frame ran a tick, so the presenter's scene is a new tick's
 }
 
 // Starts the mode's sim and presenter, compiled by the caller. The pack must outlive the match.
@@ -33,6 +34,7 @@ start :: proc(engine: wasm.Engine, sim_code, presenter_code: wasm.Module, pack: 
 @(private = "file")
 start_modules :: proc(m: ^Match, engine: wasm.Engine, sim_code, presenter_code: wasm.Module, pack: ^presentation.Pack, request: imports.Match_Request, seed: u64) -> (err: string) {
 	if m.world, err = sim.create(engine, sim_code, pack.content, request.params, request.loadouts, seed); err != "" do return
+	if err = copy_view(m); err != "" do return  // the presenter's init reads the match start's view
 	if m.presenter, err = presentation.create(engine, request.mode.presenter, pack); err != "" do return
 	if err = imports.define_view(m.presenter.linker, &m.view); err != "" do return
 	return presentation.start(m.presenter, presenter_code)
@@ -50,6 +52,7 @@ stop :: proc(m: ^Match) {
 // for a draw. A trap in either module comes back as err.
 frame :: proc(m: ^Match, pack: ^presentation.Pack, dt_ns: u64, pads: [2]sim.Input) -> (ended: bool, winner: i32, err: string) {
 	m.behind += dt_ns
+	m.ticked = m.behind >= TICK_NS
 	for ticks := 0; m.behind >= TICK_NS; ticks += 1 {
 		if ticks == CATCH_UP_TICKS {
 			m.behind = 0
@@ -59,12 +62,23 @@ frame :: proc(m: ^Match, pack: ^presentation.Pack, dt_ns: u64, pads: [2]sim.Inpu
 		if err = tick(m, pads); err != "" do return
 		if winner, ended = match_end(m.world); ended do return
 	}
+	if err = copy_view(m); err != "" do return
+	err = presentation.frame(m.presenter, pack, f32(dt_ns) / 1e9)
+	return
+}
+
+@(private = "file")
+copy_view :: proc(m: ^Match) -> (err: string) {
 	bytes: []byte
 	if bytes, err = sim.view(m.world); err != "" do return
 	resize(&m.view, len(bytes))
 	copy(m.view[:], bytes)
-	err = presentation.frame(m.presenter, pack, f32(dt_ns) / 1e9)
 	return
+}
+
+// How far the display is from the last tick to the next, 0 to 1.
+tick_alpha :: proc(m: ^Match) -> f32 {
+	return f32(m.behind) / TICK_NS
 }
 
 @(private = "file")

@@ -63,8 +63,8 @@ typedef struct {
 	                         // out _DRWOFF_ nodes (broken props: send one as its own part to show it)
 	uint32_t texture;        // an SDL texture handle of the pack, for a quad; 0 = none
 	OwTransform transform;
-	uint32_t bone_count;     // the pose, one OwTransform per glb skin joint, in joint order; 0 = the glb's own pose
-	uint32_t bone_offset;
+	uint32_t bone_count;     // the pose, one OwTransform per joint of the glb's first skin, in joint order, in the node's
+	uint32_t bone_offset;    // space; a zero rotation, or a joint past bone_count, keeps its glb rest pose under its parent
 	uint32_t clip;           // glb animation index + 1, played at clip_time; 0 = none
 	float clip_time;         // seconds
 	OwMaterial material;

@@ -9,7 +9,8 @@ Renderer :: struct {
 	device:      ^sdl.GPUDevice,  // Vulkan, shared by the 2D renderer and the 3D
 	renderer_2d:         ^sdl.Renderer,
 	gpu:         Gpu,
-	scene:       Scene,           // the last scene the app sent; kept until the next one
+	scene:       Scene,           // the last scene the pack sent; kept until the next one
+	from:        Scene,           // the last scene of the tick before scene's: where blending starts
 	scene_image: ^sdl.Texture,    // gpu.color for the 2D renderer
 	image_of:    ^sdl.GPUTexture, // the gpu.color scene_image wraps
 }
@@ -32,7 +33,7 @@ init :: proc(title: cstring, width, height: i32) -> (renderer: Renderer, ok: boo
 		sdl.DestroyWindow(renderer.window)
 		return {}, false
 	}
-	renderer.scene = scene_create()
+	renderer.scene, renderer.from = scene_create(), scene_create()
 	sdl.SetRenderVSync(renderer.renderer_2d, 1)
 	sdl.SetRenderDrawBlendMode(renderer.renderer_2d, sdl.BLENDMODE_BLEND)
 	return renderer, true
@@ -40,6 +41,7 @@ init :: proc(title: cstring, width, height: i32) -> (renderer: Renderer, ok: boo
 
 destroy :: proc(renderer: ^Renderer) {
 	scene_destroy(&renderer.scene)
+	scene_destroy(&renderer.from)
 	if renderer.scene_image != nil do sdl.DestroyTexture(renderer.scene_image)
 	gpu_destroy(&renderer.gpu)
 	sdl.DestroyRenderer(renderer.renderer_2d)
@@ -67,8 +69,10 @@ toggle_fullscreen :: proc(renderer: ^Renderer) {
 	sdl.SetWindowFullscreen(renderer.window, .FULLSCREEN not_in sdl.GetWindowFlags(renderer.window))
 }
 
-// Shows a newly sent scene from now on; s gets the old one's arrays to read the next into.
-show_scene :: proc(renderer: ^Renderer, scene: ^Scene) {
+// Shows a newly sent scene from now on; scene gets back arrays to read the next into. ticked: it is a new sim tick's, so
+// the scene so far becomes where blending starts; else it replaces the current one.
+show_scene :: proc(renderer: ^Renderer, scene: ^Scene, ticked: bool) {
+	if ticked do renderer.from, renderer.scene = renderer.scene, renderer.from
 	renderer.scene, scene^ = scene^, renderer.scene
 }
 
@@ -93,14 +97,14 @@ queue_scene :: proc(renderer: ^Renderer) -> (ok: bool) {
 	return sdl.RenderTexture(renderer.renderer_2d, renderer.scene_image, nil, nil)
 }
 
-// alpha: how far the display is between the last two sim ticks.
-// (hole render-fighter :tags render) skinned scene nodes are not drawn from their bones (position, rotation, scale).
-// (hole render-stage :tags render) mesh scene nodes are not drawn: no part of a glb, no hidden parts left out of the whole glb, _DRWOFF_ nodes not left out.
-// (hole scene-blend :tags render) no blending between the scenes of the last two sim ticks: nodes matched by id, bones, camera, clip times, fx ages; no-blend flag, gameplay class and the fps setting.
-draw_scene :: proc(renderer: ^Renderer, alpha: f32) -> (ok: bool) {
+// alpha: how far the display is from the last tick's scene to the newest. assets: the pack's, which the scene names;
+// nil draws no nodes.
+draw_scene :: proc(renderer: ^Renderer, assets: ^Assets, alpha: f32) -> (ok: bool) {
 	command := sdl.AcquireGPUCommandBuffer(renderer.device)
 	if command == nil do return false
-	if !draw_3d(&renderer.gpu, command, renderer.gpu.size, &renderer.scene, nil) {
+	shown := blend_scenes(&renderer.from, &renderer.scene, alpha)
+	draws := assets != nil ? scene_draws(shown, assets, &renderer.gpu) : nil
+	if !draw_3d(&renderer.gpu, command, renderer.gpu.size, shown, draws) {
 		_ = sdl.CancelGPUCommandBuffer(command)
 		return false
 	}

@@ -14,7 +14,7 @@ import "../wasm"
 
 // Runs the picked pack's entry module, one frame call per display frame, and the matches it starts, until the window
 // closes (quit) or a module traps, which cuts off the whole pack and returns to the launcher.
-// (hole game-loop :tags game :needs (render-fighter render-stage mod-scene mod-ui mod-menus stock-modules) :sev blocker) no offline match vs the CPU in the stock pack, started from its menus.
+// (hole game-loop :tags game :needs mod-menus :sev blocker) no offline match vs the CPU in the stock pack, started from its menus.
 // (hole pack-leave :tags game :needs app-shell) the player can not leave a running pack for the launcher; only closing the window ends it.
 play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (quit: bool) {
 	if tp.main == "" {
@@ -83,10 +83,11 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 			return
 		}
 		if running.scene.sent {
-			render.show_scene(r, &running.scene.scene)
+			render.show_scene(r, &running.scene.scene, game == nil || game.ticked)
 			running.scene.sent = false
 		}
-		if !render.draw_scene(r, 1) {
+		alpha: f32 = game != nil && frame_cap > 60 ? match.tick_alpha(game) : 1  // at 60 fps every frame is a tick: no blending
+		if !render.draw_scene(r, &running.scene.assets, alpha) {
 			fmt.eprintfln("openwavu: the 3D did not draw: %s", sdl.GetError())
 			return
 		}

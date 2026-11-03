@@ -24,7 +24,6 @@ Settings :: struct {
 }
 
 // The sim steps at 60; a higher cap draws frames in between.
-// (hole frame-interp :tags game :needs game-loop) above 60 fps the sim's frames are not interpolated.
 FRAME_CAPS :: [?]int{60, 90, 120, 144, 165, 240}
 POPUP_WIDTH :: 720
 POPUP_SLIDE :: 400  // more than the popup is tall

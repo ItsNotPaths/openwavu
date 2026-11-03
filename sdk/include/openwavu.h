@@ -60,7 +60,7 @@ OW_IMPORT(renderer) struct SDL_Renderer *ow_renderer(void);
 
 // What local player 0 or 1 holds this frame, an OW_PAD_* word; 0 for any other player. Menus read it too.
 OW_IMPORT(pad) uint32_t ow_pad(uint32_t player);
-// The sim view of the last frame; returns its length.
+// The sim view of the last frame (in ow_init: the match start's); returns its length.
 OW_IMPORT(view) int32_t ow_view(void *buf, uint32_t cap);
 // The whole 3D scene of this frame, an OwScene block (ow_scene.h); the host keeps it until the next one. A block that
 // does not read stops the module.

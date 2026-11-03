@@ -23,6 +23,7 @@ Model_Node :: struct {
 	local:    matrix[4, 4]f32,
 	mesh:     int,  // -1: none
 	skin:     int,  // -1: not skinned
+	bone:     int,  // its joint in the first skin, which a scene node's bones pose; -1: none
 }
 
 Primitive :: struct {
@@ -96,6 +97,7 @@ model_fill :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, model: ^Model, fi
 			children = node_indices(file, file_node.children),
 			mesh = file_node.mesh != nil ? int(cgltf.mesh_index(file, file_node.mesh)) : -1,
 			skin = file_node.skin != nil ? int(cgltf.skin_index(file, file_node.skin)) : -1,
+			bone = -1,
 		}
 		cgltf.node_transform_local(&file_node, cast([^]f32)&model.nodes[index].local)
 	}
@@ -124,6 +126,7 @@ model_fill :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, model: ^Model, fi
 		floats := uint(16 * len(binds))
 		if accessor.type != .mat4 || cgltf.accessor_unpack_floats(accessor, cast([^]f32)raw_data(binds), floats) != floats do return false
 	}
+	if len(model.skins) > 0 do for joint, bone in model.skins[0].joints do model.nodes[joint].bone = bone
 	for node in model.nodes {
 		if node.mesh < 0 do continue
 		joints := node.skin < 0 ? 1 : len(model.skins[node.skin].joints)
