@@ -1,5 +1,4 @@
 // TK5 sim init: reads the loadouts and params, and loads each side's fighter and the stage from the pack database.
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -33,39 +32,14 @@ static const char *new_arena(T5Arena *arena, size_t bytes) {
     return arena->base ? NULL : "out of memory";
 }
 
-// The statement on its first row; NULL, finalized, when there is none.
-static sqlite3_stmt *first_row(sqlite3_stmt *query) {
-    if (sqlite3_step(query) == SQLITE_ROW) return query;
-    sqlite3_finalize(query);
-    return NULL;
-}
-
-static sqlite3_stmt *row_by_text(sqlite3 *db, const char *sql, const char *key) {
-    sqlite3_stmt *query;
-    if (sqlite3_prepare_v2(db, sql, -1, &query, NULL) != SQLITE_OK) return NULL;
-    sqlite3_bind_text(query, 1, key, -1, SQLITE_STATIC);
-    return first_row(query);
-}
-
-static sqlite3_stmt *row_by_number(sqlite3 *db, const char *sql, int64_t key) {
-    sqlite3_stmt *query;
-    if (sqlite3_prepare_v2(db, sql, -1, &query, NULL) != SQLITE_OK) return NULL;
-    sqlite3_bind_int64(query, 1, key);
-    return first_row(query);
-}
-
 static const char *load_side(sqlite3 *db, uint32_t side) {
     T5SideData *picked = &t5_match_data.sides[side];
     if (ow_loadout(side, &picked->loadout, sizeof picked->loadout) != (int32_t)sizeof picked->loadout) return "a loadout is missing or not a T5Loadout";
     picked->loadout.character[T5_NAME_BYTES - 1] = 0;
-    sqlite3_stmt *row = row_by_text(db, "SELECT game_index, model FROM character WHERE id = ?1", picked->loadout.character);
-    if (!row) return "a loadout names no character";
-    picked->chara = (uint8_t)sqlite3_column_int(row, 0);
-    picked->model = (int16_t)sqlite3_column_int(row, 1);
-    sqlite3_finalize(row);
     size_t bytes;
     T5Arena arena;
-    const char *failed = t5_load_fighter_storage(db, picked->loadout.character, &bytes);
+    const char *failed = t5_load_character(db, picked->loadout.character, &picked->chara, &picked->model);
+    if (!failed) failed = t5_load_fighter_storage(db, picked->loadout.character, &bytes);
     if (!failed) failed = new_arena(&arena, bytes);
     if (!failed) failed = t5_load_fighter(&picked->data, db, picked->loadout.character, read_pack_file, NULL, &arena);
     return failed;
@@ -74,14 +48,11 @@ static const char *load_side(sqlite3 *db, uint32_t side) {
 // The stage param is the stage's game index.
 static const char *load_stage(sqlite3 *db) {
     T5MatchData *match_data = &t5_match_data;
-    int64_t index = (int64_t)ow_param(OW_STR("stage"), 0);
-    sqlite3_stmt *row = row_by_number(db, "SELECT id FROM stage WHERE game_index = ?1", index);
-    if (!row) return "the stage param names no stage";
-    snprintf(match_data->stage_id, sizeof match_data->stage_id, "%s", (const char *)sqlite3_column_text(row, 0));
-    sqlite3_finalize(row);
+    int64_t game_index = (int64_t)ow_param(OW_STR("stage"), 0);
     size_t bytes;
     T5Arena arena;
-    const char *failed = t5_load_stage_storage(db, match_data->stage_id, read_pack_file, NULL, &bytes);
+    const char *failed = t5_load_stage_id(db, game_index, match_data->stage_id, sizeof match_data->stage_id);
+    if (!failed) failed = t5_load_stage_storage(db, match_data->stage_id, read_pack_file, NULL, &bytes);
     if (!failed) failed = new_arena(&arena, bytes);
     if (!failed) failed = t5_load_stage(&match_data->stage, db, match_data->stage_id, read_pack_file, NULL, &arena);
     return failed;

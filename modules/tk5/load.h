@@ -47,6 +47,10 @@ const char *t5_own_anim_bank(sqlite3 *db, const char *character, char owner[T5_O
 // The whole fighter of a character: its anim banks, moves and skeleton, and the steps after them (t5_fighter_finish).
 const char *t5_load_fighter_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t5_load_fighter takes
 const char *t5_load_fighter(T5FighterData *data, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena);
+// A character's move set id and body model id (T5Fighter.chara, chara_40).
+const char *t5_load_character(sqlite3 *db, const char *character, uint8_t *chara, int16_t *model);
+// The id of the stage with this game index, NUL-terminated in stage.
+const char *t5_load_stage_id(sqlite3 *db, int64_t game_index, char *stage, size_t stage_bytes);
 // A stage's collision: the collision glb and .surfaces file of its stage row.
 const char *t5_load_stage_storage(sqlite3 *db, const char *stage, T5ReadFile read, void *context, size_t *bytes);
 const char *t5_load_stage(T5Stage *out, sqlite3 *db, const char *stage, T5ReadFile read, void *context, T5Arena *arena);
