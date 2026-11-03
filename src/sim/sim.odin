@@ -26,6 +26,7 @@ STEP_FUEL :: 2_000_000_000
 create :: proc(engine: wasm.Engine, module: wasm.Module, pack: ^content.Pack, params: map[string]f64, loadouts: [2][]byte, seed: u64) -> (w: ^World, err: string) {
 	w = new(World)
 	w.inputs.seed = seed
+	w.inputs.events = make([dynamic]imports.Event)  // the event import grows it with this allocator
 	for name, value in params do w.inputs.params[strings.clone(name)] = value
 	for loadout, side in loadouts do w.inputs.loadouts[side] = slice.clone(loadout)
 	defer if err != "" {

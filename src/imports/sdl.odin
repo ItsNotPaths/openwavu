@@ -38,7 +38,10 @@ Sdl_Set :: struct {
 
 SDL_RENDERER :: 1
 
+// The imports grow its lists with the allocator they are made with here.
 sdl_set_create :: proc(renderer: ^sdl.Renderer) -> (set: Sdl_Set) {
+	set.objects = make([dynamic]Sdl_Object)
+	set.free = make([dynamic]u32)
 	append(&set.objects, Sdl_Object{kind = .Renderer, pointer = renderer})
 	return
 }
