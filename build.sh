@@ -67,7 +67,7 @@ tk5_module() {
 	shift 2
 	if [ ! -f "$out" ] || [ -n "$(find modules/tk5 sdk build/sdk/libow_db.a -newer "$out" -print -quit)" ]; then
 		vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -fwrapv -ffp-contract=off -fno-fast-math -mexec-model=reactor \
-			-Imodules/tk5 -Isdk/include -Ivendor/sqlite -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $link \
+			-Imodules/tk5 -Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $link \
 			-o "$out" "$@" build/sdk/libow_db.a
 	fi
 }

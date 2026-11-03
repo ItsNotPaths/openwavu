@@ -18,7 +18,7 @@ build_sim_tool :: proc(out: string, sources: ..string) -> bool {
 build_loader_tool :: proc(out, tool: string, extra: ..string) -> bool {
 	sim :: "modules/tk5/sim/"
 	sources := make([dynamic]string, context.temp_allocator)
-	append(&sources, "-Ivendor/sqlite", tool, "modules/tk5/load.c", sim + "stage_file.c", sim + "anim.c", sim + "fighter_data.c",
+	append(&sources, "-Ivendor/sqlite", "-Ivendor/jsmn", tool, "modules/tk5/load.c", sim + "stage_file.c", sim + "anim.c", sim + "fighter_data.c",
 		sim + "motbin.c", sim + "skel.c", "vendor/sqlite/libsqlite3.a", "-lpthread")
 	append(&sources, ..extra)
 	return build_sim_tool(out, ..sources[:])
