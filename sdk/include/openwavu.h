@@ -53,6 +53,10 @@ OW_IMPORT(event) void ow_event(uint32_t kind, int32_t a, int32_t b);
 
 // Host imports, presentation modules.
 
+// The host's renderer, for the SDL calls in src/imports/sdl_allow.txt. SDL objects are handles: read sizes with
+// SDL_GetTextureSize, not texture->w. The host resets draw state (color, blend, clip) after each module draws.
+OW_IMPORT(renderer) struct SDL_Renderer *ow_renderer(void);
+
 // The sim view of the last frame; returns its length.
 OW_IMPORT(view) int32_t ow_view(void *buf, uint32_t cap);
 // The whole 3D scene of this frame; the host keeps it until the next one (docs/app.md).

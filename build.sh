@@ -55,11 +55,17 @@ tk5_module() {
 	fi
 }
 tk5_module gameplay.wasm "${tk5_core[@]}" modules/tk5/gameplay/*.c
+# The pack SDL imports, generated from the allowlist and SDL's own signatures.
+glue=src/imports/sdl_glue.odin
+if [ -n "$(find src/imports/sdl_allow.txt src/tools/sdlglue vendor/sdl3/dynapi vendor/sdl3_ttf/include -newer "$glue" -print -quit)" ]; then
+	odin run src/tools/sdlglue -vet -strict-style
+fi
 odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict-style
 # vendor:sdl3 links "system:SDL3": the -L dirs make that the vendored static libs.
-odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf"
+sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf"
+odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style "$sdl_libs"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
 if [ "$run_tests" = 1 ]; then
-	odin test tests -out:build/tests -o:speed -vet -strict-style
+	odin test tests -out:build/tests -o:speed -vet -strict-style "$sdl_libs"
 fi

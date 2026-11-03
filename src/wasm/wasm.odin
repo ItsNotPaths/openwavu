@@ -100,14 +100,14 @@ linker_destroy :: proc(l: Linker) {
 	wasmtime_linker_delete(l.handle)
 }
 
-// A host function under module "openwavu". params and results are I32, I64, F32 or F64.
-define_func :: proc(l: Linker, name: string, params, results: []u8, cb: Callback, data: rawptr = nil) -> (err: string) {
+// A host function, by default under module "openwavu". params and results are I32, I64, F32 or F64.
+define_func :: proc(l: Linker, name: string, params, results: []u8, cb: Callback, data: rawptr = nil, module := "openwavu") -> (err: string) {
 	ps, rs: Valtype_Vec
 	wasm_valtype_vec_new(&ps, len(params), valtypes(params))
 	wasm_valtype_vec_new(&rs, len(results), valtypes(results))
 	type := wasm_functype_new(&ps, &rs)
 	defer wasm_functype_delete(type)
-	return take_error(wasmtime_linker_define_func(l.handle, raw_data(HOST), len(HOST), raw_data(name), len(name), type, cb, data, nil))
+	return take_error(wasmtime_linker_define_func(l.handle, raw_data(module), len(module), raw_data(name), len(name), type, cb, data, nil))
 }
 
 // Instantiates, then runs the module's _initialize (a WASI reactor's libc setup) when it has one.
@@ -184,9 +184,6 @@ f64_val :: proc "contextless" (v: f64) -> (out: Val) {out.kind = F64; out.of.f64
 trap :: proc "contextless" (message: string) -> ^C_Trap {
 	return wasmtime_trap_new(raw_data(message), len(message))
 }
-
-@(private = "file")
-HOST := "openwavu"
 
 @(private = "file")
 export_of :: proc(s: Store, inst: Instance, name: string, kind: u8) -> (item: C_Extern, ok: bool) {

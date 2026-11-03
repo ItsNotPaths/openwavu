@@ -12,7 +12,7 @@ import "../ui"
 VERSION :: "openwavu 0.0.0-dev"
 
 // (hole app-shell :tags game :needs (render-gpu content-cache registry-verify)) no ROM import, join path for lobby links, or system overlay (controls, video, audio, leave pack).
-// (hole app-host :tags (game wasm) :needs (sdl-imports scene-api)) the pack's entry module is not run: no instance, no ow_frame call with the frame's command buffer, no cut-off of the whole pack when any module traps (its last scene stays drawn).
+// (hole app-host :tags (game wasm) :needs scene-api) the pack's entry module is not run: no instance, no ow_frame call with the frame's command buffer, no cut-off of the whole pack when any module traps (its last scene stays drawn), no reset of the renderer's draw state (color, blend, clip) after each module draws.
 main :: proc() {
 	if len(os.args) == 3 && os.args[1] == "--package" {
 		os.exit(package_folder(os.args[2]))

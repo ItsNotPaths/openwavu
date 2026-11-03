@@ -5,7 +5,7 @@
 
 #include "openwavu.h"
 
-// (hole sdk-ui :tags sdk :needs sdl-imports) no layout or widgets, and no stock screens (server list, lobby, character select) that take a style.
+// (hole sdk-ui :tags sdk) no layout or widgets, and no stock screens (server list, lobby, character select) that take a style.
 typedef struct OwUiStyle OwUiStyle;
 
 #endif

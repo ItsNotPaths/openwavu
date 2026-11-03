@@ -5,7 +5,7 @@
 
 #include "openwavu.h"
 
-// (hole sdk-sound :tags (sdk audio) :needs sdl-imports) no sound helper: no key list over the rollback window, no channels (one at a time cuts the old one, or overlap).
+// (hole sdk-sound :tags (sdk audio) :needs sdl-audio-imports) no sound helper: no key list over the rollback window, no channels (one at a time cuts the old one, or overlap).
 static inline void ow_sound_play(uint64_t key, uint32_t channel, OwStr path) {}
 
 #endif

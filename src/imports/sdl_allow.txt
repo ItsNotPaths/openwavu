@@ -1,0 +1,62 @@
+// The SDL3 and SDL_ttf functions presentation modules may call (docs/app.md). src/tools/sdlglue makes sdl_glue.odin from
+// this list and the signatures in vendor/sdl3/dynapi/SDL_dynapi_procs.h and vendor/sdl3_ttf/include/SDL3_ttf/SDL_ttf.h.
+// Argument notes, by position:
+//   2=3      argument 2 points at argument 3 items; a char text of length 0 runs to its NUL
+// Function notes:
+//   destroy  frees its first argument and everything made with it
+//   hand     glue written in sdl.odin
+
+// 2D on the host's renderer (ow_renderer)
+SDL_SetRenderDrawColor
+SDL_SetRenderDrawColorFloat
+SDL_SetRenderDrawBlendMode
+SDL_SetRenderClipRect
+SDL_GetRenderOutputSize
+SDL_RenderPoint
+SDL_RenderPoints 2=3
+SDL_RenderLine
+SDL_RenderLines 2=3
+SDL_RenderRect
+SDL_RenderRects 2=3
+SDL_RenderFillRect
+SDL_RenderFillRects 2=3
+SDL_RenderTexture
+SDL_RenderTextureRotated
+SDL_RenderTextureTiled
+SDL_RenderTexture9Grid
+SDL_RenderGeometry 3=4 5=6
+SDL_RenderDebugText
+
+// Textures
+SDL_CreateTexture
+SDL_UpdateTexture hand
+SDL_DestroyTexture destroy
+SDL_GetTextureSize
+SDL_SetTextureColorMod
+SDL_SetTextureColorModFloat
+SDL_SetTextureAlphaMod
+SDL_SetTextureAlphaModFloat
+SDL_SetTextureBlendMode
+SDL_SetTextureScaleMode
+
+// Font files from pack memory
+SDL_IOFromConstMem hand
+SDL_CloseIO destroy
+
+// Text
+TTF_OpenFontIO hand
+TTF_CloseFont destroy
+TTF_SetFontSize
+TTF_SetFontStyle
+TTF_GetFontHeight
+TTF_GetStringSize 2=3
+TTF_CreateRendererTextEngine
+TTF_DestroyRendererTextEngine destroy
+TTF_CreateText 3=4
+TTF_DestroyText destroy
+TTF_SetTextString 2=3
+TTF_SetTextColor
+TTF_SetTextColorFloat
+TTF_SetTextWrapWidth
+TTF_GetTextSize
+TTF_DrawRendererText
