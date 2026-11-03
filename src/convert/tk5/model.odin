@@ -32,7 +32,9 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 			prim.attributes["POSITION"] = gltf.add_accessor(&g, metres(p.positions), "VEC3", gltf.ARRAY_BUFFER, with_bounds = true)
 			if p.normals != nil do prim.attributes["NORMAL"] = gltf.add_accessor(&g, unit(p.normals), "VEC3", gltf.ARRAY_BUFFER)
 			if p.uvs != nil do prim.attributes["TEXCOORD_0"] = gltf.add_accessor(&g, finite(p.uvs), "VEC2", gltf.ARRAY_BUFFER)
-			if p.colors != nil do prim.attributes["COLOR_0"] = gltf.add_accessor(&g, p.colors, "VEC4", gltf.ARRAY_BUFFER)  // 1.0 = neutral, can exceed 1
+			// (hole part-vertex-color :tags (importer look) :sev polish) fighters' vertex colours are not drawn: their rgb is one constant per primitive (0 or 255) and only alpha varies, use unknown; kept as _TK5_COLOR.
+			if p.colors != nil && skin != nil do prim.attributes["_TK5_COLOR"] = gltf.add_accessor(&g, p.colors, "VEC4", gltf.ARRAY_BUFFER)
+			if p.colors != nil && skin == nil do prim.attributes["COLOR_0"] = gltf.add_accessor(&g, full_byte_neutral(p.colors), "VEC4", gltf.ARRAY_BUFFER)
 			if skin != nil && p.joints != nil {
 				prim.attributes["JOINTS_0"] = gltf.add_accessor(&g, used_joints(p.joints, p.weights), "VEC4", gltf.ARRAY_BUFFER)
 				prim.attributes["WEIGHTS_0"] = gltf.add_accessor(&g, normalized(p.weights), "VEC4", gltf.ARRAY_BUFFER)
@@ -116,6 +118,14 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 	append(&g.materials, out)
 	materials.by_look[look] = len(g.materials) - 1
 	return materials.by_look[look]
+}
+
+// Stage colours with byte 255 as neutral (1.0); the reader has 128 = 1.0. Trying it against stage-white-models.
+@(private = "file")
+full_byte_neutral :: proc(colors: [][4]f32) -> [][4]f32 {
+	out := make([][4]f32, len(colors))
+	for color, i in colors do out[i] = color * 128.0 / 255
+	return out
 }
 
 // Joint nodes in bind pose plus the skin. Returns the root nodes.
