@@ -29,16 +29,21 @@ create :: proc(engine: wasm.Engine, module: wasm.Module, pack: ^content.Pack, pa
 	w.inputs.events = make([dynamic]imports.Event)  // the event import grows it with this allocator
 	for name, value in params do w.inputs.params[strings.clone(name)] = value
 	for loadout, side in loadouts do w.inputs.loadouts[side] = slice.clone(loadout)
-	defer if err != "" {
+	if err = start(w, engine, module, pack); err != "" {
 		destroy(w)
-		w = nil
+		return nil, err
 	}
+	return w, ""
+}
+
+@(private = "file")
+start :: proc(w: ^World, engine: wasm.Engine, module: wasm.Module, pack: ^content.Pack) -> (err: string) {
 	if w.module, err = imports.module_create(engine, pack, "sim", MEMORY_CAP); err != "" do return
 	if err = imports.define_sim(w.module.linker, &w.inputs); err != "" do return
 	if err = imports.module_start(w.module, module, "ow_sim_init", INIT_FUEL); err != "" do return
 	has_memory: bool
-	if w.memory, has_memory = wasm.export_memory(w.module.store, w.module.instance, "memory"); !has_memory do return w, "the sim module exports no memory"
-	return w, ""
+	if w.memory, has_memory = wasm.export_memory(w.module.store, w.module.instance, "memory"); !has_memory do return "the sim module exports no memory"
+	return
 }
 
 destroy :: proc(w: ^World) {

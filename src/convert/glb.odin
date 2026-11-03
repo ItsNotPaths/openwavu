@@ -119,10 +119,7 @@ write_float :: proc(w: io.Writer, v: any, _: ^json.Marshal_Options) -> json.Mars
 
 read_glb :: proc(data: []byte, allocator := context.allocator) -> (g: Gltf, ok: bool) {
 	context.allocator = allocator
-	defer if !ok {
-		destroy_gltf(&g)
-		g = {}
-	}
+	defer if !ok do destroy_gltf(&g)  // the caller drops g
 	if len(data) < 20 || string(data[:4]) != "glTF" do return
 	version, _ := endian.get_u32(data[4:], .Little)
 	length, _ := endian.get_u32(data[8:], .Little)

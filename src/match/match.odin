@@ -23,14 +23,19 @@ start :: proc(engine: wasm.Engine, sim_code, presenter_code: wasm.Module, pack: 
 	m = new(Match)
 	m.bot_sides = request.bot_sides
 	m.view = make([dynamic]byte)
-	defer if err != "" {
+	if err = start_modules(m, engine, sim_code, presenter_code, pack, request, seed); err != "" {
 		stop(m)
-		m = nil
+		return nil, err
 	}
+	return m, ""
+}
+
+@(private = "file")
+start_modules :: proc(m: ^Match, engine: wasm.Engine, sim_code, presenter_code: wasm.Module, pack: ^presentation.Pack, request: imports.Match_Request, seed: u64) -> (err: string) {
 	if m.world, err = sim.create(engine, sim_code, pack.content, request.params, request.loadouts, seed); err != "" do return
 	if m.presenter, err = presentation.create(engine, request.mode.presenter, pack); err != "" do return
 	if err = imports.define_view(m.presenter.linker, &m.view); err != "" do return
-	return m, presentation.start(m.presenter, presenter_code)
+	return presentation.start(m.presenter, presenter_code)
 }
 
 stop :: proc(m: ^Match) {

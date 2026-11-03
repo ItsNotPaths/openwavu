@@ -85,3 +85,34 @@ entry_module_starts_a_bot_match :: proc(t: ^testing.T) {
 	testing.expect_value(t, views[0].of.i32, i32(frames))
 	log.infof("the match ended after %d frames", frames)
 }
+
+// A mode whose presenter does not start (an empty module, as the stock gamerender.wasm still is), or whose sim does
+// not, gives an error and leaves nothing running. Needs an import.
+@(test)
+match_with_a_broken_presenter_does_not_start :: proc(t: ^testing.T) {
+	if !os.exists(STOCK_PACK) do return
+	sim_bytes, read_err := os.read_entire_file(GAMEPLAY, context.temp_allocator)
+	if !testing.expect(t, read_err == nil) do return
+	pack, opened := content.open_pack(STOCK_PACK)
+	if !testing.expect(t, opened) do return
+	defer content.close_pack(&pack)
+	running := presentation.pack_create(&pack, nil)
+	defer presentation.pack_destroy(running)
+	engine := wasm.engine_create()
+	defer wasm.engine_destroy(engine)
+	empty, _ := wasm.wat_to_wasm("(module)", context.temp_allocator)
+	sim_code, sim_err := wasm.compile(engine, sim_bytes)
+	presenter_code, presenter_err := wasm.compile(engine, empty)
+	if !testing.expect_value(t, sim_err, "") || !testing.expect_value(t, presenter_err, "") do return
+	defer wasm.module_destroy(sim_code)
+	defer wasm.module_destroy(presenter_code)
+	params := make(map[string]f64, context.temp_allocator)
+	request := imports.Match_Request{{"versus", "gameplay.wasm", "gamerender.wasm"}, {}, {loadout_bytes("paul"), loadout_bytes("law")}, params}
+	m, err := match.start(engine, sim_code, presenter_code, running, request, 7)
+	testing.expect(t, m == nil)
+	testing.expect_value(t, err, "no exported function ow_init")
+	request.loadouts[1] = loadout_bytes("nobody")  // now the sim fails first
+	m, err = match.start(engine, sim_code, presenter_code, running, request, 7)
+	testing.expect(t, m == nil)
+	testing.expect(t, err != "", "a loadout with no character starts no match")
+}
