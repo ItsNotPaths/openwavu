@@ -3,7 +3,6 @@
 package sim
 
 import "core:slice"
-import "core:strings"
 import "../content"
 import "../imports"
 import "../wasm"
@@ -23,11 +22,11 @@ INIT_FUEL :: 200_000_000_000  // loading two fighters from the db
 STEP_FUEL :: 2_000_000_000
 
 // A new instance of the sim module, inited for a match. params and loadouts are copied.
-create :: proc(engine: wasm.Engine, module: wasm.Module, pack: ^content.Pack, params: map[string]f64, loadouts: [2][]byte, seed: u64) -> (w: ^World, err: string) {
+create :: proc(engine: wasm.Engine, module: wasm.Module, pack: ^content.Pack, params: map[string]string, loadouts: [2][]byte, seed: u64) -> (w: ^World, err: string) {
 	w = new(World)
 	w.inputs.seed = seed
 	w.inputs.events = make([dynamic]imports.Event)  // the event import grows it with this allocator
-	for name, value in params do w.inputs.params[strings.clone(name)] = value
+	w.inputs.params = imports.params_clone(params)
 	for loadout, side in loadouts do w.inputs.loadouts[side] = slice.clone(loadout)
 	if err = start(w, engine, module, pack); err != "" {
 		destroy(w)
@@ -48,8 +47,7 @@ start :: proc(w: ^World, engine: wasm.Engine, module: wasm.Module, pack: ^conten
 
 destroy :: proc(w: ^World) {
 	if w.module != nil do imports.module_destroy(w.module)
-	for name in w.inputs.params do delete(name)
-	delete(w.inputs.params)
+	imports.params_destroy(&w.inputs.params)
 	for loadout in w.inputs.loadouts do delete(loadout)
 	delete(w.inputs.events)
 	free(w)

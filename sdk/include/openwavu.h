@@ -24,12 +24,15 @@ typedef struct {
 // Host imports, both modules. The raw imports take (pointer, length); call the OwStr versions.
 
 OW_IMPORT(param) double ow_param_raw(const char *name, uint32_t name_len, double fallback);
+OW_IMPORT(param_text) int32_t ow_param_text_raw(const char *name, uint32_t name_len, char *buf, uint32_t cap);
 OW_IMPORT(content_read) int32_t ow_content_read_raw(const char *path, uint32_t path_len, uint32_t offset, void *buf, uint32_t cap);
 OW_IMPORT(content_size) int32_t ow_content_size_raw(const char *path, uint32_t path_len);
 OW_IMPORT(log) void ow_log_raw(const char *msg, uint32_t len);
 
-// Final value after all param layers; the default if the name is unknown.
+// Final value after all param layers, as a number; the fallback if the name is unknown or its value is not a number.
 static inline double ow_param(OwStr name, double fallback) { return ow_param_raw(name.data, name.len, fallback); }
+// Final value as text (a row id, like stage=dragons_nest), no NUL; returns its length, or -1 if the name is unknown.
+static inline int32_t ow_param_text(OwStr name, char *buf, uint32_t cap) { return ow_param_text_raw(name.data, name.len, buf, cap); }
 // Bytes of a pack file, from offset; returns the bytes copied, or -1 if there is no such file.
 static inline int32_t ow_content_read(OwStr path, uint32_t offset, void *buf, uint32_t cap) {
 	return ow_content_read_raw(path.data, path.len, offset, buf, cap);
@@ -110,7 +113,7 @@ typedef struct {
 OW_IMPORT(host_view) int32_t ow_host_view(OwHostView *view, uint32_t cap);
 // An offline match of a pack.toml mode, started at the next frame; 0, or -1 when refused (an unknown mode, params that
 // do not read, a match asked for or running). bot_sides: bit per side played by ow_bot_pad. params: values for params
-// the modules declare, as a lobby host sets them: `name=value` pairs split by spaces ("stage=3 rounds=5").
+// the modules declare, as a lobby host sets them: `name=value` pairs split by spaces ("stage=dragons_nest rounds=5").
 OW_IMPORT(match_local) int32_t ow_match_local(const char *mode, uint32_t mode_len, uint32_t bot_sides,
 	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len, const char *params, uint32_t params_len);
 // (hole app-modules :tags (sdk game wasm)) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.

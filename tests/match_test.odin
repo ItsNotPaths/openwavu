@@ -63,7 +63,8 @@ entry_module_starts_a_bot_match :: proc(t: ^testing.T) {
 	defer imports.match_request_destroy(&asked, state.allocator)
 	testing.expect_value(t, asked.mode.sim, "gameplay.wasm")
 	testing.expect_value(t, asked.bot_sides, bit_set[0 ..< 2; u32]{0, 1})
-	testing.expect_value(t, asked.params["rounds"], 2)
+	testing.expect_value(t, asked.params["rounds"], "2")
+	testing.expect_value(t, asked.params["stage"], "dragons_nest")
 	testing.expect_value(t, string(cstring(raw_data(asked.loadouts[1]))), "kazuya")
 	state.view.match = .Running
 	testing.expect_value(t, ask(t, entry, "ask_versus"), -1)  // one is running
@@ -110,8 +111,7 @@ match_with_a_broken_presenter_does_not_start :: proc(t: ^testing.T) {
 	if !testing.expect_value(t, sim_err, "") || !testing.expect_value(t, presenter_err, "") do return
 	defer wasm.module_destroy(sim_code)
 	defer wasm.module_destroy(presenter_code)
-	params := make(map[string]f64, context.temp_allocator)
-	request := imports.Match_Request{{"versus", "gameplay.wasm", "gamerender.wasm"}, {}, {loadout_bytes("paul"), loadout_bytes("law")}, params}
+	request := imports.Match_Request{{"versus", "gameplay.wasm", "gamerender.wasm"}, {}, {loadout_bytes("paul"), loadout_bytes("law")}, stage_params()}
 	m, err := match.start(engine, sim_code, presenter_code, running, request, 7)
 	testing.expect(t, m == nil)
 	testing.expect_value(t, err, "no exported function ow_init")
@@ -148,8 +148,7 @@ stock_presenter_shows_the_fighters_on_the_stage :: proc(t: ^testing.T) {
 	if !testing.expect_value(t, sim_err, "") || !testing.expect_value(t, presenter_err, "") do return
 	defer wasm.module_destroy(sim_code)
 	defer wasm.module_destroy(presenter_code)
-	params := make(map[string]f64, context.temp_allocator)
-	request := imports.Match_Request{{"versus", "gameplay.wasm", "gamerender.wasm"}, {0, 1}, {loadout_bytes("paul"), loadout_bytes("law")}, params}
+	request := imports.Match_Request{{"versus", "gameplay.wasm", "gamerender.wasm"}, {0, 1}, {loadout_bytes("paul"), loadout_bytes("law")}, stage_params()}
 	m, err := match.start(engine, sim_code, presenter_code, running, request, 7)
 	if !testing.expect_value(t, err, "") do return
 	defer match.stop(m)

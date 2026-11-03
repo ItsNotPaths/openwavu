@@ -45,14 +45,15 @@ static const char *load_side(sqlite3 *db, uint32_t side) {
     return failed;
 }
 
-// The stage param is the stage's game index.
+// The stage param is a stage row's id.
 static const char *load_stage(sqlite3 *db) {
     T5MatchData *match_data = &t5_match_data;
-    int64_t game_index = (int64_t)ow_param(OW_STR("stage"), 0);
+    int32_t length = ow_param_text(OW_STR("stage"), match_data->stage_id, sizeof match_data->stage_id - 1);
+    if (length < 0 || length >= (int32_t)sizeof match_data->stage_id) return "the stage param is missing or too long";
+    match_data->stage_id[length] = 0;
     size_t bytes;
     T5Arena arena;
-    const char *failed = t5_load_stage_id(db, game_index, match_data->stage_id, sizeof match_data->stage_id);
-    if (!failed) failed = t5_load_stage_storage(db, match_data->stage_id, read_pack_file, NULL, &bytes);
+    const char *failed = t5_load_stage_storage(db, match_data->stage_id, read_pack_file, NULL, &bytes);
     if (!failed) failed = new_arena(&arena, bytes);
     if (!failed) failed = t5_load_stage(&match_data->stage, db, match_data->stage_id, read_pack_file, NULL, &arena);
     return failed;

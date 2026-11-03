@@ -1045,16 +1045,3 @@ const char *t5_load_character(sqlite3 *db, const char *character, uint8_t *chara
     sqlite3_finalize(row);
     return failed;
 }
-
-const char *t5_load_stage_id(sqlite3 *db, int64_t game_index, char *stage, size_t stage_bytes) {
-    sqlite3_stmt *row;
-    const char *sql = "SELECT id FROM stage WHERE game_index = ?1";
-    if (sqlite3_prepare_v2(db, sql, -1, &row, NULL) != SQLITE_OK) return fail("%s: %s", sql, sqlite3_errmsg(db));
-    sqlite3_bind_int64(row, 1, game_index);
-    const char *failed = NULL;
-    const char *id = sqlite3_step(row) == SQLITE_ROW ? (const char *)sqlite3_column_text(row, 0) : NULL;
-    if (!id) failed = fail("no stage of game index %lld", (long long)game_index);
-    else snprintf(stage, stage_bytes, "%s", id);
-    sqlite3_finalize(row);
-    return failed;
-}

@@ -24,6 +24,12 @@ loadout_bytes :: proc(character: string) -> []byte {
 	return ([^]byte)(l)[:size_of(T5_Loadout)]
 }
 
+stage_params :: proc() -> map[string]string {
+	params := make(map[string]string, context.temp_allocator)
+	params["stage"] = "dragons_nest"
+	return params
+}
+
 // Two bots play an offline match to its end in the stock sim module, on the stock pack. Needs an import.
 @(test)
 stock_sim_plays_a_match :: proc(t: ^testing.T) {
@@ -39,9 +45,7 @@ stock_sim_plays_a_match :: proc(t: ^testing.T) {
 	module, compile_err := wasm.compile(engine, code)
 	if !testing.expect_value(t, compile_err, "") do return
 	defer wasm.module_destroy(module)
-	params := make(map[string]f64, context.temp_allocator)
-	params["stage"] = 0
-	w, err := sim.create(engine, module, &pack, params, {loadout_bytes("paul"), loadout_bytes("kazuya")}, 7)
+	w, err := sim.create(engine, module, &pack, stage_params(), {loadout_bytes("paul"), loadout_bytes("kazuya")}, 7)
 	if !testing.expect_value(t, err, "") do return
 	defer sim.destroy(w)
 

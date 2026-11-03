@@ -64,6 +64,7 @@ CREATE TABLE anim (  -- rows with the same file are one anim: the game compares 
 CREATE TABLE stage (
 	id         TEXT PRIMARY KEY,
 	name       TEXT NOT NULL,
+	-- (hole stage-game-index :tags (importer tools) :sev polish) game_index is read only by tk5decomp's harness (the game's stage numbers in recordings); matches name a stage by id.
 	game_index INTEGER,
 	file       TEXT NOT NULL,
 	collision  TEXT NOT NULL,

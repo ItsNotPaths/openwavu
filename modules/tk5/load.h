@@ -49,8 +49,6 @@ const char *t5_load_fighter_storage(sqlite3 *db, const char *character, size_t *
 const char *t5_load_fighter(T5FighterData *data, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena);
 // A character's move set id and body model id (T5Fighter.chara, chara_40).
 const char *t5_load_character(sqlite3 *db, const char *character, uint8_t *chara, int16_t *model);
-// The id of the stage with this game index, NUL-terminated in stage.
-const char *t5_load_stage_id(sqlite3 *db, int64_t game_index, char *stage, size_t stage_bytes);
 // A stage's collision: the collision glb and .surfaces file of its stage row.
 const char *t5_load_stage_storage(sqlite3 *db, const char *stage, T5ReadFile read, void *context, size_t *bytes);
 const char *t5_load_stage(T5Stage *out, sqlite3 *db, const char *stage, T5ReadFile read, void *context, T5Arena *arena);

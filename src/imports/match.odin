@@ -2,7 +2,6 @@ package imports
 
 import "base:runtime"
 import "core:slice"
-import "core:strconv"
 import "core:strings"
 import "../titlepack"
 import "../wasm"
@@ -12,7 +11,7 @@ Match_Request :: struct {
 	mode:      titlepack.Mode,
 	bot_sides: bit_set[0 ..< 2; u32],  // ow_bot_pad plays these
 	loadouts:  [2][]byte,
-	params:    map[string]f64,
+	params:    map[string]string,  // name -> value text, as the entry module wrote it
 }
 
 // The host view (openwavu.h OwHostView), which the host keeps current.
@@ -51,8 +50,7 @@ entry_create :: proc(modes: []titlepack.Mode) -> Entry {
 
 match_request_destroy :: proc(r: ^Match_Request, allocator: runtime.Allocator) {
 	for loadout in r.loadouts do delete(loadout, allocator)
-	for name in r.params do delete(name, allocator)
-	delete(r.params)
+	params_destroy(&r.params, allocator)
 }
 
 // host_view(buf, cap) -> its length, copying as much as fits. match_local(mode, len, bot_sides, loadout0, len,
@@ -69,20 +67,32 @@ define_view :: proc(l: wasm.Linker, view: ^[dynamic]byte) -> (err: string) {
 	return wasm.define_func(l, "view", {wasm.I32, wasm.I32}, {wasm.I32}, view_import, view)
 }
 
-// "stage=3 rounds=5" -> the values; ok is false for a pair that does not read.
-parse_params :: proc(text: string, allocator := context.allocator) -> (params: map[string]f64, ok: bool) {
-	params = make(map[string]f64, allocator)
+// "stage=dragons_nest rounds=5" -> the values as text; ok is false for a pair with no name or no `=`.
+parse_params :: proc(text: string, allocator := context.allocator) -> (params: map[string]string, ok: bool) {
+	params = make(map[string]string, allocator)
 	for pair in strings.fields(text, context.temp_allocator) {
 		name, eq, value := strings.partition(pair, "=")
-		number, is_number := strconv.parse_f64(value)
-		if name == "" || eq == "" || !is_number {
-			for key in params do delete(key, allocator)
-			delete(params)
+		if name == "" || eq == "" {
+			params_destroy(&params, allocator)
 			return nil, false
 		}
-		params[strings.clone(name, allocator)] = number
+		params[strings.clone(name, allocator)] = strings.clone(value, allocator)
 	}
 	return params, true
+}
+
+params_clone :: proc(params: map[string]string, allocator := context.allocator) -> map[string]string {
+	copied := make(map[string]string, allocator)
+	for name, value in params do copied[strings.clone(name, allocator)] = strings.clone(value, allocator)
+	return copied
+}
+
+params_destroy :: proc(params: ^map[string]string, allocator := context.allocator) {
+	for name, value in params {
+		delete(name, allocator)
+		delete(value, allocator)
+	}
+	delete(params^)
 }
 
 @(private = "file")
