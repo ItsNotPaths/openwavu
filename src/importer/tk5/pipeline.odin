@@ -32,7 +32,7 @@ Import :: struct {
 	root:     string,
 	w:        db.Writer,
 	progress: ^Progress,
-	textures: map[string]bool,  // <owner>/<hash> with a texture row
+	textures: map[string]bool,  // <owner>/<hash> with a texture row: its cutout
 }
 
 // Steps of one import, counted with atomics so another thread can show them.
@@ -171,14 +171,14 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 	skeleton := largest_skeleton(sections)
 	for placeholder, frame0 in swaps do if t, has := textures[frame0]; has do textures[placeholder] = t
 	if len(nud) < len(parts) || len(skeleton.bones) == 0 do return false
-	write_textures(im, owner, textures)
+	texture_files := write_textures(im, owner, textures)
 
 	dir := join(im.root, "parts", owner)
 	if !make_dir(dir) do return false
 	for part, i in parts {
 		meshes, read := formats.read_ndp3(nud[i], context.temp_allocator)
 		file := fmt.tprintf("parts/%s/%s.glb", owner, part)
-		if !read || !convert.write_model(join(im.root, file), meshes, skeleton) do return false
+		if !read || !convert.write_model(im.root, file, meshes, texture_files, skeleton) do return false
 		db.insert(&im.w, "part", part, owner, i == 0 ? "body" : "lod", parts[0], file)
 	}
 	for b, i in skeleton.bones {
@@ -227,20 +227,27 @@ idle_head_top :: proc(im: ^Import, c: formats.Character, m: formats.Motbin, data
 }
 
 // Each new hash of owner as a texture row, in hash order. A MIF placeholder's row names its frame 0 file.
-write_textures :: proc(im: ^Import, owner: string, textures: convert.Textures) {
+// Returns the file of every hash that has one, written now or before.
+write_textures :: proc(im: ^Import, owner: string, textures: convert.Textures) -> (files: convert.Texture_Files) {
+	files = make(convert.Texture_Files, context.temp_allocator)
 	if !make_dir(join(im.root, "textures", owner)) do return
 	hashes, _ := slice.map_keys(textures, context.temp_allocator)
 	slice.sort(hashes)
 	for hash in hashes {
-		key := fmt.tprintf("%s/%08x", owner, hash)
-		if key in im.textures do continue
 		t := textures[hash]
-		dds, cutout, ok := convert.texture_dds(t, context.temp_allocator)
 		file := fmt.tprintf("textures/%s/%08x.dds", owner, t.hash)
+		key := fmt.tprintf("%s/%08x", owner, hash)
+		if cutout, written := im.textures[key]; written {
+			files[hash] = {file, cutout}
+			continue
+		}
+		dds, cutout, ok := convert.texture_dds(t, context.temp_allocator)
 		if !ok || os.write_entire_file(join(im.root, file), dds) != nil do continue
 		db.insert(&im.w, "texture", owner, i64(hash), file, i64(cutout ? 1 : 0))
-		im.textures[strings.clone(key)] = true
+		im.textures[strings.clone(key)] = cutout
+		files[hash] = {file, cutout}
 	}
+	return
 }
 
 // Every anim of a body bank as anims/<owner>/<idx>.anim. Ids that share a record share the file of the first one.
@@ -313,8 +320,8 @@ import_stage :: proc(im: ^Import, index: int) {
 	}
 	// (hole stage-break-pieces :tags importer :sev polish) section 4 (flying pieces of breakable props) is not exported.
 	file := fmt.tprintf("stages/%s.glb", id)
-	write_textures(im, id, textures)
-	if len(meshes) > 0 && !convert.write_model(join(im.root, file), meshes[:], nil, matrices[:]) do return
+	texture_files := write_textures(im, id, textures)
+	if len(meshes) > 0 && !convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:]) do return
 	collision, surfaces := fmt.tprintf("stages/%s.collision.glb", id), fmt.tprintf("stages/%s.surfaces", id)
 	if !convert.write_stage_collision(join(im.root, collision), join(im.root, surfaces), s) do return
 	db.insert(&im.w, "stage", id, id, i64(index), file, collision, surfaces)

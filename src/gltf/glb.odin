@@ -7,7 +7,10 @@ import "base:intrinsics"
 import "base:runtime"
 import "core:io"
 import "core:os"
+import "core:path/slashpath"
+import "core:slice"
 import "core:strconv"
+import "core:strings"
 
 FLOAT :: 5126
 UNSIGNED_BYTE :: 5121
@@ -15,20 +18,25 @@ UNSIGNED_SHORT :: 5123
 UNSIGNED_INT :: 5125
 ARRAY_BUFFER :: 34962
 ELEMENT_ARRAY_BUFFER :: 34963
+TRIANGLES :: 4
 
 Gltf :: struct {
-	asset:       struct {version, generator: string},
-	scene:       int,
-	scenes:      [dynamic]Scene `json:",omitempty"`,
-	nodes:       [dynamic]Node `json:",omitempty"`,
-	meshes:      [dynamic]Mesh `json:",omitempty"`,
-	materials:   [dynamic]Material `json:",omitempty"`,
-	skins:       [dynamic]Skin `json:",omitempty"`,
-	animations:  [dynamic]Animation `json:",omitempty"`,
-	accessors:   [dynamic]Accessor `json:",omitempty"`,
-	bufferViews: [dynamic]Buffer_View `json:",omitempty"`,
-	buffers:     [dynamic]Buffer `json:",omitempty"`,
-	bin:         [dynamic]byte `json:"-"`,
+	asset:              struct {version, generator: string},
+	scene:              int,
+	scenes:             [dynamic]Scene `json:",omitempty"`,
+	nodes:              [dynamic]Node `json:",omitempty"`,
+	meshes:             [dynamic]Mesh `json:",omitempty"`,
+	materials:          [dynamic]Material `json:",omitempty"`,
+	textures:           [dynamic]Texture `json:",omitempty"`,
+	images:             [dynamic]Image `json:",omitempty"`,
+	skins:              [dynamic]Skin `json:",omitempty"`,
+	animations:         [dynamic]Animation `json:",omitempty"`,
+	accessors:          [dynamic]Accessor `json:",omitempty"`,
+	bufferViews:        [dynamic]Buffer_View `json:",omitempty"`,
+	buffers:            [dynamic]Buffer `json:",omitempty"`,
+	extensionsUsed:     [dynamic]string `json:",omitempty"`,
+	extensionsRequired: [dynamic]string `json:",omitempty"`,
+	bin:                [dynamic]byte `json:"-"`,
 }
 
 Scene :: struct {nodes: [dynamic]int}
@@ -49,15 +57,31 @@ Mesh :: struct {
 }
 Primitive :: struct {
 	attributes: map[string]int,
+	mode:       Maybe(int) `json:",omitempty"`,  // TRIANGLES when none
 	indices:    Maybe(int) `json:",omitempty"`,
 	material:   Maybe(int) `json:",omitempty"`,
 }
 Material :: struct {
 	name:                 string `json:",omitempty"`,
-	pbrMetallicRoughness: struct {metallicFactor: f32},
+	pbrMetallicRoughness: struct {
+		baseColorTexture: Maybe(Texture_Info) `json:",omitempty"`,
+		metallicFactor:   f32,
+	},
+	alphaMode:            string `json:",omitempty"`,  // OPAQUE when empty; MASK cuts out below alpha 0.5
 	doubleSided:          bool,
 	extras:               json.Object `json:",omitempty"`,  // raw game material data
 }
+Texture_Info :: struct {index: int}
+// source: a PNG or JPEG image; a DDS one comes through MSFT_texture_dds.
+Texture :: struct {
+	source:     Maybe(int) `json:",omitempty"`,
+	extensions: Maybe(Texture_Extensions) `json:",omitempty"`,
+}
+Texture_Extensions :: struct {dds: Maybe(Texture_Source) `json:"MSFT_texture_dds,omitempty"`}
+Texture_Source :: struct {source: int}
+
+DDS_EXTENSION :: "MSFT_texture_dds"
+Image :: struct {uri: string}  // relative to the glb
 Skin :: struct {
 	joints:              [dynamic]int,
 	inverseBindMatrices: Maybe(int) `json:",omitempty"`,
@@ -225,8 +249,12 @@ destroy_gltf :: proc(g: ^Gltf, allocator := context.allocator) {
 	}
 	for material in g.materials {
 		delete(material.name)
+		delete(material.alphaMode)
 		json.destroy_value(material.extras)
 	}
+	for image in g.images do delete(image.uri)
+	for extension in g.extensionsUsed do delete(extension)
+	for extension in g.extensionsRequired do delete(extension)
 	for skin in g.skins do delete(skin.joints)
 	for animation in g.animations {
 		delete(animation.name)
@@ -244,6 +272,10 @@ destroy_gltf :: proc(g: ^Gltf, allocator := context.allocator) {
 	delete(g.nodes)
 	delete(g.meshes)
 	delete(g.materials)
+	delete(g.textures)
+	delete(g.images)
+	delete(g.extensionsUsed)
+	delete(g.extensionsRequired)
 	delete(g.skins)
 	delete(g.animations)
 	delete(g.accessors)
@@ -284,6 +316,36 @@ add_accessor :: proc(g: ^Gltf, data: []$T, type: string, target: Maybe(int) = ni
 	}
 	append(&g.accessors, a)
 	return len(g.accessors) - 1
+}
+
+// A texture over a DDS file, which no viewer can read without the extension. uri: relative to the glb.
+add_dds_texture :: proc(g: ^Gltf, uri: string) -> int {
+	if !slice.contains(g.extensionsRequired[:], DDS_EXTENSION) {
+		append(&g.extensionsUsed, DDS_EXTENSION)
+		append(&g.extensionsRequired, DDS_EXTENSION)
+	}
+	append(&g.images, Image{uri = uri})
+	append(&g.textures, Texture{extensions = Texture_Extensions{dds = Texture_Source{len(g.images) - 1}}})
+	return len(g.textures) - 1
+}
+
+// The uri from the glb at glb_path to the file at path, both pack paths.
+relative_uri :: proc(glb_path, path: string, allocator := context.allocator) -> string {
+	b := strings.builder_make(allocator)
+	for _ in 0 ..< strings.count(glb_path, "/") do strings.write_string(&b, "../")
+	strings.write_string(&b, path)
+	return strings.to_string(b)
+}
+
+// The pack path of the file a uri in the glb at glb_path names; false for a uri that leaves the pack.
+uri_path :: proc(glb_path, uri: string, allocator := context.allocator) -> (path: string, ok: bool) {
+	dir := slashpath.dir(glb_path, context.temp_allocator)
+	path = slashpath.join({dir, uri}, allocator)
+	if path == ".." || strings.has_prefix(path, "../") || strings.has_prefix(path, "/") || strings.contains(uri, ":") {
+		delete(path, allocator)
+		return "", false
+	}
+	return path, true
 }
 
 write_glb :: proc(g: ^Gltf, path: string) -> (ok: bool) {

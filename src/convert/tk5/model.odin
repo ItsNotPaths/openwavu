@@ -1,10 +1,11 @@
-// Character parts and stage scenes as glb: skinned meshes, metres, Y up. Textures are DDS files (texture.odin); materials name them by hash.
+// Character parts and stage scenes as glb: skinned meshes, metres, Y up. Materials point at their DDS files (texture.odin).
 package tk5_convert
 
 import "core:encoding/json"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
+import "core:path/filepath"
 import "core:slice"
 import "../../gltf"
 import formats "../../formats/tk5"
@@ -12,8 +13,8 @@ import formats "../../formats/tk5"
 MM :: 1000.0  // file millimetres per glTF metre
 BODY_BONES :: 23  // animated by the 23 channels; the rest are helpers
 
-// skeleton: nil for unskinned (stage) geometry. matrices: per mesh, row vectors in file units, or nil.
-write_model :: proc(path: string, meshes: []formats.Mesh, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil) -> (ok: bool) {
+// Writes root/file. skeleton: nil for unskinned (stage) geometry. matrices: per mesh, row vectors in file units, or nil.
+write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Texture_Files, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil) -> (ok: bool) {
 	context.allocator = context.temp_allocator
 	g: gltf.Gltf
 	scene: gltf.Scene
@@ -22,7 +23,7 @@ write_model :: proc(path: string, meshes: []formats.Mesh, skeleton: Maybe(format
 		append(&scene.nodes, ..add_skin(&g, s, max_joint(meshes) + 1)[:])
 		skin = 0
 	}
-	materials := make(map[u32]int)
+	materials := Materials{glb = file, files = textures, by_hash = make(map[u32]int)}
 	for mesh, mesh_index in meshes {
 		out := gltf.Mesh{name = mesh.name}
 		for p in mesh.polys {
@@ -30,7 +31,7 @@ write_model :: proc(path: string, meshes: []formats.Mesh, skeleton: Maybe(format
 			prim.attributes["POSITION"] = gltf.add_accessor(&g, metres(p.positions), "VEC3", gltf.ARRAY_BUFFER, with_bounds = true)
 			if p.normals != nil do prim.attributes["NORMAL"] = gltf.add_accessor(&g, unit(p.normals), "VEC3", gltf.ARRAY_BUFFER)
 			if p.uvs != nil do prim.attributes["TEXCOORD_0"] = gltf.add_accessor(&g, finite(p.uvs), "VEC2", gltf.ARRAY_BUFFER)
-			if p.colors != nil do prim.attributes["_COLOR"] = gltf.add_accessor(&g, p.colors, "VEC4", gltf.ARRAY_BUFFER)  // 1.0 = neutral, can exceed 1
+			if p.colors != nil do prim.attributes["COLOR_0"] = gltf.add_accessor(&g, p.colors, "VEC4", gltf.ARRAY_BUFFER)  // 1.0 = neutral, can exceed 1
 			if skin != nil && p.joints != nil {
 				prim.attributes["JOINTS_0"] = gltf.add_accessor(&g, used_joints(p.joints, p.weights), "VEC4", gltf.ARRAY_BUFFER)
 				prim.attributes["WEIGHTS_0"] = gltf.add_accessor(&g, normalized(p.weights), "VEC4", gltf.ARRAY_BUFFER)
@@ -52,16 +53,28 @@ write_model :: proc(path: string, meshes: []formats.Mesh, skeleton: Maybe(format
 		append(&scene.nodes, len(g.nodes) - 1)
 	}
 	append(&g.scenes, scene)
+	path, _ := filepath.join({root, file})
 	return gltf.write_glb(&g, path)
+}
+
+@(private = "file")
+Materials :: struct {
+	glb:     string,  // the pack path being written
+	files:   Texture_Files,
+	by_hash: map[u32]int,
 }
 
 // One glTF material per first-pass texture; every pass goes to extras as stored, texture hashes included.
 @(private = "file")
-material :: proc(g: ^gltf.Gltf, cache: ^map[u32]int, passes: []formats.Material) -> int {
+material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material) -> int {
 	hash: u32 = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0
-	if m, seen := cache[hash]; seen do return m
+	if m, seen := materials.by_hash[hash]; seen do return m
 	out: gltf.Material
 	out.doubleSided = true
+	if file, has := materials.files[hash]; has && len(passes[0].textures) > 0 {
+		out.pbrMetallicRoughness.baseColorTexture = gltf.Texture_Info{gltf.add_dds_texture(g, gltf.relative_uri(materials.glb, file.path))}
+		if file.cutout do out.alphaMode = "MASK"
+	}
 	extras := make(json.Object)
 	pass_values := make(json.Array)
 	for p in passes {
@@ -72,8 +85,8 @@ material :: proc(g: ^gltf.Gltf, cache: ^map[u32]int, passes: []formats.Material)
 	extras["tk5_passes"] = pass_values
 	out.extras = extras
 	append(&g.materials, out)
-	cache[hash] = len(g.materials) - 1
-	return cache[hash]
+	materials.by_hash[hash] = len(g.materials) - 1
+	return materials.by_hash[hash]
 }
 
 // Joint nodes in bind pose plus the skin. Returns the root nodes.

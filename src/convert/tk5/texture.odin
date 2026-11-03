@@ -5,6 +5,13 @@ import formats "../../formats/tk5"
 
 Textures :: map[u32]formats.Texture  // by hash, MIF placeholders already resolved
 
+// A texture's DDS file in the pack, by hash.
+Texture_Files :: map[u32]Texture_File
+Texture_File :: struct {
+	path:   string,
+	cutout: bool,  // draw with alpha test
+}
+
 // NTP3 texture -> DDS bytes: DXT blocks as stored, ARGB8 as RGBA8.
 // (hole texture-alpha-re :tags importer) any texel alpha < 128 makes the texture cut-out; some costume textures (kazuya pants) use alpha for something else, likely a colour mask, and draw see-through.
 // (hole texture-mips :tags importer :sev polish) only the top mip is read; the DDS files have no mip chain.

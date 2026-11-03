@@ -108,7 +108,7 @@ CREATE TABLE glyph (  -- one character on a font page; px
 	PRIMARY KEY (font, code)
 );
 
-CREATE TABLE texture (  -- DDS files; glb materials name them by hash in their extras, unique per owner only
+CREATE TABLE texture (  -- DDS files, which glb materials point at; hashes are unique per owner only
 	owner  TEXT NOT NULL,  -- the part's owner or the stage
 	hash   INTEGER NOT NULL,
 	file   TEXT NOT NULL,
