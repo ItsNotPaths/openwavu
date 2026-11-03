@@ -6,6 +6,7 @@
 #include "loadout.h"
 #include "sim/phase.h"
 #include "sim/skel.h"
+#include "sim/world.h"
 
 enum { T5_VIEW_VERSION = 1 };
 
@@ -27,7 +28,7 @@ typedef struct {
     int32_t timer;        // frames left on the round clock
     uint32_t wins_needed;
     char stage[T5_NAME_BYTES];  // the db stage id
-    T5ViewFighter fighters[2];
+    T5ViewFighter fighters[T5_FIGHTER_COUNT];
 } T5View;
 
 #endif
