@@ -44,7 +44,7 @@ scene_from_a_module_reads_back :: proc(t: ^testing.T) {
 	if !testing.expect_value(t, len(s.nodes), 2) do return
 	fighter, prop := s.nodes[0], s.nodes[1]
 	testing.expect_value(t, string(cstring(&fighter.id[0])), "fighter")
-	testing.expect_value(t, running.scene.assets[fighter.asset - 1], "notes.txt")
+	testing.expect_value(t, running.scene.assets.paths[fighter.asset - 1], "notes.txt")
 	testing.expect_value(t, len(fighter.bones), 3)
 	testing.expect_value(t, fighter.bones[2].scale.z, 2)
 	testing.expect_value(t, fighter.flags, bit_set[render.Node_Flag; u32]{.No_Blend})

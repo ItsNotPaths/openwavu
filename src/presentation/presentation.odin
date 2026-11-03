@@ -6,6 +6,7 @@ package presentation
 import sdl "vendor:sdl3"
 import "../content"
 import "../imports"
+import "../render"
 import "../wasm"
 
 MEMORY_CAP :: 512 << 20
@@ -18,12 +19,14 @@ Pack :: struct {
 	sdl:     imports.Sdl_Set,
 	scene:   imports.Scene_Inbox,
 	pads:    [2]u32,  // the host sets them each frame
+	gpu:     ^render.Gpu,
 }
 
-// renderer: the host's, for the pack's 2D.
-pack_create :: proc(files: ^content.Pack, renderer: ^sdl.Renderer) -> (p: ^Pack) {
+// renderer: the host's, for the pack's 2D. gpu: the one the scene's assets load on; nil draws no scene.
+pack_create :: proc(files: ^content.Pack, renderer: ^sdl.Renderer, gpu: ^render.Gpu = nil) -> (p: ^Pack) {
 	p = new(Pack)
 	p.content = files
+	p.gpu = gpu
 	p.sdl = imports.sdl_set_create(renderer)
 	p.scene = imports.scene_inbox_create(files)
 	return
@@ -31,7 +34,7 @@ pack_create :: proc(files: ^content.Pack, renderer: ^sdl.Renderer) -> (p: ^Pack)
 
 pack_destroy :: proc(p: ^Pack) {
 	imports.sdl_set_destroy(&p.sdl)
-	imports.scene_inbox_destroy(&p.scene)
+	imports.scene_inbox_destroy(&p.scene, p.gpu)
 	free(p)
 }
 

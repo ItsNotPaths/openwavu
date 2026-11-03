@@ -8,27 +8,19 @@ import "../wasm"
 
 // What the scene imports collect for one pack: the files its scenes name, and the last scene a module sent.
 Scene_Inbox :: struct {
-	pack:      ^content.Pack,
-	assets:    [dynamic]string,  // pack paths; an asset id is index + 1
-	asset_ids: map[string]u32,
-	scene:     render.Scene,
-	sent:      bool,             // a scene came since the host last took one
+	assets: render.Assets,
+	scene:  render.Scene,
+	sent:   bool,  // a scene came since the host last took one
 }
 
 // The imports grow its lists with the allocator they are made with here.
 scene_inbox_create :: proc(pack: ^content.Pack) -> Scene_Inbox {
-	return {
-		pack = pack,
-		assets = make([dynamic]string),
-		asset_ids = make(map[string]u32),
-		scene = render.scene_create(),
-	}
+	return {assets = render.assets_create(pack.files), scene = render.scene_create()}
 }
 
-scene_inbox_destroy :: proc(inbox: ^Scene_Inbox) {
-	for path in inbox.assets do delete(path)
-	delete(inbox.assets)
-	delete(inbox.asset_ids)
+// g: the GPU the pack's assets were loaded on; nil when none were.
+scene_inbox_destroy :: proc(inbox: ^Scene_Inbox, g: ^render.Gpu) {
+	render.assets_destroy(&inbox.assets, g)
 	render.scene_destroy(&inbox.scene)
 }
 
@@ -46,16 +38,7 @@ asset :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs
 	results[0] = wasm.i32_val(0)
 	bytes, ok := wasm.span(wasm.caller_memory(caller), u32(args[0].of.i32), u32(args[1].of.i32))
 	if !ok do return wasm.trap("ow_asset: the path is outside the module's memory")
-	path := string(bytes)
-	if id, known := inbox.asset_ids[path]; known {
-		results[0] = wasm.i32_val(i32(id))
-		return nil
-	}
-	if _, found := content.pack_size(inbox.pack^, path); !found do return nil
-	append(&inbox.assets, strings.clone(path, inbox.assets.allocator))
-	id := u32(len(inbox.assets))
-	inbox.asset_ids[inbox.assets[id - 1]] = id
-	results[0] = wasm.i32_val(i32(id))
+	results[0] = wasm.i32_val(i32(render.asset_id(&inbox.assets, string(bytes))))
 	return nil
 }
 

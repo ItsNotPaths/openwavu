@@ -14,8 +14,6 @@ Renderer :: struct {
 	image_of:    ^sdl.GPUTexture, // the gpu.color scene_image wraps
 }
 
-Model :: struct {}
-
 init :: proc(title: cstring, width, height: i32) -> (r: Renderer, ok: bool) {
 	if !sdl.Init({.VIDEO, .GAMEPAD}) {
 		return {}, false
@@ -69,11 +67,6 @@ toggle_fullscreen :: proc(r: ^Renderer) {
 	sdl.SetWindowFullscreen(r.window, .FULLSCREEN not_in sdl.GetWindowFlags(r.window))
 }
 
-// (hole glb-loader :tags render :sev blocker) parts and stages are not uploaded to the GPU.
-load_glb :: proc(r: ^Renderer, path: string) -> (m: Model, ok: bool) {
-	return {}, false
-}
-
 // Shows a newly sent scene from now on; s gets the old one's arrays to read the next into.
 show_scene :: proc(r: ^Renderer, s: ^Scene) {
 	r.scene, s^ = s^, r.scene
@@ -101,8 +94,8 @@ queue_scene :: proc(r: ^Renderer) -> (ok: bool) {
 }
 
 // alpha: how far the display is between the last two sim ticks.
-// (hole render-fighter :tags render :needs glb-loader) skinned scene nodes are not drawn from their bones (position, rotation, scale).
-// (hole render-stage :tags render :needs glb-loader) mesh scene nodes are not drawn: no part of a glb, no hidden parts left out of the whole glb, _DRWOFF_ nodes not left out.
+// (hole render-fighter :tags render) skinned scene nodes are not drawn from their bones (position, rotation, scale).
+// (hole render-stage :tags render) mesh scene nodes are not drawn: no part of a glb, no hidden parts left out of the whole glb, _DRWOFF_ nodes not left out.
 // (hole scene-blend :tags render) no blending between the scenes of the last two sim ticks: nodes matched by id, bones, camera, clip times, fx ages; no-blend flag, gameplay class and the fps setting.
 draw_scene :: proc(r: ^Renderer, alpha: f32) -> (ok: bool) {
 	command := sdl.AcquireGPUCommandBuffer(r.device)
