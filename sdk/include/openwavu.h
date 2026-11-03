@@ -88,23 +88,23 @@ OW_EXPORT(ow_bot_pad) uint32_t ow_bot_pad(uint32_t side);
 // Host imports, entry module only. The host sends state, the entry module sends intents.
 
 // The host's state, copied in each frame: connection, server list, lobby, match state and result.
-// (hole host-view :tags (sdk game) :needs app-host) no host view layout and no ow_host_view import.
+// (hole host-view :tags (sdk game)) no host view layout and no ow_host_view import.
 OW_IMPORT(host_view) int32_t ow_host_view(void *buf, uint32_t cap);
 // An offline match of a pack.toml mode. bot_sides: bit per side played by ow_bot_pad. params: values for params the
 // modules declare, as a lobby host sets them: `name=value` pairs split by spaces ("stage=3 rounds=5").
-// (hole match-local :tags (sdk game) :needs app-host) the host does not start a mode's sim and presenter with loadouts and bot sides, give the presenter the scene, or hand back to the entry module at the end.
+// (hole match-local :tags (sdk game)) the host does not start a mode's sim and presenter with loadouts and bot sides, give the presenter the scene, or hand back to the entry module at the end.
 OW_IMPORT(match_local) int32_t ow_match_local(const char *mode, uint32_t mode_len, uint32_t bot_sides,
 	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len, const char *params, uint32_t params_len);
-// (hole app-modules :tags (sdk game wasm) :needs app-host) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.
+// (hole app-modules :tags (sdk game wasm)) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.
 // (hole lobby-intents :tags (sdk net) :needs (host-view server-lobby)) no server refresh, lobby join, create, leave, or ready with a loadout.
-// (hole save-imports :tags (sdk game) :needs app-host) no ow_save_read or ow_save_write on the pack save (docs/packs.md).
+// (hole save-imports :tags (sdk game)) no ow_save_read or ow_save_write on the pack save (docs/packs.md).
 
 // Presentation exports. Outside rollback, once per rendered frame.
 
 OW_EXPORT(ow_init) int32_t ow_init(void);
 // cmdbuf: the frame's GPU command buffer id; the host draws the scene and the 2D renderer after this returns.
 OW_EXPORT(ow_frame) void ow_frame(float dt, uint32_t cmdbuf);
-// (hole app-events :tags (sdk game) :needs app-host) events to presentation modules have no kinds or payload format: filtered SDL key, mouse and text events, messages from ow_module_send.
+// (hole app-events :tags (sdk game)) events to presentation modules have no kinds or payload format: filtered SDL key, mouse and text events, messages from ow_module_send.
 OW_EXPORT(ow_on_event) void ow_on_event(uint32_t kind, const void *data, uint32_t size);
 
 #endif

@@ -50,6 +50,14 @@ sdl_set_destroy :: proc(set: ^Sdl_Set) {
 	delete(set.free)
 }
 
+// Puts back the renderer state the allowlist lets a pack change: draw color, draw blend mode, clip.
+sdl_reset :: proc(set: ^Sdl_Set) {
+	renderer := (^sdl.Renderer)(set.objects[SDL_RENDERER - 1].pointer)
+	_ = sdl.SetRenderDrawColor(renderer, 0, 0, 0, 255)
+	_ = sdl.SetRenderDrawBlendMode(renderer, sdl.BLENDMODE_BLEND)
+	_ = sdl.SetRenderClipRect(renderer, nil)
+}
+
 // The allowlisted SDL functions, and ow_renderer() -> the renderer's handle, on a module's linker.
 define_sdl :: proc(l: wasm.Linker, set: ^Sdl_Set) -> (err: string) {
 	hand := [?]Sdl_Define {

@@ -12,7 +12,6 @@ import "../ui"
 VERSION :: "openwavu 0.0.0-dev"
 
 // (hole app-shell :tags game :needs (render-gpu content-cache registry-verify)) no ROM import, join path for lobby links, or system overlay (controls, video, audio, leave pack).
-// (hole app-host :tags (game wasm) :needs scene-api) the pack's entry module is not run: no instance, no ow_frame call with the frame's command buffer, no cut-off of the whole pack when any module traps (its last scene stays drawn), no reset of the renderer's draw state (color, blend, clip) after each module draws.
 main :: proc() {
 	if len(os.args) == 3 && os.args[1] == "--package" {
 		os.exit(package_folder(os.args[2]))
@@ -60,14 +59,19 @@ main :: proc() {
 		render.begin_frame(&r, ui.color(ui.BACKGROUND))
 		ui.draw(&u, commands)
 		render.end_frame(&r)
-		budget := u64(1e9) / u64(l.settings.frame_cap)
-		if spent := sdl.GetTicksNS() - now; spent < budget do sdl.DelayPrecise(budget - spent)
+		pace(now, l.settings.frame_cap)
 
 		if pack, picked := l.play.?; picked {
 			l.play = nil
-			play(&r, l.packs[pack])
+			l.quit = play(&r, l.packs[pack], l.settings.frame_cap)
 		}
 	}
+}
+
+// Waits out the rest of a frame that started at frame_start (SDL ticks), for frame_cap frames a second.
+pace :: proc(frame_start: u64, frame_cap: int) {
+	budget := u64(1e9) / u64(frame_cap)
+	if spent := sdl.GetTicksNS() - frame_start; spent < budget do sdl.DelayPrecise(budget - spent)
 }
 
 // --package <folder>: the folder as <folder>.tar, once its pack.toml reads.
