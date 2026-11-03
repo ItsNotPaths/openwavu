@@ -34,16 +34,21 @@ pack_destroy :: proc(p: ^Pack) {
 	free(p)
 }
 
-// Starts a module of the pack; the pack must outlive it.
-start :: proc(engine: wasm.Engine, code: wasm.Module, name: string, pack: ^Pack) -> (m: ^imports.Module, err: string) {
+// A module of the pack with the imports every presentation module gets; define its role's on m.linker, then start it.
+// The pack must outlive it.
+create :: proc(engine: wasm.Engine, name: string, pack: ^Pack) -> (m: ^imports.Module, err: string) {
 	if m, err = imports.module_create(engine, pack.content, name, MEMORY_CAP); err != "" do return
 	if err = imports.define_sdl(m.linker, &pack.sdl); err == "" do err = imports.define_scene(m.linker, &pack.scene)
-	if err == "" do err = imports.module_start(m, code, "ow_init", INIT_FUEL)
 	if err != "" {
 		imports.module_destroy(m)
 		return nil, err
 	}
 	return m, ""
+}
+
+// Instantiates the code and calls its ow_init.
+start :: proc(m: ^imports.Module, code: wasm.Module) -> (err: string) {
+	return imports.module_start(m, code, "ow_init", INIT_FUEL)
 }
 
 // One display frame: ow_frame(dt, command buffer); then the host puts back the draw state the module changed.

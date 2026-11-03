@@ -32,9 +32,10 @@ entry_module_draws_and_hands_back_the_renderer :: proc(t: ^testing.T) {
 	code, compile_err := wasm.compile(engine, bytes)
 	if !testing.expect_value(t, compile_err, "") do return
 	defer wasm.module_destroy(code)
-	entry, err := presentation.start(engine, code, "entry_probe.wasm", running)
+	entry, err := presentation.create(engine, "entry_probe.wasm", running)
 	if !testing.expect_value(t, err, "") do return
 	defer imports.module_destroy(entry)
+	if !testing.expect_value(t, presentation.start(entry, code), "") do return
 
 	testing.expect_value(t, presentation.frame(entry, running, 1.0 / 60), "")
 	_ = sdl.FlushRenderer(renderer)
