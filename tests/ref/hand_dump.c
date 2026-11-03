@@ -1,10 +1,10 @@
-// The finger clips of a character loaded from a db (modules/tk5/load.c), little endian: for the pose bank, then the
+// The finger clips of a character loaded from a db (modules/tk5/gamerender/hand_bank.c), little endian: for the pose bank, then the
 // gesture bank, per clip u32 frames, then per frame the 45 keys (axis x, axis y, angle per joint) in radians.
 // Usage: hand_dump db root character
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "load.h"
+#include "gamerender/hand_bank.h"
 #include "sqlite3.h"
 
 static T5Bytes read_file(void *root, const char *path) {

@@ -653,14 +653,12 @@ static int anim_bank(const char *owner) {
     return BANK_CHARACTER;
 }
 
-enum { OWNER_BYTES = 128, HAND_OWNER_BYTES = OWNER_BYTES + sizeof "/hand_gestures" };
-
 // The owners of the character's banks in fighter order: its own (the bank its moves name that is neither common nor
 // embedded), common, embedded. Moves that name two own banks fail.
-static const char *bank_owners(sqlite3 *db, const char *character, char owners[BANKS][OWNER_BYTES]) {
-    snprintf(owners[BANK_CHARACTER], OWNER_BYTES, "%s", character);
-    snprintf(owners[BANK_COMMON], OWNER_BYTES, "common");
-    snprintf(owners[BANK_EMBEDDED], OWNER_BYTES, "%s/embedded", character);
+static const char *bank_owners(sqlite3 *db, const char *character, char owners[BANKS][T5_OWNER_BYTES]) {
+    snprintf(owners[BANK_CHARACTER], T5_OWNER_BYTES, "%s", character);
+    snprintf(owners[BANK_COMMON], T5_OWNER_BYTES, "common");
+    snprintf(owners[BANK_EMBEDDED], T5_OWNER_BYTES, "%s/embedded", character);
     sqlite3_stmt *rows;
     const char *failed = prepare(db, "SELECT DISTINCT anim_owner FROM move WHERE character = ?1", character, &rows);
     bool named = false;
@@ -668,7 +666,7 @@ static const char *bank_owners(sqlite3 *db, const char *character, char owners[B
         const char *owner = (const char *)sqlite3_column_text(rows, 0);
         if (!owner || anim_bank(owner) != BANK_CHARACTER) continue;
         if (named) failed = fail("move %s: anims of two banks, %s and %s", character, owners[BANK_CHARACTER], owner);
-        snprintf(owners[BANK_CHARACTER], OWNER_BYTES, "%s", owner);
+        snprintf(owners[BANK_CHARACTER], T5_OWNER_BYTES, "%s", owner);
         named = true;
     }
     sqlite3_finalize(rows);
@@ -698,7 +696,7 @@ typedef struct {
 } Refs;
 
 static const char *read_refs(sqlite3 *db, const char *character, Refs *refs) {
-    char owners[BANKS][OWNER_BYTES];
+    char owners[BANKS][T5_OWNER_BYTES];
     const char *failed = read_compare_ids(db, &refs->compare_ids);
     if (!failed) failed = bank_owners(db, character, owners);
     for (int bank = 0; bank < BANKS && !failed; bank++) {
@@ -898,23 +896,13 @@ const char *t5_load_skeleton(T5Skeleton *skeleton, sqlite3 *db, const char *char
     return failed;
 }
 
-// A bank's clips: one record of `size` bytes per id, read from its file by `parse`. Ids without a row stay zero; rows
-// that name one file share one record.
-typedef struct {
-    size_t size;
-    int (*parse)(void *clip, T5Bytes file);
-    const char *what;
-} ClipKind;
-
 static int parse_anim(void *anim, T5Bytes file) { return t5_anim_parse(anim, file); }
-static int parse_hand_clip(void *clip, T5Bytes file) { return t5_hand_clip_parse(clip, file); }
 
-static const ClipKind ANIMS = {sizeof(T5Anim), parse_anim, "anims"};
-static const ClipKind HAND_CLIPS = {sizeof(T5HandClip), parse_hand_clip, "hand clips"};
+static const T5ClipKind ANIMS = {sizeof(T5Anim), parse_anim, "anims"};
 
-static size_t clips_bytes(uint32_t count, ClipKind kind) { return t5_arena_round(((size_t)count + 1) * kind.size); }  // and a zero one
+static size_t clips_bytes(uint32_t count, T5ClipKind kind) { return t5_arena_round(((size_t)count + 1) * kind.size); }  // and a zero one
 
-static const char *clips_storage(sqlite3 *db, const char *owner, ClipKind kind, size_t *bytes) {
+const char *t5_load_clips_storage(sqlite3 *db, const char *owner, T5ClipKind kind, size_t *bytes) {
     int32_t numbered;
     uint32_t count;
     const char *failed = bank_count(db, owner, &numbered, &count);
@@ -922,8 +910,8 @@ static const char *clips_storage(sqlite3 *db, const char *owner, ClipKind kind, 
     return failed;
 }
 
-static const char *load_clips(void **clips, uint32_t *count, ClipKind kind, sqlite3 *db, const char *owner, T5ReadFile read,
-                              void *context, T5Arena *arena) {
+const char *t5_load_clips(void **clips, uint32_t *count, T5ClipKind kind, sqlite3 *db, const char *owner, T5ReadFile read,
+                          void *context, T5Arena *arena) {
     int32_t numbered;
     const char *failed = bank_count(db, owner, &numbered, count);
     if (failed) return failed;
@@ -952,25 +940,25 @@ static const char *load_clips(void **clips, uint32_t *count, ClipKind kind, sqli
 }
 
 const char *t5_load_anims_storage(sqlite3 *db, const char *character, size_t *bytes) {
-    char owners[3][OWNER_BYTES];
+    char owners[3][T5_OWNER_BYTES];
     const char *failed = bank_owners(db, character, owners);
     *bytes = 0;
     for (int bank = 0; bank < 3 && !failed; bank++) {
         size_t bank_bytes;
-        failed = clips_storage(db, owners[bank], ANIMS, &bank_bytes);
+        failed = t5_load_clips_storage(db, owners[bank], ANIMS, &bank_bytes);
         *bytes += bank_bytes;
     }
     return failed;
 }
 
-const char *t5_load_anim_bank_storage(sqlite3 *db, const char *owner, size_t *bytes) { return clips_storage(db, owner, ANIMS, bytes); }
+const char *t5_load_anim_bank_storage(sqlite3 *db, const char *owner, size_t *bytes) { return t5_load_clips_storage(db, owner, ANIMS, bytes); }
 
 const char *t5_load_anim_bank(T5AnimBank *bank, sqlite3 *db, const char *owner, T5ReadFile read, void *context, T5Arena *arena) {
-    return load_clips((void **)&bank->anims, &bank->anim_count, ANIMS, db, owner, read, context, arena);
+    return t5_load_clips((void **)&bank->anims, &bank->anim_count, ANIMS, db, owner, read, context, arena);
 }
 
 const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena) {
-    char owners[3][OWNER_BYTES];
+    char owners[3][T5_OWNER_BYTES];
     const char *failed = bank_owners(db, character, owners);
     T5AnimBank *banks[3] = {&files->character, &files->common, &files->embedded};
     for (int bank = 0; bank < 3 && !failed; bank++) failed = t5_load_anim_bank(banks[bank], db, owners[bank], read, context, arena);
@@ -978,7 +966,7 @@ const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *charac
 }
 
 static const char *anim_total(sqlite3 *db, const char *character, uint32_t *total) {
-    char owners[BANKS][OWNER_BYTES];
+    char owners[BANKS][T5_OWNER_BYTES];
     const char *failed = bank_owners(db, character, owners);
     *total = 0;
     for (int bank = 0; bank < BANKS && !failed; bank++) {
@@ -1012,34 +1000,10 @@ const char *t5_load_fighter(T5FighterData *data, sqlite3 *db, const char *charac
     return failed;
 }
 
-// The pose bank is the character's, the gestures belong to the owner of its own anim bank.
-static const char *hand_owners(sqlite3 *db, const char *character, char owners[2][HAND_OWNER_BYTES]) {
-    char banks[3][OWNER_BYTES];
-    const char *failed = bank_owners(db, character, banks);
-    snprintf(owners[0], HAND_OWNER_BYTES, "%s/hand_poses", character);
-    snprintf(owners[1], HAND_OWNER_BYTES, "%s/hand_gestures", banks[0]);
-    return failed;
-}
-
-const char *t5_load_hands_storage(sqlite3 *db, const char *character, size_t *bytes) {
-    char owners[2][HAND_OWNER_BYTES];
-    const char *failed = hand_owners(db, character, owners);
-    *bytes = 0;
-    for (int bank = 0; bank < 2 && !failed; bank++) {
-        size_t bank_bytes;
-        failed = clips_storage(db, owners[bank], HAND_CLIPS, &bank_bytes);
-        *bytes += bank_bytes;
-    }
-    return failed;
-}
-
-const char *t5_load_hands(T5HandBanks *banks, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena) {
-    char owners[2][HAND_OWNER_BYTES];
-    const char *failed = hand_owners(db, character, owners);
-    T5HandBank *bank[2] = {&banks->poses, &banks->gestures};
-    for (int k = 0; k < 2 && !failed; k++)
-        failed = load_clips((void **)&bank[k]->clips, &bank[k]->clip_count, HAND_CLIPS, db, owners[k], read, context, arena);
-    if (!failed && (!banks->poses.clip_count || !banks->gestures.clip_count)) failed = fail("hands %s: no clips", character);
+const char *t5_own_anim_bank(sqlite3 *db, const char *character, char owner[T5_OWNER_BYTES]) {
+    char owners[BANKS][T5_OWNER_BYTES];
+    const char *failed = bank_owners(db, character, owners);
+    memcpy(owner, owners[BANK_CHARACTER], T5_OWNER_BYTES);
     return failed;
 }
 

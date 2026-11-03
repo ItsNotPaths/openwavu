@@ -2,8 +2,8 @@
 // of keys, and picks attacks made by one press from the standing idle's cancel list. Its state is outside the snapshot.
 #include <math.h>
 
-#include "bot.h"
-#include "match.h"
+#include "gameplay/bot.h"
+#include "gameplay/match.h"
 #include "openwavu.h"
 
 typedef struct {

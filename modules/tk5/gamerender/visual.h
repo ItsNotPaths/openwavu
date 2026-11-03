@@ -8,7 +8,7 @@
 
 #include "sim/skel.h"
 #include "sim/world.h"
-#include "visual/hands.h"
+#include "gamerender/hands.h"
 
 enum {
     FIRST_FINGER_BONE = 51,  // A bones 51..65 the right fingers, 66..80 the left, each in hand bank joint order

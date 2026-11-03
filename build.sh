@@ -44,7 +44,7 @@ fi
 # The stock TK5 modules, WASI reactors that import only from openwavu. The TK5 core needs exact floats and wrapping ints.
 # (hole module-build :tags (wasm tk5mod) :needs ow-cli) build.sh builds the stock modules with zig itself; ow build should make them with the same pinned flags, reproducibly.
 mkdir -p build/modules
-tk5_core=(modules/tk5/sim/*.c modules/tk5/visual/hand_bank.c modules/tk5/load.c)
+tk5_core=(modules/tk5/sim/*.c modules/tk5/load.c)
 # tk5_module <out> <sources...>: rebuilt when anything under modules/tk5 or sdk is newer.
 tk5_module() {
 	out="build/modules/$1"
@@ -54,7 +54,7 @@ tk5_module() {
 			-Imodules/tk5 -Isdk/include -Ivendor/sqlite -o "$out" "$@" build/sdk/libow_db.a
 	fi
 }
-tk5_module gameplay.wasm "${tk5_core[@]}" modules/tk5/init.c modules/tk5/match.c modules/tk5/bot.c
+tk5_module gameplay.wasm "${tk5_core[@]}" modules/tk5/gameplay/*.c
 odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict-style
 # vendor:sdl3 links "system:SDL3": the -L dirs make that the vendored static libs.
 odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf"

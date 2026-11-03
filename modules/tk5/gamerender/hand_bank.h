@@ -1,10 +1,12 @@
-// Hand banks: the finger clips from .anim files (layout tk5hand, data.md 6.5) and their sampler. Views of caller-owned bytes.
+// Hand banks: the finger clips from .anim files (layout tk5hand, data.md 6.5), loaded from the pack db, and their sampler.
+// Views of caller-owned bytes.
 #ifndef T5_VISUAL_HAND_BANK_H
 #define T5_VISUAL_HAND_BANK_H
 
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "load.h"
 #include "sim/anim.h"
 #include "sim/memory.h"
 #include "sim/vec.h"
@@ -32,13 +34,17 @@ typedef struct { T5HandBank poses, gestures; } T5HandBanks;
 
 static inline bool t5_hand_joint_is_rotation(int32_t joint) { return (void)joint, true; }
 
-// Inline so the loader needs no visual code. The clip points into `file`; 0 on success.
+// The clip points into `file`; 0 on success.
 static inline int t5_hand_clip_parse(T5HandClip *clip, T5Bytes file) {
     const float *keys;
     uint16_t frames = t5_anim_file(file, "tk5hand", FINGER_JOINTS, t5_hand_joint_is_rotation, &keys);
     *clip = frames ? (T5HandClip){frames, (const T5HandKeys *)keys} : (T5HandClip){0};
     return frames ? 0 : -1;
 }
+
+// The finger pose library and gestures of the character (owners <character>/hand_poses, <its anim bank>/hand_gestures).
+const char *t5_load_hands_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t5_load_hands takes
+const char *t5_load_hands(T5HandBanks *banks, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena);
 
 uint16_t t5_hand_clip_frames(T5HandBank bank, uint16_t clip);  // frame count; a clip past the end reads clip 0
 // Frame floor(time) and the next mixed by the fraction (shortest arc, not normalized). A clip past the end reads clip 0.

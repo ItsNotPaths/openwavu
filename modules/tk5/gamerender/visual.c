@@ -1,5 +1,5 @@
 // The visual state is stepped in place: it is large (a skeleton per fighter) and outside the sim snapshot.
-#include "visual/visual.h"
+#include "gamerender/visual.h"
 
 #include "sim/fighter.h"
 #include "sim/quat.h"

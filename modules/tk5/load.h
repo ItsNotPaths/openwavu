@@ -1,10 +1,9 @@
-// A character's move data, skeleton, anims and hand clips, and a stage's collision, from the pack database (src/db/tk5/schema.sql) into the sim's structs. Init only.
+// A character's move data, skeleton and anims, and a stage's collision, from the pack database (src/db/tk5/schema.sql) into the sim's structs. Init only.
 #ifndef T5_LOAD_H
 #define T5_LOAD_H
 
 #include "sim/fighter.h"
 #include "sim/stage.h"
-#include "visual/hand_bank.h"
 
 typedef struct sqlite3 sqlite3;
 
@@ -32,9 +31,19 @@ const char *t5_load_anim_bank(T5AnimBank *bank, sqlite3 *db, const char *owner, 
 // The three anim banks of the character into files->character, common and embedded.
 const char *t5_load_anims_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t5_load_anims takes
 const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena);
-// The finger pose library and gestures of the character (owners <character>/hand_poses, <its bank>/hand_gestures).
-const char *t5_load_hands_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t5_load_hands takes
-const char *t5_load_hands(T5HandBanks *banks, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena);
+// A bank of clips by its owner in the anim table: one record of `size` bytes per id, read from its file by `parse`
+// (0 = ok). Ids without a row stay zero; rows that name one file share one record.
+typedef struct {
+    size_t size;
+    int (*parse)(void *clip, T5Bytes file);
+    const char *what;  // for errors
+} T5ClipKind;
+const char *t5_load_clips_storage(sqlite3 *db, const char *owner, T5ClipKind kind, size_t *bytes);
+const char *t5_load_clips(void **clips, uint32_t *count, T5ClipKind kind, sqlite3 *db, const char *owner, T5ReadFile read,
+                          void *context, T5Arena *arena);
+enum { T5_OWNER_BYTES = 128 };
+// The owner of the character's own anim bank: the one its moves name that is neither common nor embedded.
+const char *t5_own_anim_bank(sqlite3 *db, const char *character, char owner[T5_OWNER_BYTES]);
 // The whole fighter of a character: its anim banks, moves and skeleton, and the steps after them (t5_fighter_finish).
 const char *t5_load_fighter_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t5_load_fighter takes
 const char *t5_load_fighter(T5FighterData *data, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena);

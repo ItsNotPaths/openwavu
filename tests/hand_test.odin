@@ -12,7 +12,7 @@ import tk5 "../src/importer/tk5"
 HAND_DUMP :: "build/hand_dump"
 HAND_ROOT :: "build/hand_test"
 
-// sha256 of tests/ref/hand_dump.c's output, taken from tk5decomp's .t5h through the game's bit decoder (visual/hand_bank.c
+// sha256 of tests/ref/hand_dump.c's output, taken from tk5decomp's .t5h through the game's bit decoder (gamerender/hand_bank.c
 // before 2026-11-01).
 @(private = "file")
 HAND_HASHES := [?]struct {
@@ -56,7 +56,7 @@ HAND_HASHES := [?]struct {
 	{"jinpachi2", "7d2433cce1ce3caf95f788486a6d9aff96d128e06202766e45ba35d2c3d186ac"},
 }
 
-// The finger clips the visual loads from the db (modules/tk5/load.c) are the frames the game decodes, bit for bit.
+// The finger clips the visual loads from the db (modules/tk5/gamerender/hand_bank.c) are the frames the game decodes, bit for bit.
 @(test)
 hand_clips_load_like_the_game :: proc(t: ^testing.T) {
 	table, ok := read_table()
@@ -65,7 +65,7 @@ hand_clips_load_like_the_game :: proc(t: ^testing.T) {
 	f, err := os.open(TK5 + "/game/USRDIR/T55DATA1.BIN")
 	if err != nil do return
 	defer os.close(f)
-	built := build_loader_tool(HAND_DUMP, "tests/ref/hand_dump.c")
+	built := build_loader_tool(HAND_DUMP, "tests/ref/hand_dump.c", "modules/tk5/gamerender/hand_bank.c")
 	if !testing.expect(t, built, "tests/ref/hand_dump.c did not build") do return
 
 	os.remove_all(HAND_ROOT)

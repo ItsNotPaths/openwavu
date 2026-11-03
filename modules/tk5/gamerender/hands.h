@@ -8,7 +8,7 @@
 
 #include "sim/cue.h"
 #include "sim/fighter.h"
-#include "visual/hand_bank.h"
+#include "gamerender/hand_bank.h"
 
 enum { HAND_POSES, HAND_GESTURES };
 

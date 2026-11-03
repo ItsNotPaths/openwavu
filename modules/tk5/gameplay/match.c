@@ -2,7 +2,7 @@
 #include <math.h>
 #include <string.h>
 
-#include "match.h"
+#include "gameplay/match.h"
 #include "openwavu.h"
 #include "sim/frame.h"
 #include "sim/round.h"

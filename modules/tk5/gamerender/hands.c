@@ -1,4 +1,4 @@
-#include "visual/hands.h"
+#include "gamerender/hands.h"
 
 #include <math.h>
 #include <stddef.h>

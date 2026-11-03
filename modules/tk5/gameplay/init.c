@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "bot.h"
+#include "gameplay/bot.h"
+#include "gameplay/match.h"
 #include "load.h"
-#include "match.h"
 #include "ow_db.h"
 #include "sqlite3.h"
 

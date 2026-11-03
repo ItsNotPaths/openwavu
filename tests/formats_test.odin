@@ -29,11 +29,14 @@ build_sim_tool :: proc(out: string, sources: ..string) -> bool {
 	return err == nil && state.exit_code == 0
 }
 
-// A tool that links the db loader (modules/tk5/load.c) and what it calls.
-build_loader_tool :: proc(out, tool: string) -> bool {
+// A tool that links the db loader (modules/tk5/load.c), what it calls, and `extra` sources.
+build_loader_tool :: proc(out, tool: string, extra: ..string) -> bool {
 	sim :: "modules/tk5/sim/"
-	return build_sim_tool(out, "-Ivendor/sqlite", tool, "modules/tk5/load.c", sim + "stage_file.c", sim + "anim.c", sim + "fighter_data.c",
+	sources := make([dynamic]string, context.temp_allocator)
+	append(&sources, "-Ivendor/sqlite", tool, "modules/tk5/load.c", sim + "stage_file.c", sim + "anim.c", sim + "fighter_data.c",
 		sim + "motbin.c", sim + "skel.c", "vendor/sqlite/libsqlite3.a", "-lpthread")
+	append(&sources, ..extra)
+	return build_sim_tool(out, ..sources[:])
 }
 
 // The tool's output for one file; nil when it fails.
