@@ -1,17 +1,19 @@
 package game
 
 import "core:fmt"
+import "core:math/rand"
 import sdl "vendor:sdl3"
 import "../content"
 import "../imports"
+import "../match"
 import "../presentation"
 import "../render"
 import "../titlepack"
 import "../wasm"
 
-// Runs the picked pack's entry module, one frame call per display frame, until the window closes (quit) or a module
-// traps, which cuts off the whole pack and returns to the launcher.
-// (hole game-loop :tags game :needs (render-fighter render-stage input-pad mod-scene mod-ui mod-menus match-local bot-input stock-modules) :sev blocker) no offline match vs the CPU in the stock pack, started from its menus.
+// Runs the picked pack's entry module, one frame call per display frame, and the matches it starts, until the window
+// closes (quit) or a module traps, which cuts off the whole pack and returns to the launcher.
+// (hole game-loop :tags game :needs (render-fighter render-stage input-pad mod-scene mod-ui mod-menus stock-modules) :sev blocker) no offline match vs the CPU in the stock pack, started from its menus.
 // (hole pack-leave :tags game :needs app-shell) the player can not leave a running pack for the launcher; only closing the window ends it.
 play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (quit: bool) {
 	if tp.main == "" {
@@ -24,27 +26,20 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 		return
 	}
 	defer content.close_pack(&pack)
-	bytes, found := content.pack_file(pack, tp.main)
-	if !found {
-		fmt.eprintfln("openwavu: %s has no %s", tp.name, tp.main)
-		return
-	}
-	engine := wasm.engine_create()
-	defer wasm.engine_destroy(engine)
-	code, compile_err := wasm.compile(engine, bytes)
-	if compile_err != "" {
-		fmt.eprintfln("openwavu: %s: %s", tp.main, compile_err)
-		return
-	}
-	defer wasm.module_destroy(code)
+	codes := Codes{engine = wasm.engine_create(), pack = &pack}
+	defer codes_destroy(&codes)
 	running := presentation.pack_create(&pack, r.r2d)
 	defer presentation.pack_destroy(running)
-	entry, err := presentation.start(engine, code, tp.main, running)
+	intents := imports.intents_create(tp.modes)
+	defer if asked, has := &intents.asked.?; has do imports.match_request_destroy(asked, intents.allocator)
+	entry, err := start_entry(&codes, tp.main, running, &intents)
 	if err != "" {
 		fmt.eprintfln("openwavu: %s did not start: %s", tp.main, err)
 		return
 	}
 	defer imports.module_destroy(entry)
+	game: ^match.Match
+	defer if game != nil do match.stop(game)
 
 	last := sdl.GetTicksNS()
 	for {
@@ -52,10 +47,30 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 		e: sdl.Event
 		for sdl.PollEvent(&e) do if e.type == .QUIT do return true
 		now := sdl.GetTicksNS()
-		dt := f32(now - last) / 1e9
+		dt := now - last
 		last = now
+		if asked, has := &intents.asked.?; has {
+			game = start_match(&codes, running, asked^)
+			imports.match_request_destroy(asked, intents.allocator)
+			intents.asked = nil
+			intents.running = game != nil
+		}
 		render.begin_frame(r, {0, 0, 0, 1})
-		if err = presentation.frame(entry, running, dt); err != "" {
+		if game != nil {
+			// (hole match-pads :tags game :needs input-pad) player sides get no pad: their input is always 0.
+			ended, winner, match_err := match.frame(game, running, dt, {})
+			if match_err != "" {
+				fmt.eprintfln("openwavu: the match stopped, so the pack is cut off: %s", match_err)
+				return
+			}
+			if ended {
+				fmt.eprintfln("openwavu: the match ended, winner side %d", winner)
+				match.stop(game)
+				game = nil
+				intents.running = false
+			}
+		}
+		if err = presentation.frame(entry, running, f32(dt) / 1e9); err != "" {
 			fmt.eprintfln("openwavu: %s stopped, so the pack is cut off: %s", tp.main, err)
 			return
 		}
@@ -66,4 +81,49 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 		render.end_frame(r)
 		pace(now, frame_cap)
 	}
+}
+
+// The pack's modules, each compiled once per visit.
+Codes :: struct {
+	engine:  wasm.Engine,
+	pack:    ^content.Pack,
+	by_path: map[string]wasm.Module,  // keys live as long as the visit's Title_Pack
+}
+
+codes_destroy :: proc(c: ^Codes) {
+	for _, code in c.by_path do wasm.module_destroy(code)
+	delete(c.by_path)
+	wasm.engine_destroy(c.engine)
+}
+
+code_of :: proc(c: ^Codes, path: string) -> (code: wasm.Module, err: string) {
+	if known, has := c.by_path[path]; has do return known, ""
+	bytes, found := content.pack_file(c.pack^, path)
+	if !found do return {}, fmt.tprintf("the pack has no %s", path)
+	if code, err = wasm.compile(c.engine, bytes); err != "" do return
+	c.by_path[path] = code
+	return code, ""
+}
+
+start_entry :: proc(c: ^Codes, path: string, running: ^presentation.Pack, intents: ^imports.Intents) -> (m: ^imports.Module, err: string) {
+	code: wasm.Module
+	if code, err = code_of(c, path); err != "" do return
+	if m, err = presentation.create(c.engine, path, running); err != "" do return
+	if err = imports.define_intents(m.linker, intents); err == "" do err = presentation.start(m, code)
+	if err != "" {
+		imports.module_destroy(m)
+		return nil, err
+	}
+	return m, ""
+}
+
+// The asked match, or nil when its modules do not start; the entry module keeps running either way.
+start_match :: proc(c: ^Codes, running: ^presentation.Pack, asked: imports.Match_Request) -> (m: ^match.Match) {
+	sim_code, presenter_code: wasm.Module
+	err: string
+	defer if err != "" do fmt.eprintfln("openwavu: the %s match did not start: %s", asked.mode.name, err)
+	if sim_code, err = code_of(c, asked.mode.sim); err != "" do return
+	if presenter_code, err = code_of(c, asked.mode.presenter); err != "" do return
+	m, err = match.start(c.engine, sim_code, presenter_code, running, asked, rand.uint64())
+	return
 }

@@ -34,7 +34,7 @@ typedef struct {  // all fighters' visual state
 // A replay seek: start fresh from the next view. The banks stay.
 void t5_visual_reset(T5Visual *visual);
 // One displayed frame, `seconds` after the last: one tick per new sim frame of the view, then the display blend.
-// (hole visual-in-presenter :tags tk5mod :needs sim-view) it reads the whole T5World; in the presenter module it gets only the sim view, which must carry what it reads.
+// (hole visual-in-presenter :tags tk5mod) it reads the whole T5World; in the presenter module it gets only the sim view, which must carry what it reads.
 void t5_visual_step(T5Visual *visual, const T5World *w, float seconds);
 
 #endif

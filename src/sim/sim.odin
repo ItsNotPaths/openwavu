@@ -72,7 +72,6 @@ restore :: proc(w: ^World, buf: []byte) -> (ok: bool) {
 }
 
 // The sim view of the last tick, from ow_sim_view: bytes in the module's memory, valid until its next call.
-// (hole sim-view :tags (sim game) :needs match-local) the view is not copied into the match presenter (its ow_view import).
 view :: proc(w: ^World) -> (bytes: []byte, err: string) {
 	at, size := []wasm.Val{{}}, []wasm.Val{{}}
 	if err = imports.module_call(w.module, "ow_sim_view", nil, at, STEP_FUEL); err != "" do return

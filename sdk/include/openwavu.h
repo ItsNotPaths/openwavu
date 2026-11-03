@@ -92,11 +92,11 @@ OW_EXPORT(ow_bot_pad) uint32_t ow_bot_pad(uint32_t side);
 // Host imports, entry module only. The host sends state, the entry module sends intents.
 
 // The host's state, copied in each frame: connection, server list, lobby, match state and result.
-// (hole host-view :tags (sdk game)) no host view layout and no ow_host_view import.
+// (hole host-view :tags (sdk game)) no host view layout and no ow_host_view import: the entry module is not told a match ended or who won.
 OW_IMPORT(host_view) int32_t ow_host_view(void *buf, uint32_t cap);
-// An offline match of a pack.toml mode. bot_sides: bit per side played by ow_bot_pad. params: values for params the
-// modules declare, as a lobby host sets them: `name=value` pairs split by spaces ("stage=3 rounds=5").
-// (hole match-local :tags (sdk game)) the host does not start a mode's sim and presenter with loadouts and bot sides, give the presenter the scene, or hand back to the entry module at the end.
+// An offline match of a pack.toml mode, started at the next frame; 0, or -1 when refused (an unknown mode, params that
+// do not read, a match asked for or running). bot_sides: bit per side played by ow_bot_pad. params: values for params
+// the modules declare, as a lobby host sets them: `name=value` pairs split by spaces ("stage=3 rounds=5").
 OW_IMPORT(match_local) int32_t ow_match_local(const char *mode, uint32_t mode_len, uint32_t bot_sides,
 	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len, const char *params, uint32_t params_len);
 // (hole app-modules :tags (sdk game wasm)) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.
