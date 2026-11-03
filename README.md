@@ -1,46 +1,44 @@
 # openwavu
 
-A Tekken sandbox. You supply your own copy of Tekken 5 Dark Resurrection (PS3, NPUB30009).
-The importer converts its characters, movesets, animations and stages to open formats and a
-SQLite database. The game runs on those formats with the fighting simulation from
-`../tk5decomp` (C11, linked as a library).
+A ManiaPlanet-like home for 3D fighting games. Everything that plays is a title pack: a `.tar` with
+wasm modules and data.
 
-This repo ships no game data. It ships the PS3 SELF keys, as RPCS3 does. The user supplies the
-RAP file (the license for their copy).
+Tekken 5 Dark Resurrection (PS3, NPUB30009) is the first game with an importer. You supply your own
+copy, and the importer turns it into a stock title pack: `tk5.db`, glb parts and stages, `.anim`
+files, UI images and the stock wasm modules.
 
-## Layout
+No game data ships here. The PS3 SELF keys do, as in RPCS3. You supply the RAP (your license).
 
-Code for one game goes in a `tk5/` subfolder, so that a `tk6/` can come later.
-
-- `src/importer/`: the `openwavu-import` CLI. `tk5/` finds the game files and runs the pipeline.
-- `src/db/`: the database schema (shared tables, and `tk5/` for the movesets). The importer
-  writes it and the game reads it.
-- `src/ps3/`: SELF decryption, .pkg unpacking, the keys, PARAM.SFO. The same for all PS3 games.
-- `src/formats/tk5/`: readers of the game's own bytes (archive, motbin, anims, skeleton, meshes,
-  textures, stages). No file I/O policy, only bytes in and structs out. `build.odin` holds the
-  values that differ per game build (title ID, file table offset).
-- `src/convert/`: glb and DDS writers for all games. `tk5/` turns the readers' structs into
-  parts, stages, `.anim` files and database rows.
-- `tests/`: checks the importer against the Python reference tools in `../tk5decomp/tools/`.
-- `docs/formats.md`: the content pack layout and the open formats.
+- `src/game/`: `openwavu`, the launcher and host. Runs packs from `packs/*.tar`.
+- `src/importer/`: `openwavu-import`. PS3 unpacking in `src/ps3/`, game readers in `src/formats/tk5/`,
+  writers in `src/convert/`, the db in `src/db/`.
+- `src/imports/`, `src/wasm/`: what the host serves to pack modules (wasmtime).
+- `sdk/`: C headers and helpers for pack modules (MIT-0).
+- `modules/tk5/`: the stock TK5 modules (MIT-0). `sim/` is the fighting sim, built into
+  `gameplay.wasm`; `app/` menus; `gamerender/` match drawing.
+- `docs/`: `packs.md` (pack files, bases, db patches), `app.md` (modules), `formats.md`,
+  `commands.md`, `launcher.md`.
+- `tests/`: `odin test`. Reference checks need `../tk5decomp` and skip without it.
 
 ## Build
 
+Odin dev-2026-09 or later. Everything else goes into `vendor/` through `download-deps.sh` (zig,
+wasmtime, SQLite, SDL3, Clay, ...). No system packages.
+
 ```
-./download-deps.sh         # vendor/wasmtime (the build runs it when missing)
-./build.sh                 # debug build/openwavu-import and build/openwavu (seconds)
-./build.sh speed           # optimized, for releases: slow build, ~5x faster import
+./build.sh                 # debug: build/openwavu, build/openwavu-import, build/modules/*.wasm
+./build.sh speed           # optimized, ~5x faster import
 ./build.sh test            # then the tests (combines with speed)
 build/openwavu-import <rpcs3 dir | game dir | file.pkg [file.rap]> [-o packs] [-keep]
-build/openwavu --package <folder>   # <folder>.tar, pack.toml first
+build/openwavu                      # launcher
+build/openwavu --package <folder>   # writes <folder>.tar, pack.toml first
+build/openwavu --front <pack> [file] # preview a pack's front page
 ```
 
-The importer finds the RAP next to the `.pkg`, in the game's `USRDIR` or in RPCS3's `dev_hdd0/home/*/exdata/`.
-A folder holding a `.pkg` works as an input too.
-A full import takes about 45 s and writes a 500 MB tar. It links the system `libsqlite3` and `libz`.
+The importer finds the RAP next to the `.pkg`, in `USRDIR`, or in RPCS3's
+`dev_hdd0/home/*/exdata/`. A full import takes about 45 s and writes a 500 MB tar.
 
-The tests compare against the Python tools and the game files in `../tk5decomp`. Without them,
-the tests skip.
+## License
 
-Odin (dev-2026-09 or later). The game side will render with SDL3 (vendor:sdl3). The format readers follow `../tk5decomp/docs/data.md` and
-`stages.md`; the Python tools there are the reference implementation.
+GPL-3.0 only for the host. `sdk/` and `modules/tk5/` are MIT-0. Pack modules that only use the
+`sdk/include` interface are not covered by the GPL. See `LICENSE`.
