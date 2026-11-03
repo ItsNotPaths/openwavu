@@ -5,20 +5,24 @@
 #include <string.h>
 
 #include "gamerender/presenter.h"
+#include "gamerender/visual.h"
 #include "ow_db.h"
+#include "pack_file.h"
 #include "sim/quat.h"
 #include "sqlite3.h"
 
-// (hole hand-pose :tags (tk5mod fighter-detail) :needs (visual-in-presenter face-anims)) fighter nodes get the sim pose, not the visual skeleton (fingers, face, eyes, head tilt).
+// (hole hand-pose :tags (tk5mod fighter-detail) :needs face-anims) fighter nodes get the fingers of the visual skeleton, not yet its face, eyes and head tilt.
 
 enum {
     PARTS_MAX = 8,      // per fighter
-    POSED_BONES = 23,   // glb joints 0..22: the root, then the body bones the sim's skeleton B moves
+    BODY_JOINTS = 23,   // glb joints 0..22: the root, then the body bones the sim's skeleton B moves
+    FIRST_FINGER_JOINT = FIRST_FINGER_BONE + 4,  // glb joints 55..84 are A bones 51..80
+    POSED_BONES = FIRST_FINGER_JOINT + FINGER_BONES,  // joints 23..54 are left zero: they keep their rest pose
     NODES_MAX = T5_FIGHTER_COUNT * PARTS_MAX + 1,
 };
 
 // glb joint -> skeleton B slot, joints 1..22; helpers keep their rest pose under their parent.
-static const int BODY_SLOT[POSED_BONES] = {-1, 0, 1, 2, 13, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 17, 21};
+static const int BODY_SLOT[BODY_JOINTS] = {-1, 0, 1, 2, 13, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 17, 21};
 static const char DB_PATH[] = "tk5.db";
 
 typedef struct {
@@ -29,6 +33,7 @@ typedef struct {
 static Part parts[T5_FIGHTER_COUNT][PARTS_MAX];
 static int part_count[T5_FIGHTER_COUNT];
 static uint32_t stage_asset;
+static T5Visual visual;
 
 static struct {
     OwScene scene;
@@ -60,6 +65,17 @@ static void load_parts(sqlite3 *db, int side, const T5Loadout *loadout) {
     sqlite3_finalize(rows);
 }
 
+// No banks: the fighter keeps the sim's fingers.
+static void load_hands(sqlite3 *db, int side, const T5Loadout *loadout) {
+    size_t bytes;
+    T5Arena arena;
+    T5HandBanks banks = {0};
+    const char *failed = t5_load_hands_storage(db, loadout->character, &bytes);
+    if (!failed) failed = t5_new_arena(&arena, bytes);
+    if (!failed) failed = t5_load_hands(&banks, db, loadout->character, t5_read_pack_file, NULL, &arena);
+    if (!failed) visual.fighter[side].banks = banks;
+}
+
 static uint32_t load_stage(sqlite3 *db, const char *stage) {
     sqlite3_stmt *rows;
     if (sqlite3_prepare_v2(db, "SELECT file FROM stage WHERE id = ?1", -1, &rows, NULL) != SQLITE_OK) return 0;
@@ -72,7 +88,10 @@ static uint32_t load_stage(sqlite3 *db, const char *stage) {
 bool t5_scene_init(const T5View *view) {
     sqlite3 *db = ow_db_open(DB_PATH, sizeof DB_PATH - 1);
     if (!db) return false;
-    for (int side = 0; side < T5_FIGHTER_COUNT; side++) load_parts(db, side, &view->fighters[side].loadout);
+    for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
+        load_parts(db, side, &view->fighters[side].loadout);
+        load_hands(db, side, &view->fighters[side].loadout);
+    }
     stage_asset = load_stage(db, view->stage);
     sqlite3_close(db);
     return true;
@@ -96,21 +115,24 @@ static OwTransform transform_of(const T5Mat4 *matrix) {
     };
 }
 
-static void pose_fighter(OwTransform bones[POSED_BONES], const T5ViewFighter *fighter) {
-    bones[0] = transform_of(&fighter->root);
-    for (int joint = 1; joint < POSED_BONES; joint++) bones[joint] = transform_of(&fighter->bones[BODY_SLOT[joint]]);
+static void pose_fighter(OwTransform bones[POSED_BONES], const T5Rig *rig) {
+    bones[0] = transform_of(&rig->root.world);
+    for (int joint = 1; joint < BODY_JOINTS; joint++) bones[joint] = transform_of(&rig->bones_b[BODY_SLOT[joint]].world);
+    for (int bone = 0; bone < FINGER_BONES; bone++)
+        bones[FIRST_FINGER_JOINT + bone] = transform_of(&rig->bones_a[FIRST_FINGER_BONE + bone].world);
 }
 
 static const OwTransform PLACE_AT_ORIGIN = {.rotation = {0, 0, 0, 1}, .scale = {1, 1, 1}};
 
 // (hole mod-scene-intro :tags (tk5mod round-show)) intros, round end and match end poses show both fighters; the demo shows only the fighter whose pose it is.
-void t5_scene_send(const T5View *view) {
+void t5_scene_send(const T5View *view, float seconds) {
+    t5_visual_step(&visual, view, seconds);
     uint32_t count = 0;
     if (stage_asset) {
         block.nodes[count++] = (OwNode){.id = "stage", .asset = stage_asset, .transform = PLACE_AT_ORIGIN, .class = OW_CLASS_SCENERY};
     }
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
-        pose_fighter(block.bones[side], &view->fighters[side]);
+        pose_fighter(block.bones[side], &visual.fighter[side].rig);
         for (int at = 0; at < part_count[side]; at++) {
             OwNode *node = &block.nodes[count++];
             *node = (OwNode){

@@ -6,9 +6,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "sim/cue.h"
-#include "sim/fighter.h"
 #include "gamerender/hand_bank.h"
+#include "view.h"
 
 enum { HAND_POSES, HAND_GESTURES };
 
@@ -34,9 +33,9 @@ typedef struct {
 } T5Hands;
 
 // The idle hands at once (a reset, a round start).
-T5Hands t5_hands_idle(T5Hands hands, T5HandBanks banks, const T5Fighter *f);
+T5Hands t5_hands_idle(T5Hands hands, T5HandBanks banks, const T5ViewHands *fighter);
 // One sim tick, after the sim step: the pose properties, the hit and wind-up poses, the channel clocks, the sample.
-T5Hands t5_hands_tick(T5Hands hands, T5HandBanks banks, const T5World *w, const T5Fighter *f);
+T5Hands t5_hands_tick(T5Hands hands, T5HandBanks banks, const T5ViewHands *fighter);
 
 // The left hand plays the right hand's channel data mirrored; the mirror is its own inverse.
 T5Vec4 t5_left_finger_turn(T5Vec4 turn, int32_t joint);

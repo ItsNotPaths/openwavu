@@ -114,18 +114,13 @@ OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1) {
 OW_EXPORT(ow_sim_state) void *ow_sim_state(void) { return &t5_match; }
 OW_EXPORT(ow_sim_state_size) uint32_t ow_sim_state_size(void) { return sizeof t5_match; }
 
-static T5ViewFighter view_fighter(uint32_t side) {
+static void view_fighter(T5ViewFighter *out, uint32_t side) {
     const T5Fighter *f = &t5_match.fighters[side];
-    T5ViewFighter out = {
-        .loadout = t5_match_data.sides[side].loadout,
-        .health = f->health,
-        .max_health = f->max_health,
-        .wins = f->wins,
-        .on_right = f->input.camera_side == T5_SIDE_RIGHT,
-        .root = f->rig.root.world,
-    };
-    for (int bone = 0; bone < T5_BONES_B; bone++) out.bones[bone] = f->rig.bones_b[bone].world;
-    return out;
+    out->loadout = t5_match_data.sides[side].loadout;
+    out->health = f->health;
+    out->max_health = f->max_health;
+    out->wins = f->wins;
+    out->on_right = f->input.camera_side == T5_SIDE_RIGHT;
 }
 
 // Built when asked, from the state, so it is right after a restore too.
@@ -133,7 +128,6 @@ OW_EXPORT(ow_sim_view) const void *ow_sim_view(void) {
     const T5World *w = &t5_match.world;
     view = (T5View){
         .version = T5_VIEW_VERSION,
-        .frame = w->frame,
         .phase = w->round.phase,
         .phase_frame = w->round.frame.ticks,
         .round = w->round.round,
@@ -143,7 +137,8 @@ OW_EXPORT(ow_sim_view) const void *ow_sim_view(void) {
         .snap = w->blend_snap_left > 0,
     };
     memcpy(view.stage, t5_match_data.stage_id, sizeof view.stage);
-    for (uint32_t side = 0; side < T5_FIGHTER_COUNT; side++) view.fighters[side] = view_fighter(side);
+    t5_view_poses(&view, w);
+    for (uint32_t side = 0; side < T5_FIGHTER_COUNT; side++) view_fighter(&view.fighters[side], side);
     return &view;
 }
 

@@ -186,7 +186,7 @@ static T5AimState aim_bone(T5Rig *rig, const T5Skeleton *skel, T5AimJoint joint,
         next = t5_aim_step(joint, last, seen, aim_frame).aim;
         rig->bones_a[joint.bone].local = t5_aim_turn(joint, rig->bones_a[joint.bone].local, next.yaw, next.pitch, weight);
     }
-    t5_skel_bone_world(rig, skel, joint.bone);  // rebuild the bone world, so the next bone aims from it
+    t5_skel_bone_world(rig, skel->parent_a, joint.bone);  // rebuild the bone world, so the next bone aims from it
     return next;
 }
 

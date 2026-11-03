@@ -11,7 +11,7 @@ static const float FOV = 0.698132f;      // 40 degrees, vertical
 
 // The tk5decomp demo's follow camera: fixed distance, no zoom or lag.
 OwCamera t5_fight_camera(const T5View *view) {
-    const T5Mat4 *first = &view->fighters[0].root, *second = &view->fighters[1].root;
+    const T5Mat4 *first = &view->fighters[0].rig.root.world, *second = &view->fighters[1].rig.root.world;
     OwVec3 focus = {
         (first->m[3][0] + second->m[3][0]) * 0.5f * MM,
         FOCUS_HEIGHT,

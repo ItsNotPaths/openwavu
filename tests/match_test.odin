@@ -169,10 +169,10 @@ stock_presenter_shows_the_fighters_on_the_stage :: proc(t: ^testing.T) {
 		testing.expect_value(t, string(cstring(&node.id[0])), side == 0 ? "1:paul_1" : "2:law_1")
 		testing.expect_value(t, running.scene.assets.paths[node.asset - 1], side == 0 ? "parts/paul/paul_1.glb" : "parts/law/law_1.glb")
 		testing.expect_value(t, node.class, render.Node_Class.Gameplay)
-		if !testing.expect_value(t, len(node.bones), 23) do continue
+		if !testing.expect_value(t, len(node.bones), 85) do continue  // body 0..22, fingers 55..84; zero joints keep their rest pose
 		for bone in node.bones {
 			length := abs(bone.rotation)
-			testing.expectf(t, length > 0.999 && length < 1.001, "a bone rotation of length %v", length)
+			testing.expectf(t, length == 0 || (length > 0.999 && length < 1.001), "a bone rotation of length %v", length)
 		}
 		roots[side] = node.bones[0].position
 	}

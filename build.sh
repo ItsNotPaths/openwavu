@@ -71,10 +71,11 @@ tk5_module() {
 			-o "$out" "$@" build/sdk/libow_db.a
 	fi
 }
-tk5_module gameplay.wasm "" "${tk5_core[@]}" modules/tk5/gameplay/*.c
+tk5_module gameplay.wasm "" "${tk5_core[@]}" modules/tk5/{view,pack_file}.c modules/tk5/gameplay/*.c
 tk5_module app.wasm -Wl,--import-symbols modules/tk5/app/*.c
-# The visual, hands and stub parts of gamerender/ are not in it yet (hole visual-in-presenter).
-tk5_module gamerender.wasm -Wl,--import-symbols modules/tk5/gamerender/{presenter,scene,camera,hud}.c modules/tk5/sim/{quat,math}.c
+# The stub parts of gamerender/ are not in it yet.
+tk5_module gamerender.wasm -Wl,--import-symbols "${tk5_core[@]}" modules/tk5/pack_file.c \
+	modules/tk5/gamerender/{presenter,scene,camera,hud,visual,hands,hand_bank}.c
 # The host's 3D shaders, SPIR-V; src/render embeds them.
 mkdir -p build/shaders
 for shader in src/render/shaders/*.vert src/render/shaders/*.frag; do

@@ -8,15 +8,29 @@
 #include "sim/skel.h"
 #include "sim/world.h"
 
-enum { T5_VIEW_VERSION = 1 };
+enum { T5_VIEW_VERSION = 2 };
+
+typedef struct {  // the fighter fields the presenter's hand poses read
+    T5PoseProp right_pose, left_pose;  // the hand channel properties
+    bool posable;          // a fighter kind: other kinds keep the sim's fingers
+    bool posed;            // a property posed the hands in this move
+    bool new_anim;         // the move change took another anim
+    bool damaging;         // the move does damage
+    bool clean_streak;     // in a clean-hit streak
+    bool thrown;
+    bool clean_hit;
+    int32_t frames_to_active;  // the move's first active frame minus the move frame
+    uint8_t hitbox_code;   // the move's first hitbox code; 0 = no move
+} T5ViewHands;
 
 typedef struct {
     T5Loadout loadout;
     int32_t health, max_health;  // 16.16 fixed point
     int16_t wins;                // rounds won
     bool on_right;               // right of the opponent on screen
-    T5Mat4 root;                 // the rig root's world matrix, mm; translation = base position
-    T5Mat4 bones[T5_BONES_B];    // skeleton B world matrices, mm: the slots a model's bones follow
+    T5Rig rig;                   // mm; root translation = base position; B worlds are the slots a model's bones follow
+    int8_t parent_a[T5_BONES_A]; // the skeleton's A parents, to rebuild posed bones
+    T5ViewHands hands;
 } T5ViewFighter;
 
 typedef struct {
@@ -32,5 +46,8 @@ typedef struct {
     float view_normal[2];  // xz direction from the fighters to the camera; screen sides follow it
     bool snap;             // a scene cut: the fighters jump, so the display must not blend into this frame
 } T5View;
+
+// The frame and each fighter's rig, A parents and hand block, from the world.
+void t5_view_poses(T5View *view, const T5World *w);
 
 #endif

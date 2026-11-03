@@ -76,17 +76,16 @@ static T5Hands both_hands(T5Hands hands, int32_t right_pose, int32_t left_pose, 
 
 // The automatic poses: a clean hit opens the hands; while no property posed them, a new move relaxes them and a punch
 // clenches them in its wind-up.
-static T5Hands automatic_poses(T5Hands hands, const T5World *w, const T5Fighter *f) {
+static T5Hands automatic_poses(T5Hands hands, const T5ViewHands *fighter) {
     if (hands.clean_hit) return both_hands(hands, OPEN_POSE, OPEN_POSE, HIT_BLEND);  // clean hit: open both hands
-    if (f->hands_posed) return hands;  // a property posed the hands in this move: keep them
-    if (f->anim_changed != 0 && f->damage == 0 && f->streak_clean == 0) {  // new anim, no damage, and no clean-hit streak
-        if (t5_thrown(f->throw.chain)) hands = both_hands(hands, OPEN_POSE, OPEN_POSE, HIT_BLEND);  // thrown: open both hands
+    if (fighter->posed) return hands;  // a property posed the hands in this move: keep them
+    if (fighter->new_anim && !fighter->damaging && !fighter->clean_streak) {  // new anim, no damage, and no clean-hit streak
+        if (fighter->thrown) hands = both_hands(hands, OPEN_POSE, OPEN_POSE, HIT_BLEND);  // thrown: open both hands
         else hands = both_hands(hands, IDLE_RIGHT_POSE, IDLE_LEFT_POSE, IDLE_BLEND);  // otherwise relax into the idle poses
     }
-    const T5Move *move = t5_move_at(w, f->move);
-    if (f->damage != 0 && move != NULL &&  // a move with damage
-        t5_frames_past(move->first_active - f->frame, CLENCH_LEAD) &&  // first active is over CLENCH_LEAD away
-        clenches(move->hitbox[0]))  // its hitbox clenches
+    if (fighter->damaging &&  // a move with damage
+        t5_frames_past(fighter->frames_to_active, CLENCH_LEAD) &&  // first active is over CLENCH_LEAD away
+        clenches(fighter->hitbox_code))  // its hitbox clenches
         hands = both_hands(hands, FIST_POSE, FIST_POSE, FIST_BLEND);  // clench both fists for the wind-up
     return hands;
 }
@@ -127,10 +126,10 @@ static T5Hand sample(T5Hand hand, T5HandBanks banks) {
     return hand;
 }
 
-T5Hands t5_hands_idle(T5Hands hands, T5HandBanks banks, const T5Fighter *f) {
+T5Hands t5_hands_idle(T5Hands hands, T5HandBanks banks, const T5ViewHands *fighter) {
     hands = both_hands(hands, IDLE_RIGHT_POSE, IDLE_LEFT_POSE, IDLE_BLEND);
-    hands.right.seen = f->right_hand_pose;  // mark the right pose property as seen, so it is not new
-    hands.left.seen = f->left_hand_pose;
+    hands.right.seen = fighter->right_pose;  // mark the right pose property as seen, so it is not new
+    hands.left.seen = fighter->left_pose;
     hands.right.has_sample = false;
     hands.left.has_sample = false;
     hands.clean_hit = false;
@@ -139,11 +138,11 @@ T5Hands t5_hands_idle(T5Hands hands, T5HandBanks banks, const T5Fighter *f) {
     return hands;
 }
 
-T5Hands t5_hands_tick(T5Hands hands, T5HandBanks banks, const T5World *w, const T5Fighter *f) {
-    hands.right = take_property(hands.right, f->right_hand_pose, IDLE_RIGHT_POSE);
-    hands.left = take_property(hands.left, f->left_hand_pose, IDLE_LEFT_POSE);
-    hands = automatic_poses(hands, w, f);  // automatic poses, if no property posed the hands
-    hands.clean_hit = f->clean_hit != 0;  // save this tick's clean-hit flag for the next tick's poses
+T5Hands t5_hands_tick(T5Hands hands, T5HandBanks banks, const T5ViewHands *fighter) {
+    hands.right = take_property(hands.right, fighter->right_pose, IDLE_RIGHT_POSE);
+    hands.left = take_property(hands.left, fighter->left_pose, IDLE_LEFT_POSE);
+    hands = automatic_poses(hands, fighter);  // automatic poses, if no property posed the hands
+    hands.clean_hit = fighter->clean_hit;  // save this tick's clean-hit flag for the next tick's poses
     hands.right.channel = clock(hands.right.channel, banks);
     hands.left.channel = clock(hands.left.channel, banks);
     hands.right = sample(hands.right, banks);

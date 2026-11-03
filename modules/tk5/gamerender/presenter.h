@@ -8,10 +8,10 @@
 
 static const float MM = 0.001f;  // sim units to scene metres
 
-// The fighters' costume parts and the stage, by asset id; false when the db does not open.
+// The fighters' costume parts and hand banks, and the stage, by asset id; false when the db does not open.
 bool t5_scene_init(const T5View *view);
-// The whole scene of this frame.
-void t5_scene_send(const T5View *view);
+// The whole scene of this frame, `seconds` after the last.
+void t5_scene_send(const T5View *view, float seconds);
 // The fight camera: behind the line between the fighters, on the sim's camera side.
 OwCamera t5_fight_camera(const T5View *view);
 // Health, timer, round marks and the phase banners, in SDL 2D.
