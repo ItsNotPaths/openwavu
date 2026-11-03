@@ -34,13 +34,13 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 			if p.uvs != nil do prim.attributes["TEXCOORD_0"] = gltf.add_accessor(&g, finite(p.uvs), "VEC2", gltf.ARRAY_BUFFER)
 			// (hole part-vertex-color :tags (importer look) :sev polish) fighters' vertex colours are not drawn: their rgb is one constant per primitive (0 or 255) and only alpha varies, use unknown; kept as _TK5_COLOR.
 			if p.colors != nil && skin != nil do prim.attributes["_TK5_COLOR"] = gltf.add_accessor(&g, p.colors, "VEC4", gltf.ARRAY_BUFFER)
-			if p.colors != nil && skin == nil do prim.attributes["COLOR_0"] = gltf.add_accessor(&g, full_byte_neutral(p.colors), "VEC4", gltf.ARRAY_BUFFER)
+			if p.colors != nil && skin == nil do prim.attributes["COLOR_0"] = gltf.add_accessor(&g, p.colors, "VEC4", gltf.ARRAY_BUFFER)  // 1.0 = neutral, up to 2
 			if skin != nil && p.joints != nil {
 				prim.attributes["JOINTS_0"] = gltf.add_accessor(&g, used_joints(p.joints, p.weights), "VEC4", gltf.ARRAY_BUFFER)
 				prim.attributes["WEIGHTS_0"] = gltf.add_accessor(&g, normalized(p.weights), "VEC4", gltf.ARRAY_BUFFER)
 			}
 			prim.indices = gltf.add_accessor(&g, flat(p.triangles), "SCALAR", gltf.ELEMENT_ARRAY_BUFFER)
-			if len(p.materials) > 0 do prim.material = material(&g, &materials, p.materials)
+			if len(p.materials) > 0 do prim.material = material(&g, &materials, p.materials, unlit = p.normals == nil)
 			append(&out.primitives, prim)
 		}
 		append(&g.meshes, out)
@@ -67,11 +67,13 @@ Materials :: struct {
 	by_look: map[Material_Look]int,
 }
 
-// What a glTF material is made from: the first pass's first texture and its alpha test.
+// What a glTF material is made from: the first pass's first texture, its alpha test, and whether its mesh is lit.
 @(private = "file")
 Material_Look :: struct {
 	hash:   u32,
-	cutoff: f32,  // 0: no alpha test
+	cutoff: f32,   // 0: no alpha test
+	blend:  bool,  // a blend factor: drawn over what is behind
+	unlit:  bool,  // a mesh with no normals (stages): its vertex colours are the baked light
 }
 
 // A pass's alpha test as a glTF cutoff (drop alpha below it), from the GL compare function and ref_alpha; 0 when it has
@@ -94,8 +96,8 @@ alpha_cutoff :: proc(pass: formats.Material) -> f32 {
 // (hole texture-second-layer :tags (importer look)) only a pass's first texture is used; a pass with two (flags 0x41110003, NU_vUVset; kazuya_1 materials 3 and 4) has a blurry highlight map second, likely shine masked by the first texture's alpha.
 // (hole stage-white-models :tags (importer render look)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
 @(private = "file")
-material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material) -> int {
-	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = alpha_cutoff(passes[0])}
+material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material, unlit: bool) -> int {
+	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = alpha_cutoff(passes[0]), blend = passes[0].dst_factor != 0, unlit = unlit}
 	if m, seen := materials.by_look[look]; seen do return m
 	out: gltf.Material
 	out.doubleSided = true
@@ -106,6 +108,9 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 		out.alphaMode = "MASK"
 		out.alphaCutoff = look.cutoff
 	}
+	// (hole material-blend :tags (render importer look)) every pass with a dst factor draws as plain alpha blend; additive glows (dst 2) and the other factors (4, 7, 10; src 257, 513) are not decoded.
+	if look.blend do out.alphaMode = "BLEND"
+	if look.unlit do gltf.set_unlit(g, &out)
 	extras := make(json.Object)
 	pass_values := make(json.Array)
 	for p in passes {
@@ -118,14 +123,6 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 	append(&g.materials, out)
 	materials.by_look[look] = len(g.materials) - 1
 	return materials.by_look[look]
-}
-
-// Stage colours with byte 255 as neutral (1.0); the reader has 128 = 1.0. Trying it against stage-white-models.
-@(private = "file")
-full_byte_neutral :: proc(colors: [][4]f32) -> [][4]f32 {
-	out := make([][4]f32, len(colors))
-	for color, i in colors do out[i] = color * 128.0 / 255
-	return out
 }
 
 // Joint nodes in bind pose plus the skin. Returns the root nodes.

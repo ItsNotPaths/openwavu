@@ -70,7 +70,16 @@ Material :: struct {
 	alphaMode:            string `json:",omitempty"`,  // OPAQUE when empty; MASK cuts out below alphaCutoff
 	alphaCutoff:          Maybe(f32) `json:",omitempty"`,  // 0.5 when none
 	doubleSided:          bool,
+	extensions:           Maybe(Material_Extensions) `json:",omitempty"`,
 	extras:               json.Object `json:",omitempty"`,  // raw game material data
+}
+Material_Extensions :: struct {unlit: Maybe(struct {}) `json:"KHR_materials_unlit,omitempty"`}
+UNLIT_EXTENSION :: "KHR_materials_unlit"
+
+// Draws the material as its base color, with no scene lights (baked lighting).
+set_unlit :: proc(g: ^Gltf, material: ^Material) {
+	material.extensions = Material_Extensions{unlit = struct {}{}}
+	if !slice.contains(g.extensionsUsed[:], UNLIT_EXTENSION) do append(&g.extensionsUsed, UNLIT_EXTENSION)
 }
 Texture_Info :: struct {index: int}
 // source: a PNG or JPEG image; a DDS one comes through MSFT_texture_dds.

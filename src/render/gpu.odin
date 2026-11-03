@@ -1,5 +1,6 @@
 // The host's 3D: one pipeline draws every scene mesh, skinned or not, into a color and depth target the size of the
-// screen. A mesh with no skin draws with one joint, its model matrix. Shaders are src/render/shaders, SPIR-V only.
+// screen, and a second the blended ones over it. A mesh with no skin draws with one joint, its model matrix. Shaders are
+// src/render/shaders, SPIR-V only.
 package render
 
 import "core:math"
@@ -25,6 +26,7 @@ Vertex :: struct {
 Mesh :: struct {
 	vertices, indices: ^sdl.GPUBuffer,
 	index_count:       u32,
+	centre:            [3]f32,  // of its vertices, in model space: blended draws sort by it
 }
 
 // One mesh to draw: joints are model space to world, one per joint the vertices name; texture nil is white.
@@ -35,6 +37,8 @@ Draw :: struct {
 	tint:    [4]f32,
 	cutoff:  f32,  // drop pixels with alpha below it; 0 keeps all
 	scenery: bool,  // fades where it hides a fighter
+	blend:   bool,  // drawn over what is behind, after the opaque draws, far to near
+	unlit:   bool,  // base color only, no scene lights
 }
 
 // scene.frag's Material block.
@@ -43,12 +47,14 @@ Material :: struct {
 	tint:    [4]f32,
 	cutoff:  f32,
 	scenery: f32,
-	_:       [2]f32,
+	unlit:   f32,
+	blend:   f32,
 }
 
 Gpu :: struct {
 	device:        ^sdl.GPUDevice,
 	pipeline:      ^sdl.GPUGraphicsPipeline,
+	blend_pipeline: ^sdl.GPUGraphicsPipeline,
 	sampler:       ^sdl.GPUSampler,
 	white:         ^sdl.GPUTexture,
 	color, depth:  ^sdl.GPUTexture,  // the targets, made at size
@@ -75,7 +81,7 @@ gpu_create :: proc(device: ^sdl.GPUDevice) -> (gpu: Gpu, ok: bool) {
 		{5, 0, .FLOAT4, u32(offset_of(Vertex, color))},
 	}
 	targets := []sdl.GPUColorTargetDescription{{format = COLOR_FORMAT}}
-	gpu.pipeline = sdl.CreateGPUGraphicsPipeline(device, {
+	info := sdl.GPUGraphicsPipelineCreateInfo{
 		vertex_shader = vertex_shader,
 		fragment_shader = fragment_shader,
 		vertex_input_state = {raw_data(buffers), u32(len(buffers)), raw_data(attributes), u32(len(attributes))},
@@ -83,8 +89,18 @@ gpu_create :: proc(device: ^sdl.GPUDevice) -> (gpu: Gpu, ok: bool) {
 		rasterizer_state = {fill_mode = .FILL, cull_mode = .NONE},  // glTF double-sided materials; winding unchecked
 		depth_stencil_state = {compare_op = .LESS, enable_depth_test = true, enable_depth_write = true},
 		target_info = {color_target_descriptions = raw_data(targets), num_color_targets = 1, depth_stencil_format = DEPTH_FORMAT, has_depth_stencil_target = true},
-	})
+	}
+	gpu.pipeline = sdl.CreateGPUGraphicsPipeline(device, info)
 	if gpu.pipeline == nil do return
+	blended := []sdl.GPUColorTargetDescription{{format = COLOR_FORMAT, blend_state = {
+		enable_blend = true,
+		src_color_blendfactor = .SRC_ALPHA, dst_color_blendfactor = .ONE_MINUS_SRC_ALPHA, color_blend_op = .ADD,
+		src_alpha_blendfactor = .ONE, dst_alpha_blendfactor = .ONE_MINUS_SRC_ALPHA, alpha_blend_op = .ADD,
+	}}}
+	info.target_info.color_target_descriptions = raw_data(blended)
+	info.depth_stencil_state.enable_depth_write = false
+	gpu.blend_pipeline = sdl.CreateGPUGraphicsPipeline(device, info)
+	if gpu.blend_pipeline == nil do return
 	gpu.sampler = sdl.CreateGPUSampler(device, {min_filter = .LINEAR, mag_filter = .LINEAR, mipmap_mode = .LINEAR, address_mode_u = .REPEAT, address_mode_v = .REPEAT, address_mode_w = .REPEAT})
 	if gpu.sampler == nil do return
 	white := [4]u8{255, 255, 255, 255}
@@ -102,6 +118,7 @@ gpu_destroy :: proc(gpu: ^Gpu) {
 	if gpu.white != nil do sdl.ReleaseGPUTexture(gpu.device, gpu.white)
 	if gpu.sampler != nil do sdl.ReleaseGPUSampler(gpu.device, gpu.sampler)
 	if gpu.pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.pipeline)
+	if gpu.blend_pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.blend_pipeline)
 	gpu^ = {device = gpu.device}
 }
 
@@ -125,6 +142,7 @@ upload_end :: proc(upload: Upload) -> (ok: bool) {
 
 mesh_upload :: proc(gpu: ^Gpu, upload: Upload, vertices: []Vertex, indices: []u32) -> (mesh: Mesh, ok: bool) {
 	mesh.index_count = u32(len(indices))
+	for vertex in vertices do mesh.centre += vertex.position / f32(max(len(vertices), 1))
 	mesh.vertices = buffer_upload(gpu, upload, {.VERTEX}, raw_data(vertices), len(vertices) * size_of(Vertex)) or_return
 	if mesh.indices, ok = buffer_upload(gpu, upload, {.INDEX}, raw_data(indices), len(indices) * size_of(u32)); !ok {
 		sdl.ReleaseGPUBuffer(gpu.device, mesh.vertices)
@@ -164,27 +182,47 @@ draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: 
 	color := sdl.GPUColorTargetInfo{texture = gpu.color, clear_color = sdl.FColor(clear), load_op = .CLEAR, store_op = .STORE}
 	depth := sdl.GPUDepthStencilTargetInfo{texture = gpu.depth, clear_depth = 1, load_op = .CLEAR, store_op = .DONT_CARE}
 	pass := sdl.BeginGPURenderPass(command, &color, 1, &depth)
-	sdl.BindGPUGraphicsPipeline(pass, gpu.pipeline)
 	view_projection := camera_matrix(scene.camera, f32(size.x) / f32(size.y))
 	sdl.PushGPUVertexUniformData(command, 0, &view_projection, size_of(view_projection))
 	lighting := scene_lighting(scene)
 	sdl.PushGPUFragmentUniformData(command, 0, &lighting, size_of(lighting))
 	if joint_count > 0 do sdl.BindGPUVertexStorageBuffers(pass, 0, &gpu.joints, 1)
-	joint_base: u32
-	for draw in draws {
-		material := Material{tint = draw.tint, cutoff = draw.cutoff, scenery = draw.scenery ? 1 : 0}
-		sdl.PushGPUVertexUniformData(command, 1, &joint_base, size_of(joint_base))
-		sdl.PushGPUFragmentUniformData(command, 1, &material, size_of(material))
-		binding := sdl.GPUTextureSamplerBinding{draw.texture != nil ? draw.texture : gpu.white, gpu.sampler}
-		sdl.BindGPUFragmentSamplers(pass, 0, &binding, 1)
-		vertices := sdl.GPUBufferBinding{draw.mesh.vertices, 0}
-		sdl.BindGPUVertexBuffers(pass, 0, &vertices, 1)
-		sdl.BindGPUIndexBuffer(pass, {draw.mesh.indices, 0}, ._32BIT)
-		sdl.DrawGPUIndexedPrimitives(pass, draw.mesh.index_count, 1, 0, 0, 0)
-		joint_base += u32(len(draw.joints))
+	joint_bases := make([]u32, len(draws), context.temp_allocator)
+	for index in 1 ..< len(draws) do joint_bases[index] = joint_bases[index - 1] + u32(len(draws[index - 1].joints))
+	sdl.BindGPUGraphicsPipeline(pass, gpu.pipeline)
+	Blended :: struct {
+		index:    int,
+		distance: f32,  // of its centre from the camera
 	}
+	blended := make([dynamic]Blended, context.temp_allocator)
+	for draw, index in draws {
+		if !draw.blend {
+			draw_one(command, pass, gpu, draw, joint_bases[index])
+			continue
+		}
+		centre := draw.mesh.centre
+		if len(draw.joints) > 0 do centre = (draw.joints[0] * [4]f32{centre.x, centre.y, centre.z, 1}).xyz
+		append(&blended, Blended{index, linalg.distance(centre, scene.camera.position)})
+	}
+	slice.sort_by(blended[:], proc(first, second: Blended) -> bool {return first.distance > second.distance})
+	sdl.BindGPUGraphicsPipeline(pass, gpu.blend_pipeline)
+	for entry in blended do draw_one(command, pass, gpu, draws[entry.index], joint_bases[entry.index])
 	sdl.EndGPURenderPass(pass)
 	return true
+}
+
+@(private = "file")
+draw_one :: proc(command: ^sdl.GPUCommandBuffer, pass: ^sdl.GPURenderPass, gpu: ^Gpu, draw: Draw, joint_base: u32) {
+	joint_base := joint_base
+	material := Material{tint = draw.tint, cutoff = draw.cutoff, scenery = draw.scenery ? 1 : 0, unlit = draw.unlit ? 1 : 0, blend = draw.blend ? 1 : 0}
+	sdl.PushGPUVertexUniformData(command, 1, &joint_base, size_of(joint_base))
+	sdl.PushGPUFragmentUniformData(command, 1, &material, size_of(material))
+	binding := sdl.GPUTextureSamplerBinding{draw.texture != nil ? draw.texture : gpu.white, gpu.sampler}
+	sdl.BindGPUFragmentSamplers(pass, 0, &binding, 1)
+	vertices := sdl.GPUBufferBinding{draw.mesh.vertices, 0}
+	sdl.BindGPUVertexBuffers(pass, 0, &vertices, 1)
+	sdl.BindGPUIndexBuffer(pass, {draw.mesh.indices, 0}, ._32BIT)
+	sdl.DrawGPUIndexedPrimitives(pass, draw.mesh.index_count, 1, 0, 0, 0)
 }
 
 // Projection times view, Vulkan depth 0 to 1, right handed and Y up as glTF.

@@ -26,6 +26,8 @@ layout(std140, set = 3, binding = 1) uniform Material {
     vec4 tint;
     float cutoff;  // drop pixels with alpha below it; 0 keeps all
     float scenery;  // 1: fades where it hides a fighter
+    float unlit;    // 1: base color only (baked lighting), no scene lights
+    float blend;    // 1: drawn by the blend pipeline, which reads the alpha
 };
 
 layout(location = 0) out vec4 color;
@@ -56,7 +58,7 @@ void main() {
         }
         light += light_color[i].rgb * light_color[i].a * falloff * max(dot(n, normalize(to_light)), 0.0);
     }
-    color = vec4(base.rgb * light, 1.0);
+    color = vec4(unlit > 0.5 ? base.rgb : base.rgb * light, blend > 0.5 ? base.a : 1.0);
     if (fog_range.y > 0.0) {
         float fog = clamp((distance(world_position, camera_position.xyz) - fog_range.x) / (fog_range.y - fog_range.x), 0.0, 1.0);
         color.rgb = mix(color.rgb, fog_color.rgb, fog * fog_color.a);
