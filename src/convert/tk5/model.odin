@@ -6,7 +6,7 @@ import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:slice"
-import "../../convert"
+import "../../gltf"
 import formats "../../formats/tk5"
 
 MM :: 1000.0  // file millimetres per glTF metre
@@ -15,8 +15,8 @@ BODY_BONES :: 23  // animated by the 23 channels; the rest are helpers
 // skeleton: nil for unskinned (stage) geometry. matrices: per mesh, row vectors in file units, or nil.
 write_model :: proc(path: string, meshes: []formats.Mesh, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil) -> (ok: bool) {
 	context.allocator = context.temp_allocator
-	g: convert.Gltf
-	scene: convert.Scene
+	g: gltf.Gltf
+	scene: gltf.Scene
 	skin: Maybe(int)
 	if s, has := skeleton.?; has {
 		append(&scene.nodes, ..add_skin(&g, s, max_joint(meshes) + 1)[:])
@@ -24,23 +24,23 @@ write_model :: proc(path: string, meshes: []formats.Mesh, skeleton: Maybe(format
 	}
 	materials := make(map[u32]int)
 	for mesh, mesh_index in meshes {
-		out := convert.Mesh{name = mesh.name}
+		out := gltf.Mesh{name = mesh.name}
 		for p in mesh.polys {
-			prim := convert.Primitive{attributes = make(map[string]int)}
-			prim.attributes["POSITION"] = convert.add_accessor(&g, metres(p.positions), "VEC3", convert.ARRAY_BUFFER, with_bounds = true)
-			if p.normals != nil do prim.attributes["NORMAL"] = convert.add_accessor(&g, unit(p.normals), "VEC3", convert.ARRAY_BUFFER)
-			if p.uvs != nil do prim.attributes["TEXCOORD_0"] = convert.add_accessor(&g, finite(p.uvs), "VEC2", convert.ARRAY_BUFFER)
-			if p.colors != nil do prim.attributes["_COLOR"] = convert.add_accessor(&g, p.colors, "VEC4", convert.ARRAY_BUFFER)  // 1.0 = neutral, can exceed 1
+			prim := gltf.Primitive{attributes = make(map[string]int)}
+			prim.attributes["POSITION"] = gltf.add_accessor(&g, metres(p.positions), "VEC3", gltf.ARRAY_BUFFER, with_bounds = true)
+			if p.normals != nil do prim.attributes["NORMAL"] = gltf.add_accessor(&g, unit(p.normals), "VEC3", gltf.ARRAY_BUFFER)
+			if p.uvs != nil do prim.attributes["TEXCOORD_0"] = gltf.add_accessor(&g, finite(p.uvs), "VEC2", gltf.ARRAY_BUFFER)
+			if p.colors != nil do prim.attributes["_COLOR"] = gltf.add_accessor(&g, p.colors, "VEC4", gltf.ARRAY_BUFFER)  // 1.0 = neutral, can exceed 1
 			if skin != nil && p.joints != nil {
-				prim.attributes["JOINTS_0"] = convert.add_accessor(&g, used_joints(p.joints, p.weights), "VEC4", convert.ARRAY_BUFFER)
-				prim.attributes["WEIGHTS_0"] = convert.add_accessor(&g, normalized(p.weights), "VEC4", convert.ARRAY_BUFFER)
+				prim.attributes["JOINTS_0"] = gltf.add_accessor(&g, used_joints(p.joints, p.weights), "VEC4", gltf.ARRAY_BUFFER)
+				prim.attributes["WEIGHTS_0"] = gltf.add_accessor(&g, normalized(p.weights), "VEC4", gltf.ARRAY_BUFFER)
 			}
-			prim.indices = convert.add_accessor(&g, flat(p.triangles), "SCALAR", convert.ELEMENT_ARRAY_BUFFER)
+			prim.indices = gltf.add_accessor(&g, flat(p.triangles), "SCALAR", gltf.ELEMENT_ARRAY_BUFFER)
 			if len(p.materials) > 0 do prim.material = material(&g, &materials, p.materials)
 			append(&out.primitives, prim)
 		}
 		append(&g.meshes, out)
-		node := convert.Node{name = mesh.name, mesh = len(g.meshes) - 1, skin = skin}
+		node := gltf.Node{name = mesh.name, mesh = len(g.meshes) - 1, skin = skin}
 		if matrices != nil {
 			if m, has := matrices[mesh_index].?; has && m != IDENTITY {
 				node.transform = make([]f32, 16)
@@ -52,15 +52,15 @@ write_model :: proc(path: string, meshes: []formats.Mesh, skeleton: Maybe(format
 		append(&scene.nodes, len(g.nodes) - 1)
 	}
 	append(&g.scenes, scene)
-	return convert.write_glb(&g, path)
+	return gltf.write_glb(&g, path)
 }
 
 // One glTF material per first-pass texture; every pass goes to extras as stored, texture hashes included.
 @(private = "file")
-material :: proc(g: ^convert.Gltf, cache: ^map[u32]int, passes: []formats.Material) -> int {
+material :: proc(g: ^gltf.Gltf, cache: ^map[u32]int, passes: []formats.Material) -> int {
 	hash: u32 = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0
 	if m, seen := cache[hash]; seen do return m
-	out: convert.Material
+	out: gltf.Material
 	out.doubleSided = true
 	extras := make(json.Object)
 	pass_values := make(json.Array)
@@ -80,7 +80,7 @@ material :: proc(g: ^convert.Gltf, cache: ^map[u32]int, passes: []formats.Materi
 // (hole helper-joint-re :tags port) TK5 SPLJNT block (section 8) and kkhelperjoint (0x1e96c4) are not decoded: twist rules and swing params (king tail, kazuya belt ends) for the helper and costume joints.
 // (hole mop-joints :tags importer :needs helper-joint-re) costume joints past the skeleton (MOP, model section 13) get an identity bind under bone 0; cloth does not animate.
 @(private = "file")
-add_skin :: proc(g: ^convert.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dynamic]int) {
+add_skin :: proc(g: ^gltf.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dynamic]int) {
 	bones := len(s.bones)
 	world := make([]matrix[4, 4]f64, max(bones, joints))
 	copy(world, world_matrices(s))
@@ -90,7 +90,7 @@ add_skin :: proc(g: ^convert.Gltf, s: formats.Skeleton, joints: int) -> (roots: 
 	for i in 0 ..< len(world) {
 		m := parents[i] < 0 ? world[i] : linalg.inverse(world[parents[i]]) * world[i]
 		name := i < bones ? fmt.tprintf("bone%d", i) : fmt.tprintf("mop%d", i)
-		node := convert.Node{name = name, translation = translation_metres(m), rotation = rotation(m)}
+		node := gltf.Node{name = name, translation = translation_metres(m), rotation = rotation(m)}
 		for p, k in parents do if p == i do append(&node.children, k)
 		append(&g.nodes, node)
 		if parents[i] < 0 do append(&roots, i)
@@ -102,7 +102,7 @@ add_skin :: proc(g: ^convert.Gltf, s: formats.Skeleton, joints: int) -> (roots: 
 		inv := linalg.inverse(w)
 		for c in 0 ..< 4 do for r in 0 ..< 4 do inverse[i][c * 4 + r] = f32(inv[r, c])  // glTF is column major
 	}
-	sk := convert.Skin{inverseBindMatrices = convert.add_accessor(g, inverse, "MAT4"), skeleton = roots[0]}
+	sk := gltf.Skin{inverseBindMatrices = gltf.add_accessor(g, inverse, "MAT4"), skeleton = roots[0]}
 	for i in 0 ..< len(world) do append(&sk.joints, i)
 	append(&g.skins, sk)
 	return roots

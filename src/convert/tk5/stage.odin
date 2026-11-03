@@ -7,7 +7,7 @@ import "core:fmt"
 import "core:math"
 import "core:os"
 import "core:slice"
-import "../../convert"
+import "../../gltf"
 import formats "../../formats/tk5"
 
 // (hole efp-import :tags importer :needs fx-spec) TK5 effect data (EFP, character slot +2, stage effects) is not converted to effect defs.
@@ -67,8 +67,8 @@ write_stage_collision :: proc(collision_path, surfaces_path: string, s: formats.
 		return u16(len(surfaces) - 1)
 	}
 
-	g: convert.Gltf
-	root := convert.Node{name = "stage", scale = floats(1 / f32(MM), 1 / f32(MM), 1 / f32(MM))}
+	g: gltf.Gltf
+	root := gltf.Node{name = "stage", scale = floats(1 / f32(MM), 1 / f32(MM), 1 / f32(MM))}
 
 	positions, normals: [dynamic][3]f32
 	surface, polygon: [dynamic]u16
@@ -114,7 +114,7 @@ write_stage_collision :: proc(collision_path, surfaces_path: string, s: formats.
 			turn := point[5]  // rotation y
 			extras := make(json.Object)
 			extras["turn"] = json.Float(turn)
-			append(&g.nodes, convert.Node{
+			append(&g.nodes, gltf.Node{
 				name = fmt.tprintf("start.%s.%d", list.name, record), translation = floats(point[0], point[1], point[2]),
 				rotation = floats(0, math.sin(turn / 2), 0, math.cos(turn / 2)), extras = extras})
 			append(&root.children, len(g.nodes) - 1)
@@ -122,10 +122,10 @@ write_stage_collision :: proc(collision_path, surfaces_path: string, s: formats.
 	}
 
 	append(&g.nodes, root)
-	scene: convert.Scene
+	scene: gltf.Scene
 	append(&scene.nodes, len(g.nodes) - 1)
 	append(&g.scenes, scene)
-	convert.write_glb(&g, collision_path) or_return
+	gltf.write_glb(&g, collision_path) or_return
 
 	rows := make([]Surface_Row, len(surfaces))
 	for surface, i in surfaces {
@@ -145,16 +145,16 @@ LAYER_NAMES := [7]string{"floor", "list_1", "list_2", "list_3", "list_4", "list_
 floats :: proc(values: ..f32) -> []f32 {return slice.clone(values)}
 
 @(private = "file")
-add_collision_mesh :: proc(g: ^convert.Gltf, root: ^convert.Node, name: string, positions, normals: [][3]f32, surface, polygon: []u16, indices: []u32) {
-	prim := convert.Primitive{attributes = make(map[string]int)}
-	prim.attributes["POSITION"] = convert.add_accessor(g, positions, "VEC3", convert.ARRAY_BUFFER, with_bounds = true)
-	prim.attributes["_NORMAL"] = convert.add_accessor(g, normals, "VEC3", convert.ARRAY_BUFFER)  // as stored, not unit
-	prim.attributes["_SURFACE"] = convert.add_accessor(g, surface, "SCALAR", convert.ARRAY_BUFFER)
-	if polygon != nil do prim.attributes["_POLYGON"] = convert.add_accessor(g, polygon, "SCALAR", convert.ARRAY_BUFFER)
-	prim.indices = convert.add_accessor(g, indices, "SCALAR", convert.ELEMENT_ARRAY_BUFFER)
-	mesh := convert.Mesh{name = name}
+add_collision_mesh :: proc(g: ^gltf.Gltf, root: ^gltf.Node, name: string, positions, normals: [][3]f32, surface, polygon: []u16, indices: []u32) {
+	prim := gltf.Primitive{attributes = make(map[string]int)}
+	prim.attributes["POSITION"] = gltf.add_accessor(g, positions, "VEC3", gltf.ARRAY_BUFFER, with_bounds = true)
+	prim.attributes["_NORMAL"] = gltf.add_accessor(g, normals, "VEC3", gltf.ARRAY_BUFFER)  // as stored, not unit
+	prim.attributes["_SURFACE"] = gltf.add_accessor(g, surface, "SCALAR", gltf.ARRAY_BUFFER)
+	if polygon != nil do prim.attributes["_POLYGON"] = gltf.add_accessor(g, polygon, "SCALAR", gltf.ARRAY_BUFFER)
+	prim.indices = gltf.add_accessor(g, indices, "SCALAR", gltf.ELEMENT_ARRAY_BUFFER)
+	mesh := gltf.Mesh{name = name}
 	append(&mesh.primitives, prim)
 	append(&g.meshes, mesh)
-	append(&g.nodes, convert.Node{name = name, mesh = len(g.meshes) - 1})
+	append(&g.nodes, gltf.Node{name = name, mesh = len(g.meshes) - 1})
 	append(&root.children, len(g.nodes) - 1)
 }

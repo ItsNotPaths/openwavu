@@ -8,6 +8,7 @@ import "core:os"
 import "core:slice"
 import "core:testing"
 import "../src/convert"
+import "../src/gltf"
 
 @(test)
 png_round_trips :: proc(t: ^testing.T) {
@@ -40,23 +41,23 @@ dds_keeps_blocks :: proc(t: ^testing.T) {
 @(test)
 glb_layout_is_valid :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
-	g: convert.Gltf
+	g: gltf.Gltf
 	positions := [][3]f32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}
 	uvs := [][2]f32{{0, 0}, {1, 0}, {0, 1}}
 	indices := []u16{0, 1, 2}
-	prim := convert.Primitive{attributes = make(map[string]int, context.temp_allocator), material = 0}
-	prim.attributes["POSITION"] = convert.add_accessor(&g, positions, "VEC3", convert.ARRAY_BUFFER, with_bounds = true)
-	prim.attributes["TEXCOORD_0"] = convert.add_accessor(&g, uvs, "VEC2", convert.ARRAY_BUFFER)
-	prim.indices = convert.add_accessor(&g, indices, "SCALAR", convert.ELEMENT_ARRAY_BUFFER)
-	append(&g.materials, convert.Material{})
-	mesh := convert.Mesh{name = "tri"}
+	prim := gltf.Primitive{attributes = make(map[string]int, context.temp_allocator), material = 0}
+	prim.attributes["POSITION"] = gltf.add_accessor(&g, positions, "VEC3", gltf.ARRAY_BUFFER, with_bounds = true)
+	prim.attributes["TEXCOORD_0"] = gltf.add_accessor(&g, uvs, "VEC2", gltf.ARRAY_BUFFER)
+	prim.indices = gltf.add_accessor(&g, indices, "SCALAR", gltf.ELEMENT_ARRAY_BUFFER)
+	append(&g.materials, gltf.Material{})
+	mesh := gltf.Mesh{name = "tri"}
 	append(&mesh.primitives, prim)
 	append(&g.meshes, mesh)
-	append(&g.nodes, convert.Node{name = "tri", mesh = 0})
-	scene: convert.Scene
+	append(&g.nodes, gltf.Node{name = "tri", mesh = 0})
+	scene: gltf.Scene
 	append(&scene.nodes, 0)
 	append(&g.scenes, scene)
-	testing.expect(t, convert.write_glb(&g, "build/test.glb"))
+	testing.expect(t, gltf.write_glb(&g, "build/test.glb"))
 
 	data, err := os.read_entire_file("build/test.glb", context.temp_allocator)
 	if !testing.expect_value(t, err, nil) do return

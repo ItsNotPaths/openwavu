@@ -1,5 +1,5 @@
 // glTF 2.0 binary reader and writer. Build a Gltf with the add_* procs, then write_glb. Metres, Y up.
-package convert
+package gltf
 
 import "core:encoding/endian"
 import "core:encoding/json"

@@ -5,12 +5,12 @@ import "core:encoding/endian"
 import "core:os"
 import "core:slice"
 import "core:testing"
-import "../src/convert"
+import "../src/gltf"
 
 @(test)
 glb_round_trips_every_accessor :: proc(t: ^testing.T) {
 	allocator := context.allocator
-	g: convert.Gltf
+	g: gltf.Gltf
 	context.allocator = context.temp_allocator
 	positions := [][3]f32{{-1.25, 2, 3}, {4, 5.5, -6}}
 	uvs := [][2]f32{{0, 1}, {0.125, 0.5}}
@@ -21,38 +21,38 @@ glb_round_trips_every_accessor :: proc(t: ^testing.T) {
 	indices := []u16{0, 1, 65535}
 	long_indices := []u32{0, 65536, 0xffffffff}
 	times := []f32{0, 0.5, 1}
-	convert.add_accessor(&g, positions, "VEC3", with_bounds = true)
-	convert.add_accessor(&g, uvs, "VEC2")
-	convert.add_accessor(&g, weights, "VEC4")
-	convert.add_accessor(&g, matrices, "MAT4")
-	convert.add_accessor(&g, bytes_values, "SCALAR", normalized = true)
-	convert.add_accessor(&g, joints, "VEC4")
-	convert.add_accessor(&g, indices, "SCALAR")
-	convert.add_accessor(&g, long_indices, "SCALAR")
-	convert.add_accessor(&g, times, "SCALAR")
-	append(&g.nodes, convert.Node{name = "test", mesh = 0, skin = 0})
-	prim := convert.Primitive{attributes = make(map[string]int), indices = 6, material = 0}
+	gltf.add_accessor(&g, positions, "VEC3", with_bounds = true)
+	gltf.add_accessor(&g, uvs, "VEC2")
+	gltf.add_accessor(&g, weights, "VEC4")
+	gltf.add_accessor(&g, matrices, "MAT4")
+	gltf.add_accessor(&g, bytes_values, "SCALAR", normalized = true)
+	gltf.add_accessor(&g, joints, "VEC4")
+	gltf.add_accessor(&g, indices, "SCALAR")
+	gltf.add_accessor(&g, long_indices, "SCALAR")
+	gltf.add_accessor(&g, times, "SCALAR")
+	append(&g.nodes, gltf.Node{name = "test", mesh = 0, skin = 0})
+	prim := gltf.Primitive{attributes = make(map[string]int), indices = 6, material = 0}
 	prim.attributes["POSITION"] = 0
-	mesh := convert.Mesh{name = "test"}
+	mesh := gltf.Mesh{name = "test"}
 	append(&mesh.primitives, prim)
 	append(&g.meshes, mesh)
-	append(&g.skins, convert.Skin{inverseBindMatrices = 3})
-	append(&g.materials, convert.Material{})
-	animation := convert.Animation{name = "test"}
-	append(&animation.samplers, convert.Sampler{input = 8, output = 0, interpolation = "LINEAR"})
-	append(&animation.channels, convert.Channel{target = {node = 0, path = "translation"}})
+	append(&g.skins, gltf.Skin{inverseBindMatrices = 3})
+	append(&g.materials, gltf.Material{})
+	animation := gltf.Animation{name = "test"}
+	append(&animation.samplers, gltf.Sampler{input = 8, output = 0, interpolation = "LINEAR"})
+	append(&animation.channels, gltf.Channel{target = {node = 0, path = "translation"}})
 	append(&g.animations, animation)
-	testing.expect(t, convert.write_glb(&g, "build/roundtrip.glb"))
+	testing.expect(t, gltf.write_glb(&g, "build/roundtrip.glb"))
 	defer os.remove("build/roundtrip.glb")
 	data, err := os.read_entire_file("build/roundtrip.glb", context.temp_allocator)
 	if !testing.expect_value(t, err, nil) do return
 	context.allocator = allocator
-	h, ok := convert.read_glb(data, context.allocator)
+	h, ok := gltf.read_glb(data, context.allocator)
 	if !testing.expect(t, ok) do return
-	defer convert.destroy_gltf(&h, context.allocator)
+	defer gltf.destroy_gltf(&h, context.allocator)
 	testing.expect_value(t, len(h.accessors), 9)
-	compare :: proc(t: ^testing.T, h: ^convert.Gltf, index: int, want: []$T) {
-		got, ok := convert.read_accessor(h, index, T, context.allocator)
+	compare :: proc(t: ^testing.T, h: ^gltf.Gltf, index: int, want: []$T) {
+		got, ok := gltf.read_accessor(h, index, T, context.allocator)
 		defer delete(got, context.allocator)
 		testing.expect(t, ok && slice.equal(got, want))
 	}
@@ -80,18 +80,18 @@ glb_round_trips_every_accessor :: proc(t: ^testing.T) {
 @(test)
 glb_accessor_checks_offsets_stride_and_type :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
-	g: convert.Gltf
+	g: gltf.Gltf
 	values := [][4]f32{{9, 1, 2, 0}, {9, 3, 4, 0}}
-	convert.add_accessor(&g, values, "VEC4")
+	gltf.add_accessor(&g, values, "VEC4")
 	g.accessors[0].type = "VEC2"
 	g.accessors[0].byteOffset = 4
 	g.bufferViews[0].byteStride = 16
-	got, ok := convert.read_accessor(&g, 0, [2]f32)
+	got, ok := gltf.read_accessor(&g, 0, [2]f32)
 	testing.expect(t, ok && slice.equal(got, [][2]f32{{1, 2}, {3, 4}}))
-	_, ok = convert.read_accessor(&g, 0, [2]u32)
+	_, ok = gltf.read_accessor(&g, 0, [2]u32)
 	testing.expect(t, !ok)
 	g.accessors[0].count = 3
-	_, ok = convert.read_accessor(&g, 0, [2]f32)
+	_, ok = gltf.read_accessor(&g, 0, [2]f32)
 	testing.expect(t, !ok)
 }
 
@@ -99,22 +99,22 @@ glb_accessor_checks_offsets_stride_and_type :: proc(t: ^testing.T) {
 glb_refuses_bad_chunks_and_json :: proc(t: ^testing.T) {
 	allocator := context.allocator
 	context.allocator = context.temp_allocator
-	g: convert.Gltf
-	convert.add_accessor(&g, []u16{0, 1, 2}, "SCALAR")
-	testing.expect(t, convert.write_glb(&g, "build/bad.glb"))
+	g: gltf.Gltf
+	gltf.add_accessor(&g, []u16{0, 1, 2}, "SCALAR")
+	testing.expect(t, gltf.write_glb(&g, "build/bad.glb"))
 	defer os.remove("build/bad.glb")
 	data, err := os.read_entire_file("build/bad.glb", context.temp_allocator)
 	if !testing.expect_value(t, err, nil) do return
 	context.allocator = allocator
 	for size in 0 ..< len(data) {
-		h, ok := convert.read_glb(data[:size], context.allocator)
+		h, ok := gltf.read_glb(data[:size], context.allocator)
 		testing.expect(t, !ok && len(h.accessors) == 0)
 	}
 	data[20] = '!'
-	_, ok := convert.read_glb(data, context.allocator)
+	_, ok := gltf.read_glb(data, context.allocator)
 	testing.expect(t, !ok)
 	data[20] = '{'
 	endian.put_u32(data[12:], .Little, 0xffffffff)
-	_, ok = convert.read_glb(data, context.allocator)
+	_, ok = gltf.read_glb(data, context.allocator)
 	testing.expect(t, !ok)
 }
