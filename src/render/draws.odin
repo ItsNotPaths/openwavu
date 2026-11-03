@@ -38,12 +38,12 @@ node_draws :: proc(draws: ^[dynamic]Draw, model: ^Model, node: ^Node, left_out: 
 	placed := posed_world(model, node.bones, allocator)
 	place := transform_matrix(node.transform)
 	for &world in placed do world = place * world
-	tint := node.material.tint == 0 ? 1 : node.material.tint
+	shared := Draw{tint = node.material.tint == 0 ? 1 : node.material.tint, scenery = node.class == .Scenery}
 	if node.part > 0 {
-		subtree_draws(draws, model, placed, int(node.part) - 1, left_out, tint, allocator)
+		subtree_draws(draws, model, placed, int(node.part) - 1, left_out, shared, allocator)
 		return
 	}
-	for root in model.roots do subtree_draws(draws, model, placed, root, left_out, tint, allocator)
+	for root in model.roots do subtree_draws(draws, model, placed, root, left_out, shared, allocator)
 }
 
 // Model space per glb node: its rest pose under its parent, or the bone the scene gives its joint. A bone with a zero
@@ -66,17 +66,20 @@ transform_matrix :: proc(transform: Transform) -> matrix[4, 4]f32 {
 	return linalg.matrix4_from_trs_f32(transform.position, transform.rotation, transform.scale)
 }
 
+// shared: the node's fields of every draw (tint, scenery).
 @(private = "file")
-subtree_draws :: proc(draws: ^[dynamic]Draw, model: ^Model, world: []matrix[4, 4]f32, index: int, left_out: []bool, tint: [4]f32, allocator := context.temp_allocator) {
+subtree_draws :: proc(draws: ^[dynamic]Draw, model: ^Model, world: []matrix[4, 4]f32, index: int, left_out: []bool, shared: Draw, allocator := context.temp_allocator) {
 	if left_out != nil && left_out[index] do return
 	model_node := model.nodes[index]
 	if model_node.mesh >= 0 {
 		joints := mesh_joints(model, world, index, allocator)
 		for primitive in model.meshes[model_node.mesh] {
-			append(draws, Draw{mesh = primitive.mesh, joints = joints, texture = primitive.texture, tint = tint, cutoff = primitive.cutoff})
+			draw := shared
+			draw.mesh, draw.joints, draw.texture, draw.cutoff = primitive.mesh, joints, primitive.texture, primitive.cutoff
+			append(draws, draw)
 		}
 	}
-	for child in model_node.children do subtree_draws(draws, model, world, child, left_out, tint, allocator)
+	for child in model_node.children do subtree_draws(draws, model, world, child, left_out, shared, allocator)
 }
 
 // A mesh's joints to world: its own node for one with no skin; for a skinned one, as glTF says, its skin's joints

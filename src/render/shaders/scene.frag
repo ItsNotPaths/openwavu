@@ -1,6 +1,6 @@
 #version 450
 // Base color texture times vertex color and tint, lit by the scene's ambient and lights, then its fog. A cut-out
-// draw drops pixels with alpha below its cutoff.
+// draw drops pixels with alpha below its cutoff. Scenery above the fighters' feet, between the camera and them, fades.
 // SDL_GPU SPIR-V sets: fragment textures in set 2, fragment uniforms in set 3.
 
 const int LIGHTS = 4;
@@ -19,19 +19,33 @@ layout(std140, set = 3, binding = 0) uniform Lighting {
     vec4 fog_color;
     vec4 fog_range;                // x start, y end; end 0 is no fog
     vec4 camera_position;
+    vec4 fighter_plane;            // xyz: normal toward the camera, w: offset; in front of the fighters, flat to the camera
+    vec4 fighter_fade;             // x: no fade at or below this height, y: gone this far in front of the plane; y 0 = none
 };
 layout(std140, set = 3, binding = 1) uniform Material {
     vec4 tint;
     float cutoff;  // drop pixels with alpha below it; 0 keeps all
+    float scenery;  // 1: fades where it hides a fighter
 };
 
 layout(location = 0) out vec4 color;
+
+// A 4x4 ordered dither threshold per screen pixel, so a fade needs no sorting or blending.
+float dither(vec2 pixel) {
+    const float order[16] = float[](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+    ivec2 cell = ivec2(pixel) % 4;
+    return (order[cell.y * 4 + cell.x] + 0.5) / 16.0;
+}
 
 void main() {
     vec4 base = texture(base_color, texture_uv) * vertex_color * tint;
     if (base.a < cutoff) discard;
     vec3 n = normalize(world_normal);
     if (dot(n, camera_position.xyz - world_position) < 0.0) n = -n;  // culling is off: light a back side like its front
+    if (scenery > 0.5 && fighter_fade.y > 0.0 && world_position.y > fighter_fade.x) {
+        float in_front = dot(world_position, fighter_plane.xyz) - fighter_plane.w;
+        if (1.0 - smoothstep(0.0, fighter_fade.y, in_front) < dither(gl_FragCoord.xy)) discard;
+    }
     vec3 light = ambient.rgb;
     for (int i = 0; i < LIGHTS; i++) {
         vec3 to_light = -light_direction[i].xyz;

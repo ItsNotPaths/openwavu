@@ -4,6 +4,7 @@ package render
 
 import "core:math"
 import "core:math/linalg"
+import "core:slice"
 import sdl "vendor:sdl3"
 
 COLOR_FORMAT :: sdl.GPUTextureFormat.R8G8B8A8_UNORM
@@ -33,14 +34,16 @@ Draw :: struct {
 	texture: ^sdl.GPUTexture,
 	tint:    [4]f32,
 	cutoff:  f32,  // drop pixels with alpha below it; 0 keeps all
+	scenery: bool,  // fades where it hides a fighter
 }
 
 // scene.frag's Material block.
 @(private = "file")
 Material :: struct {
-	tint:   [4]f32,
-	cutoff: f32,
-	_:      [3]f32,
+	tint:    [4]f32,
+	cutoff:  f32,
+	scenery: f32,
+	_:       [2]f32,
 }
 
 Gpu :: struct {
@@ -169,7 +172,7 @@ draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: 
 	if joint_count > 0 do sdl.BindGPUVertexStorageBuffers(pass, 0, &gpu.joints, 1)
 	joint_base: u32
 	for draw in draws {
-		material := Material{tint = draw.tint, cutoff = draw.cutoff}
+		material := Material{tint = draw.tint, cutoff = draw.cutoff, scenery = draw.scenery ? 1 : 0}
 		sdl.PushGPUVertexUniformData(command, 1, &joint_base, size_of(joint_base))
 		sdl.PushGPUFragmentUniformData(command, 1, &material, size_of(material))
 		binding := sdl.GPUTextureSamplerBinding{draw.texture != nil ? draw.texture : gpu.white, gpu.sampler}
@@ -209,6 +212,8 @@ Lighting :: struct {
 	fog_color:       [4]f32,
 	fog_range:       [4]f32,
 	camera_position: [4]f32,
+	fighter_plane:   [4]f32,
+	fighter_fade:    [4]f32,
 }
 
 // The first LIGHTS lights; the rest are not drawn.
@@ -223,7 +228,66 @@ scene_lighting :: proc(scene: ^Scene) -> (lighting: Lighting) {
 	lighting.fog_color = scene.fog.color
 	lighting.fog_range = {scene.fog.start, scene.fog.end, 0, 0}
 	lighting.camera_position = {scene.camera.position.x, scene.camera.position.y, scene.camera.position.z, 1}
+	fighter_fade(scene, &lighting)
 	return
+}
+
+// Scenery fades on the whole screen above the fighters' feet, in front of a plane flat to the camera as far as the
+// fighters allow: it holds the camera's up and the line that best fits their middles seen along it, and sits
+// BODY_REACH in front of the one nearest the camera; gone DEPTH_RIM in front of it. A fighter is the middle of a
+// gameplay node's joints (its transform without bones); a fighter's part nodes share them.
+@(private = "file")
+fighter_fade :: proc(scene: ^Scene, lighting: ^Lighting) {
+	FLOOR_ABOVE_FEET :: 0.15  // metres; stock floors are flat within 0.1
+	BODY_REACH :: 0.4         // metres from a fighter's middle toward the camera
+	DEPTH_RIM :: 0.5
+	middles := make([dynamic][3]f32, context.temp_allocator)
+	feet := max(f32)
+	for node in scene.nodes {
+		if node.class != .Gameplay do continue
+		place := transform_matrix(node.transform)
+		middle := node.transform.position
+		feet = min(feet, middle.y)
+		if len(node.bones) > 0 {
+			sum: [3]f32
+			for bone in node.bones {
+				joint := (place * [4]f32{bone.position.x, bone.position.y, bone.position.z, 1}).xyz
+				sum += joint
+				feet = min(feet, joint.y)
+			}
+			middle = sum / f32(len(node.bones))
+		}
+		if !slice.contains(middles[:], middle) do append(&middles, middle)
+	}
+	if len(middles) == 0 do return
+	normal := fighters_facing(scene.camera, middles[:])
+	nearest := -max(f32)
+	for middle in middles do nearest = max(nearest, linalg.dot(normal, middle))
+	lighting.fighter_plane = {normal.x, normal.y, normal.z, nearest + BODY_REACH}
+	lighting.fighter_fade = {feet + FLOOR_ABOVE_FEET, DEPTH_RIM, 0, 0}
+}
+
+// The normal, toward the camera, of the plane that holds the camera's up and the line best fitting the middles seen
+// along it (their principal axis); straight at the camera when they do not spread.
+@(private = "file")
+fighters_facing :: proc(camera: Camera, middles: [][3]f32) -> [3]f32 {
+	forward := linalg.normalize(camera.target - camera.position)
+	up := linalg.quaternion128_mul_vector3(linalg.quaternion_angle_axis_f32(camera.roll, forward), [3]f32{0, 1, 0})
+	right := linalg.normalize(linalg.cross(forward, up))
+	away := linalg.cross(up, right)  // forward with its up part taken out
+	centre: [2]f32
+	for middle in middles do centre += {linalg.dot(middle, right), linalg.dot(middle, away)}
+	centre /= f32(len(middles))
+	spread: [3]f32  // right * right, away * away, right * away
+	for middle in middles {
+		offset := [2]f32{linalg.dot(middle, right), linalg.dot(middle, away)} - centre
+		spread += {offset.x * offset.x, offset.y * offset.y, offset.x * offset.y}
+	}
+	if spread.x + spread.y < 0.0001 do return -away
+	angle := 0.5 * math.atan2(2 * spread.z, spread.x - spread.y)
+	axis := right * math.cos(angle) + away * math.sin(angle)
+	normal := linalg.normalize(linalg.cross(axis, up))
+	return linalg.dot(normal, away) > 0 ? -normal : normal
 }
 
 @(private = "file")
