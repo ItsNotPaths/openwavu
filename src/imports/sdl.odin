@@ -53,12 +53,13 @@ sdl_set_destroy :: proc(set: ^Sdl_Set) {
 	delete(set.free)
 }
 
-// Puts back the renderer state the allowlist lets a pack change: draw color, draw blend mode, clip.
+// Puts back the renderer state the allowlist lets a pack change: draw color, draw blend mode, clip, scale.
 sdl_reset :: proc(set: ^Sdl_Set) {
 	renderer := (^sdl.Renderer)(set.objects[SDL_RENDERER - 1].pointer)
 	_ = sdl.SetRenderDrawColor(renderer, 0, 0, 0, 255)
 	_ = sdl.SetRenderDrawBlendMode(renderer, sdl.BLENDMODE_BLEND)
 	_ = sdl.SetRenderClipRect(renderer, nil)
+	_ = sdl.SetRenderScale(renderer, 1, 1)
 }
 
 // The allowlisted SDL functions, and ow_renderer() -> the renderer's handle, on a module's linker.

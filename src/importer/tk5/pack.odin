@@ -11,8 +11,9 @@ STOCK_PACK :: PACK_ID + ".tar"
 TITLE :: "Tekken 5: Dark Resurrection"
 
 // The stock modules build.sh made from modules/tk5, so an import writes this openwavu's own.
-// (hole stock-modules :tags (importer tk5mod) :needs (mod-menus mod-scene)) the stock pack's gamerender.wasm and app.wasm are empty modules.
+// (hole stock-modules :tags (importer tk5mod) :needs mod-scene) the stock pack's gamerender.wasm is an empty module.
 GAMEPLAY_MODULE :: #load("../../../build/modules/gameplay.wasm", string)
+APP_MODULE :: #load("../../../build/modules/app.wasm", string)
 EMPTY_MODULE :: "\x00asm\x01\x00\x00\x00"
 STOCK_FRONT :: #load("../../../modules/tk5/front.owf", string)
 
@@ -60,7 +61,7 @@ write_pack_files :: proc(stage: string, inputs: []string) -> (err: string) {
 		{titlepack.FRONT, STOCK_FRONT},
 		{"gameplay.wasm", GAMEPLAY_MODULE},
 		{"gamerender.wasm", EMPTY_MODULE},
-		{"app.wasm", EMPTY_MODULE},
+		{"app.wasm", APP_MODULE},
 	}
 	for f in files {
 		if os.write_entire_file(join(stage, f.name), f.text) != nil do return fmt.aprintf("cannot write %s", f.name)

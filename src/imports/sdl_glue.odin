@@ -13,6 +13,7 @@ sdl_glue :: proc() -> []Sdl_Define {
 		{"SDL_SetRenderDrawColorFloat", {wasm.I32, wasm.F32, wasm.F32, wasm.F32, wasm.F32}, {wasm.I32}, import_SDL_SetRenderDrawColorFloat},
 		{"SDL_SetRenderDrawBlendMode", {wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_SetRenderDrawBlendMode},
 		{"SDL_SetRenderClipRect", {wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_SetRenderClipRect},
+		{"SDL_SetRenderScale", {wasm.I32, wasm.F32, wasm.F32}, {wasm.I32}, import_SDL_SetRenderScale},
 		{"SDL_GetRenderOutputSize", {wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_GetRenderOutputSize},
 		{"SDL_RenderPoint", {wasm.I32, wasm.F32, wasm.F32}, {wasm.I32}, import_SDL_RenderPoint},
 		{"SDL_RenderPoints", {wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_RenderPoints},
@@ -115,6 +116,18 @@ import_SDL_SetRenderClipRect :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, a
 	p2 := sdl_bytes(&call, 2, args[1], 16)
 	if call.error != "" do return wasm.trap(call.error)
 	results[0] = wasm.i32_val(i32(SDL_SetRenderClipRect(p1, p2)))
+	return nil
+}
+
+@(private = "file")
+import_SDL_SetRenderScale :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_SetRenderScale")
+	p1 := sdl_handle(&call, 1, args[0], .Renderer)
+	p2 := args[1].of.f32
+	p3 := args[2].of.f32
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(i32(SDL_SetRenderScale(p1, p2, p3)))
 	return nil
 }
 
@@ -624,6 +637,11 @@ SDL_SetRenderDrawBlendMode :: proc(p1: rawptr, p2: u32) -> bool {
 @(private = "file")
 SDL_SetRenderClipRect :: proc(p1: rawptr, p2: rawptr) -> bool {
 	return (proc "c" (rawptr, rawptr) -> bool)(rawptr(sdl.SetRenderClipRect))(p1, p2)
+}
+
+@(private = "file")
+SDL_SetRenderScale :: proc(p1: rawptr, p2: f32, p3: f32) -> bool {
+	return (proc "c" (rawptr, f32, f32) -> bool)(rawptr(sdl.SetRenderScale))(p1, p2, p3)
 }
 
 @(private = "file")

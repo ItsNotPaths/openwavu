@@ -41,20 +41,24 @@ if [ ! -f build/sdk/libow_db.a ] || [ vendor/sqlite/sqlite3.c -nt build/sdk/libo
 	rm -f build/sdk/libow_db.a
 	vendor/zig/zig ar rcs build/sdk/libow_db.a build/sdk/sqlite3.o build/sdk/ow_db.o
 fi
-# The stock TK5 modules, WASI reactors that import only from openwavu. The TK5 core needs exact floats and wrapping ints.
+# The stock TK5 modules, WASI reactors. The sim imports only from openwavu; presentation modules also call SDL, whose
+# functions become imports (env) through --import-symbols. The TK5 core needs exact floats and wrapping ints.
 # (hole module-build :tags (wasm tk5mod) :needs ow-cli) build.sh builds the stock modules with zig itself; ow build should make them with the same pinned flags, reproducibly.
 mkdir -p build/modules
 tk5_core=(modules/tk5/sim/*.c modules/tk5/load.c)
-# tk5_module <out> <sources...>: rebuilt when anything under modules/tk5 or sdk is newer.
+# tk5_module <out> <link flags> <sources...>: rebuilt when anything under modules/tk5 or sdk is newer.
 tk5_module() {
 	out="build/modules/$1"
-	shift
+	link="$2"
+	shift 2
 	if [ ! -f "$out" ] || [ -n "$(find modules/tk5 sdk build/sdk/libow_db.a -newer "$out" -print -quit)" ]; then
 		vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -fwrapv -ffp-contract=off -fno-fast-math -mexec-model=reactor \
-			-Imodules/tk5 -Isdk/include -Ivendor/sqlite -o "$out" "$@" build/sdk/libow_db.a
+			-Imodules/tk5 -Isdk/include -Ivendor/sqlite -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $link \
+			-o "$out" "$@" build/sdk/libow_db.a
 	fi
 }
-tk5_module gameplay.wasm "${tk5_core[@]}" modules/tk5/gameplay/*.c
+tk5_module gameplay.wasm "" "${tk5_core[@]}" modules/tk5/gameplay/*.c
+tk5_module app.wasm -Wl,--import-symbols modules/tk5/app/*.c
 # The host's 3D shaders, SPIR-V; src/render embeds them.
 mkdir -p build/shaders
 for shader in src/render/shaders/*.vert src/render/shaders/*.frag; do

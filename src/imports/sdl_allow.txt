@@ -11,6 +11,7 @@ SDL_SetRenderDrawColor
 SDL_SetRenderDrawColorFloat
 SDL_SetRenderDrawBlendMode
 SDL_SetRenderClipRect
+SDL_SetRenderScale
 SDL_GetRenderOutputSize
 SDL_RenderPoint
 SDL_RenderPoints 2=3
