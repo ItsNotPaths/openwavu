@@ -113,7 +113,6 @@ CREATE TABLE texture (  -- DDS files, which glb materials point at; hashes are u
 	owner  TEXT NOT NULL,  -- the part's owner or the stage
 	hash   INTEGER NOT NULL,
 	file   TEXT NOT NULL,
-	cutout INTEGER NOT NULL,  -- 1: draw with alpha test
 	PRIMARY KEY (owner, hash)
 );
 

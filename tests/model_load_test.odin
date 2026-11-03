@@ -111,7 +111,7 @@ glb_loads_and_draws_in_its_texture :: proc(t: ^testing.T) {
 	testing.expect_value(t, child.parent, 0)
 	testing.expect_value(t, child.local[0, 3], 0.5)
 	primitive := m.meshes[child.mesh][0]
-	testing.expect(t, primitive.cutout)
+	testing.expect_value(t, primitive.cutoff, 0.5)  // MASK with no alphaCutoff: glTF's default
 	testing.expect(t, primitive.texture != nil)
 
 	testing.expect(t, render.asset_model(&assets, &g, render.asset_id(&assets, "models/loop.glb")) == nil)
@@ -126,7 +126,7 @@ glb_loads_and_draws_in_its_texture :: proc(t: ^testing.T) {
 	defer render.scene_destroy(&scene)
 	scene.camera = {position = {0, 0, 5}, target = {0, 0, 0}, fov = math.PI / 3}
 	scene.ambient = {1, 1, 1, 1}
-	draws := []render.Draw{{mesh = primitive.mesh, joints = {1}, texture = primitive.texture, tint = 1, cutout = primitive.cutout}}
+	draws := []render.Draw{{mesh = primitive.mesh, joints = {1}, texture = primitive.texture, tint = 1, cutoff = primitive.cutoff}}
 	SIZE :: 16
 	pixels, drawn := test_draw(t, &g, &scene, draws, SIZE)
 	if !drawn do return

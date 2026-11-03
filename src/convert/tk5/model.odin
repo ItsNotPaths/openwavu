@@ -23,7 +23,7 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 		append(&scene.nodes, ..add_skin(&g, s, max_joint(meshes) + 1)[:])
 		skin = 0
 	}
-	materials := Materials{glb = file, files = textures, by_hash = make(map[u32]int)}
+	materials := Materials{glb = file, files = textures, by_look = make(map[Material_Look]int)}
 	for mesh, mesh_index in meshes {
 		out := gltf.Mesh{name = mesh.name}
 		for p in mesh.polys {
@@ -62,21 +62,47 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 Materials :: struct {
 	glb:     string,  // the pack path being written
 	files:   Texture_Files,
-	by_hash: map[u32]int,
+	by_look: map[Material_Look]int,
 }
 
-// One glTF material per first-pass texture; every pass goes to extras as stored, texture hashes included.
-// (hole texture-second-layer :tags (importer look)) only a pass's first texture is used; passes with two (kazuya_1 materials 3 and 4) likely mix the second in by the first's alpha, and those parts of the skin draw black.
+// What a glTF material is made from: the first pass's first texture and its alpha test.
+@(private = "file")
+Material_Look :: struct {
+	hash:   u32,
+	cutoff: f32,  // 0: no alpha test
+}
+
+// A pass's alpha test as a glTF cutoff (drop alpha below it), from the GL compare function and ref_alpha; 0 when it has
+// none or keeps alpha below ref (LESS), which glTF can not say.
+@(private = "file")
+alpha_cutoff :: proc(pass: formats.Material) -> f32 {
+	GL_GREATER :: 4  // GL compare functions, in GL's order from NEVER = 0
+	GL_NOTEQUAL :: 5
+	GL_GEQUAL :: 6
+	if pass.alpha_test == 0 do return 0
+	switch pass.alpha_function {
+	case GL_GEQUAL: return f32(pass.ref_alpha) / 255  // GEQUAL 0 keeps all: 0, no test
+	case GL_GREATER: return f32(pass.ref_alpha + 1) / 255
+	case GL_NOTEQUAL: return pass.ref_alpha == 0 ? 1.0 / 255 : 0
+	}
+	return 0
+}
+
+// One glTF material per first-pass texture and alpha test; every pass goes to extras as stored, texture hashes included.
+// (hole texture-second-layer :tags (importer look)) only a pass's first texture is used; a pass with two (flags 0x41110003, NU_vUVset; kazuya_1 materials 3 and 4) has a blurry highlight map second, likely shine masked by the first texture's alpha.
 // (hole stage-white-models :tags (importer render look)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
 @(private = "file")
 material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material) -> int {
-	hash: u32 = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0
-	if m, seen := materials.by_hash[hash]; seen do return m
+	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = alpha_cutoff(passes[0])}
+	if m, seen := materials.by_look[look]; seen do return m
 	out: gltf.Material
 	out.doubleSided = true
-	if file, has := materials.files[hash]; has && len(passes[0].textures) > 0 {
-		out.pbrMetallicRoughness.baseColorTexture = gltf.Texture_Info{gltf.add_dds_texture(g, gltf.relative_uri(materials.glb, file.path))}
-		if file.cutout do out.alphaMode = "MASK"
+	if file, has := materials.files[look.hash]; has && len(passes[0].textures) > 0 {
+		out.pbrMetallicRoughness.baseColorTexture = gltf.Texture_Info{gltf.add_dds_texture(g, gltf.relative_uri(materials.glb, file))}
+	}
+	if look.cutoff > 0 {
+		out.alphaMode = "MASK"
+		out.alphaCutoff = look.cutoff
 	}
 	extras := make(json.Object)
 	pass_values := make(json.Array)
@@ -88,8 +114,8 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 	extras["tk5_passes"] = pass_values
 	out.extras = extras
 	append(&g.materials, out)
-	materials.by_hash[hash] = len(g.materials) - 1
-	return materials.by_hash[hash]
+	materials.by_look[look] = len(g.materials) - 1
+	return materials.by_look[look]
 }
 
 // Joint nodes in bind pose plus the skin. Returns the root nodes.

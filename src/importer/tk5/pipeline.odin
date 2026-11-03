@@ -32,7 +32,7 @@ Import :: struct {
 	root:     string,
 	w:        db.Writer,
 	progress: ^Progress,
-	textures: map[string]bool,  // <owner>/<hash> with a texture row: its cutout
+	textures: map[string]bool,  // <owner>/<hash> with a texture row
 }
 
 // Steps of one import, counted with atomics so another thread can show them.
@@ -237,15 +237,15 @@ write_textures :: proc(im: ^Import, owner: string, textures: convert.Textures) -
 		t := textures[hash]
 		file := fmt.tprintf("textures/%s/%08x.dds", owner, t.hash)
 		key := fmt.tprintf("%s/%08x", owner, hash)
-		if cutout, written := im.textures[key]; written {
-			files[hash] = {file, cutout}
+		if key in im.textures {
+			files[hash] = file
 			continue
 		}
-		dds, cutout, ok := convert.texture_dds(t, context.temp_allocator)
+		dds, ok := convert.texture_dds(t, context.temp_allocator)
 		if !ok || os.write_entire_file(join(im.root, file), dds) != nil do continue
-		db.insert(&im.w, "texture", owner, i64(hash), file, i64(cutout ? 1 : 0))
-		im.textures[strings.clone(key)] = cutout
-		files[hash] = {file, cutout}
+		db.insert(&im.w, "texture", owner, i64(hash), file)
+		im.textures[strings.clone(key)] = true
+		files[hash] = file
 	}
 	return
 }

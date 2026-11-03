@@ -30,7 +30,7 @@ Primitive :: struct {
 	mesh:    Mesh,
 	joints:  int,              // how many the vertices name: 1 unskinned, else the highest + 1
 	texture: ^sdl.GPUTexture,  // nil: white; owned by Assets
-	cutout:  bool,
+	cutoff:  f32,              // alpha MASK: drop alpha below it; 0 keeps all
 }
 
 Model_Skin :: struct {
@@ -198,7 +198,7 @@ primitive_upload :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cglt
 	if material := source.material; material != nil {
 		out.texture = texture_of(gpu, upload, assets, file, material.pbr_metallic_roughness.base_color_texture.texture, path)
 		// (hole material-blend :tags (render importer look)) no alphaMode BLEND, and the importer does not write the TK5 passes' blend factors (additive glows, see-through parts); they draw opaque.
-		out.cutout = material.alpha_mode == .mask
+		if material.alpha_mode == .mask do out.cutoff = material.alpha_cutoff
 	}
 	out.mesh = mesh_upload(gpu, upload, vertices, indices) or_return
 	return out, true

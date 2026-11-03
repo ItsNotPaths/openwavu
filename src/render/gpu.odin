@@ -32,14 +32,14 @@ Draw :: struct {
 	joints:  []matrix[4, 4]f32,
 	texture: ^sdl.GPUTexture,
 	tint:    [4]f32,
-	cutout:  bool,  // drop pixels below half alpha
+	cutoff:  f32,  // drop pixels with alpha below it; 0 keeps all
 }
 
 // scene.frag's Material block.
 @(private = "file")
 Material :: struct {
 	tint:   [4]f32,
-	cutout: f32,
+	cutoff: f32,
 	_:      [3]f32,
 }
 
@@ -169,7 +169,7 @@ draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: 
 	if joint_count > 0 do sdl.BindGPUVertexStorageBuffers(pass, 0, &gpu.joints, 1)
 	joint_base: u32
 	for draw in draws {
-		material := Material{tint = draw.tint, cutout = draw.cutout ? 1 : 0}
+		material := Material{tint = draw.tint, cutoff = draw.cutoff}
 		sdl.PushGPUVertexUniformData(command, 1, &joint_base, size_of(joint_base))
 		sdl.PushGPUFragmentUniformData(command, 1, &material, size_of(material))
 		binding := sdl.GPUTextureSamplerBinding{draw.texture != nil ? draw.texture : gpu.white, gpu.sampler}

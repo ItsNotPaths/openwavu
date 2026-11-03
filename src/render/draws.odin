@@ -73,7 +73,7 @@ subtree_draws :: proc(draws: ^[dynamic]Draw, model: ^Model, world: []matrix[4, 4
 	if model_node.mesh >= 0 {
 		joints := mesh_joints(model, world, index, allocator)
 		for primitive in model.meshes[model_node.mesh] {
-			append(draws, Draw{mesh = primitive.mesh, joints = joints, texture = primitive.texture, tint = tint, cutout = primitive.cutout})
+			append(draws, Draw{mesh = primitive.mesh, joints = joints, texture = primitive.texture, tint = tint, cutoff = primitive.cutoff})
 		}
 	}
 	for child in model_node.children do subtree_draws(draws, model, world, child, left_out, tint, allocator)

@@ -67,7 +67,8 @@ Material :: struct {
 		baseColorTexture: Maybe(Texture_Info) `json:",omitempty"`,
 		metallicFactor:   f32,
 	},
-	alphaMode:            string `json:",omitempty"`,  // OPAQUE when empty; MASK cuts out below alpha 0.5
+	alphaMode:            string `json:",omitempty"`,  // OPAQUE when empty; MASK cuts out below alphaCutoff
+	alphaCutoff:          Maybe(f32) `json:",omitempty"`,  // 0.5 when none
 	doubleSided:          bool,
 	extras:               json.Object `json:",omitempty"`,  // raw game material data
 }

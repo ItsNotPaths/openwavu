@@ -1,6 +1,6 @@
 #version 450
 // Base color texture times vertex color and tint, lit by the scene's ambient and lights, then its fog. A cut-out
-// draw drops pixels below half alpha.
+// draw drops pixels with alpha below its cutoff.
 // SDL_GPU SPIR-V sets: fragment textures in set 2, fragment uniforms in set 3.
 
 const int LIGHTS = 4;
@@ -22,14 +22,14 @@ layout(std140, set = 3, binding = 0) uniform Lighting {
 };
 layout(std140, set = 3, binding = 1) uniform Material {
     vec4 tint;
-    float cutout;  // 1: drop pixels below half alpha
+    float cutoff;  // drop pixels with alpha below it; 0 keeps all
 };
 
 layout(location = 0) out vec4 color;
 
 void main() {
     vec4 base = texture(base_color, texture_uv) * vertex_color * tint;
-    if (cutout > 0.5 && base.a < 0.5) discard;
+    if (base.a < cutoff) discard;
     vec3 n = normalize(world_normal);
     vec3 light = ambient.rgb;
     for (int i = 0; i < LIGHTS; i++) {
