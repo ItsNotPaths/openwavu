@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import sdl "vendor:sdl3"
+import "../input"
 import "../render"
 import "../titlepack"
 import "../ui"
@@ -41,12 +42,8 @@ main :: proc() {
 		e: sdl.Event
 		for sdl.PollEvent(&e) {
 			sdl.ConvertEventToRenderCoordinates(r.r2d, &e)
-			#partial switch e.type {
-			case .QUIT:
-				l.quit = true
-			case .GAMEPAD_ADDED:
-				sdl.OpenGamepad(e.gdevice.which)
-			}
+			if e.type == .QUIT do l.quit = true
+			input.handle_event(e)
 			ui.handle_event(&u, e)
 		}
 		now := sdl.GetTicksNS()

@@ -5,6 +5,7 @@ import "core:math/rand"
 import sdl "vendor:sdl3"
 import "../content"
 import "../imports"
+import "../input"
 import "../match"
 import "../presentation"
 import "../render"
@@ -13,7 +14,7 @@ import "../wasm"
 
 // Runs the picked pack's entry module, one frame call per display frame, and the matches it starts, until the window
 // closes (quit) or a module traps, which cuts off the whole pack and returns to the launcher.
-// (hole game-loop :tags game :needs (render-fighter render-stage input-pad mod-scene mod-ui mod-menus stock-modules) :sev blocker) no offline match vs the CPU in the stock pack, started from its menus.
+// (hole game-loop :tags game :needs (render-fighter render-stage mod-scene mod-ui mod-menus stock-modules) :sev blocker) no offline match vs the CPU in the stock pack, started from its menus.
 // (hole pack-leave :tags game :needs app-shell) the player can not leave a running pack for the launcher; only closing the window ends it.
 play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (quit: bool) {
 	if tp.main == "" {
@@ -45,7 +46,12 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 	for {
 		defer free_all(context.temp_allocator)
 		e: sdl.Event
-		for sdl.PollEvent(&e) do if e.type == .QUIT do return true
+		for sdl.PollEvent(&e) {
+			if e.type == .QUIT do return true
+			input.handle_event(e)
+		}
+		pads := input.poll()
+		running.pads = pads
 		now := sdl.GetTicksNS()
 		dt := now - last
 		last = now
@@ -61,8 +67,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 			return
 		}
 		if game != nil {
-			// (hole match-pads :tags game :needs input-pad) player sides get no pad: their input is always 0.
-			ended, winner, match_err := match.frame(game, running, dt, {})
+			ended, winner, match_err := match.frame(game, running, dt, {{pads[0]}, {pads[1]}})
 			if match_err != "" {
 				fmt.eprintfln("openwavu: the match stopped, so the pack is cut off: %s", match_err)
 				return
