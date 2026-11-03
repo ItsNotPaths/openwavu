@@ -37,9 +37,9 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 		return
 	}
 	defer wasm.module_destroy(code)
-	sdl_set := imports.sdl_set_create(r.r2d)
-	defer imports.sdl_set_destroy(&sdl_set)
-	entry, err := presentation.start(engine, code, tp.main, &pack, &sdl_set)
+	running := presentation.pack_create(&pack, r.r2d)
+	defer presentation.pack_destroy(running)
+	entry, err := presentation.start(engine, code, tp.main, running)
 	if err != "" {
 		fmt.eprintfln("openwavu: %s did not start: %s", tp.main, err)
 		return
@@ -55,9 +55,13 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 		dt := f32(now - last) / 1e9
 		last = now
 		render.begin_frame(r, {0, 0, 0, 1})
-		if err = presentation.frame(entry, &sdl_set, dt); err != "" {
+		if err = presentation.frame(entry, running, dt); err != "" {
 			fmt.eprintfln("openwavu: %s stopped, so the pack is cut off: %s", tp.main, err)
 			return
+		}
+		if running.scene.sent {
+			render.show_scene(r, &running.scene.scene)
+			running.scene.sent = false
 		}
 		render.end_frame(r)
 		pace(now, frame_cap)

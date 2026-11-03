@@ -13,8 +13,6 @@ Renderer :: struct {
 
 Model :: struct {}
 
-Scene :: struct {}
-
 init :: proc(title: cstring, width, height: i32) -> (r: Renderer, ok: bool) {
 	if !sdl.Init({.VIDEO, .GAMEPAD}) {
 		return {}, false
@@ -29,12 +27,14 @@ init :: proc(title: cstring, width, height: i32) -> (r: Renderer, ok: bool) {
 		return {}, false
 	}
 	r.gpu = sdl.GetGPURendererDevice(r.r2d)
+	r.scene = scene_create()
 	sdl.SetRenderVSync(r.r2d, 1)
 	sdl.SetRenderDrawBlendMode(r.r2d, sdl.BLENDMODE_BLEND)
 	return r, true
 }
 
 destroy :: proc(r: ^Renderer) {
+	scene_destroy(&r.scene)
 	sdl.DestroyRenderer(r.r2d)
 	sdl.DestroyWindow(r.window)
 	sdl.Quit()
@@ -65,12 +65,13 @@ load_glb :: proc(r: ^Renderer, path: string) -> (m: Model, ok: bool) {
 	return {}, false
 }
 
-// The whole scene of one frame, from ow_scene_submit; replaces the last one.
-// (hole scene-api :tags (render sdk)) the host does not copy a submitted scene or resolve its asset ids and node id strings.
-scene_submit :: proc(r: ^Renderer, scene: []byte) {}
+// Shows a newly sent scene from now on; s gets the old one's arrays to read the next into.
+show_scene :: proc(r: ^Renderer, s: ^Scene) {
+	r.scene, s^ = s^, r.scene
+}
 
 // alpha: how far the display is between the last two sim ticks.
-// (hole render-fighter :tags render :needs (render-gpu glb-loader scene-api)) skinned scene nodes are not drawn from their bones (position, rotation, scale).
-// (hole render-stage :tags render :needs (render-gpu glb-loader scene-api)) mesh scene nodes are not drawn; hidden sub-meshes and _DRWOFF_ meshes are not skipped.
-// (hole scene-blend :tags render :needs scene-api) no blending between the scenes of the last two sim ticks: nodes matched by id, bones, camera, clip times, fx ages; no-blend flag, gameplay class and the fps setting.
+// (hole render-fighter :tags render :needs (render-gpu glb-loader)) skinned scene nodes are not drawn from their bones (position, rotation, scale).
+// (hole render-stage :tags render :needs (render-gpu glb-loader)) mesh scene nodes are not drawn; mesh flips and the hidden-by-default _DRWOFF_ meshes are not applied.
+// (hole scene-blend :tags render) no blending between the scenes of the last two sim ticks: nodes matched by id, bones, camera, clip times, fx ages; no-blend flag, gameplay class and the fps setting.
 draw_scene :: proc(r: ^Renderer, alpha: f32) {}

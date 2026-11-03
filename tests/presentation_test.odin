@@ -24,19 +24,19 @@ entry_module_draws_and_hands_back_the_renderer :: proc(t: ^testing.T) {
 	defer sdl.DestroySurface(surface)
 	renderer := sdl.CreateSoftwareRenderer(surface)
 	defer sdl.DestroyRenderer(renderer)
-	set := imports.sdl_set_create(renderer)
-	defer imports.sdl_set_destroy(&set)
+	running := presentation.pack_create(&pack, renderer)
+	defer presentation.pack_destroy(running)
 
 	engine := wasm.engine_create()
 	defer wasm.engine_destroy(engine)
 	code, compile_err := wasm.compile(engine, bytes)
 	if !testing.expect_value(t, compile_err, "") do return
 	defer wasm.module_destroy(code)
-	entry, err := presentation.start(engine, code, "entry_probe.wasm", &pack, &set)
+	entry, err := presentation.start(engine, code, "entry_probe.wasm", running)
 	if !testing.expect_value(t, err, "") do return
 	defer imports.module_destroy(entry)
 
-	testing.expect_value(t, presentation.frame(entry, &set, 1.0 / 60), "")
+	testing.expect_value(t, presentation.frame(entry, running, 1.0 / 60), "")
 	_ = sdl.FlushRenderer(renderer)
 	pixels := ([^][4]u8)(surface.pixels)
 	testing.expect_value(t, pixels[1 * int(surface.pitch) / 4 + 1], [4]u8{255, 0, 0, 255})
@@ -46,5 +46,5 @@ entry_module_draws_and_hands_back_the_renderer :: proc(t: ^testing.T) {
 	testing.expect_value(t, color, [4]u8{0, 0, 0, 255})
 	testing.expect(t, !sdl.RenderClipEnabled(renderer))
 
-	testing.expect(t, presentation.frame(entry, &set, 1.0 / 60) != "")
+	testing.expect(t, presentation.frame(entry, running, 1.0 / 60) != "")
 }

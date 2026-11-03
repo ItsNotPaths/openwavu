@@ -7,6 +7,7 @@
 #define OPENWAVU_H
 
 #include <stdint.h>
+#include "ow_scene.h"
 
 #define OW_EXPORT(name) __attribute__((export_name(#name)))
 #define OW_IMPORT(name) __attribute__((import_module("openwavu"), import_name(#name)))
@@ -59,9 +60,12 @@ OW_IMPORT(renderer) struct SDL_Renderer *ow_renderer(void);
 
 // The sim view of the last frame; returns its length.
 OW_IMPORT(view) int32_t ow_view(void *buf, uint32_t cap);
-// The whole 3D scene of this frame; the host keeps it until the next one (docs/app.md).
-// (hole scene-api :tags (render sdk)) no OwScene layout (version, camera, lights, fog, nodes, fx entries), no ow_scene_submit or ow_asset import.
-OW_IMPORT(scene_submit) void ow_scene_submit(const void *scene, uint32_t size);
+// The whole 3D scene of this frame, an OwScene block (ow_scene.h); the host keeps it until the next one. A block that
+// does not read stops the module.
+OW_IMPORT(scene_submit) void ow_scene_submit(const OwScene *scene, uint32_t size);
+OW_IMPORT(asset) uint32_t ow_asset_raw(const char *path, uint32_t path_len);
+// The id a scene names a pack file by (a glb, an image, an effect def); the same for the same path, 0 if there is no such file.
+static inline uint32_t ow_asset(OwStr path) { return ow_asset_raw(path.data, path.len); }
 
 // A pad word: what one player holds this frame, the same in every Tekken. The client maps physical buttons to the four
 // game buttons and cancels opposite directions per axis before the sim sees it. Directions are screen directions.
