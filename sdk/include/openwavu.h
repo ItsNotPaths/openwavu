@@ -91,16 +91,28 @@ OW_EXPORT(ow_bot_pad) uint32_t ow_bot_pad(uint32_t side);
 
 // Host imports, entry module only. The host sends state, the entry module sends intents.
 
-// The host's state, copied in each frame: connection, server list, lobby, match state and result.
-// (hole host-view :tags (sdk game)) no host view layout and no ow_host_view import: the entry module is not told a match ended or who won.
-OW_IMPORT(host_view) int32_t ow_host_view(void *buf, uint32_t cap);
+// The host's state, read any time; returns its length and copies as much as fits. Fields are only added at the end:
+// size says how many bytes this host fills.
+// (hole host-view-online :tags (sdk net) :needs server-lobby) no connection states past offline, and no server list or lobby sections.
+#define OW_HOST_VIEW_VERSION 1
+enum { OW_CONNECTION_OFFLINE = 0 };
+enum { OW_MATCH_NONE = 0, OW_MATCH_RUNNING = 1, OW_MATCH_ENDED = 2 };
+typedef struct {
+	uint32_t version;     // OW_HOST_VIEW_VERSION
+	uint32_t size;        // sizeof(OwHostView) as the host builds it
+	uint32_t connection;  // OW_CONNECTION_*
+	uint32_t overlay;     // 1 while openwavu's own menu is open on top
+	uint32_t match;       // OW_MATCH_*: ended stays until the next match runs
+	int32_t winner;       // an ended match: the side that won, -1 for a draw
+} OwHostView;
+OW_IMPORT(host_view) int32_t ow_host_view(OwHostView *view, uint32_t cap);
 // An offline match of a pack.toml mode, started at the next frame; 0, or -1 when refused (an unknown mode, params that
 // do not read, a match asked for or running). bot_sides: bit per side played by ow_bot_pad. params: values for params
 // the modules declare, as a lobby host sets them: `name=value` pairs split by spaces ("stage=3 rounds=5").
 OW_IMPORT(match_local) int32_t ow_match_local(const char *mode, uint32_t mode_len, uint32_t bot_sides,
 	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len, const char *params, uint32_t params_len);
 // (hole app-modules :tags (sdk game wasm)) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.
-// (hole lobby-intents :tags (sdk net) :needs (host-view server-lobby)) no server refresh, lobby join, create, leave, or ready with a loadout.
+// (hole lobby-intents :tags (sdk net) :needs server-lobby) no server refresh, lobby join, create, leave, or ready with a loadout.
 // (hole save-imports :tags (sdk game)) no ow_save_read or ow_save_write on the pack save (docs/packs.md).
 
 // Presentation exports. Outside rollback, once per rendered frame.

@@ -30,9 +30,9 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 	defer codes_destroy(&codes)
 	running := presentation.pack_create(&pack, r.r2d)
 	defer presentation.pack_destroy(running)
-	intents := imports.intents_create(tp.modes)
-	defer if asked, has := &intents.asked.?; has do imports.match_request_destroy(asked, intents.allocator)
-	entry, err := start_entry(&codes, tp.main, running, &intents)
+	entry_state := imports.entry_create(tp.modes)
+	defer if asked, has := &entry_state.asked.?; has do imports.match_request_destroy(asked, entry_state.allocator)
+	entry, err := start_entry(&codes, tp.main, running, &entry_state)
 	if err != "" {
 		fmt.eprintfln("openwavu: %s did not start: %s", tp.main, err)
 		return
@@ -49,11 +49,11 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 		now := sdl.GetTicksNS()
 		dt := now - last
 		last = now
-		if asked, has := &intents.asked.?; has {
+		if asked, has := &entry_state.asked.?; has {
 			game = start_match(&codes, running, asked^)
-			imports.match_request_destroy(asked, intents.allocator)
-			intents.asked = nil
-			intents.running = game != nil
+			imports.match_request_destroy(asked, entry_state.allocator)
+			entry_state.asked = nil
+			if game != nil do entry_state.view.match = .Running
 		}
 		render.begin_frame(r, {0, 0, 0, 1})
 		if game != nil {
@@ -64,10 +64,9 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 				return
 			}
 			if ended {
-				fmt.eprintfln("openwavu: the match ended, winner side %d", winner)
 				match.stop(game)
 				game = nil
-				intents.running = false
+				entry_state.view.match, entry_state.view.winner = .Ended, winner
 			}
 		}
 		if err = presentation.frame(entry, running, f32(dt) / 1e9); err != "" {
@@ -105,11 +104,11 @@ code_of :: proc(c: ^Codes, path: string) -> (code: wasm.Module, err: string) {
 	return code, ""
 }
 
-start_entry :: proc(c: ^Codes, path: string, running: ^presentation.Pack, intents: ^imports.Intents) -> (m: ^imports.Module, err: string) {
+start_entry :: proc(c: ^Codes, path: string, running: ^presentation.Pack, state: ^imports.Entry) -> (m: ^imports.Module, err: string) {
 	code: wasm.Module
 	if code, err = code_of(c, path); err != "" do return
 	if m, err = presentation.create(c.engine, path, running); err != "" do return
-	if err = imports.define_intents(m.linker, intents); err == "" do err = presentation.start(m, code)
+	if err = imports.define_entry(m.linker, state); err == "" do err = presentation.start(m, code)
 	if err != "" {
 		imports.module_destroy(m)
 		return nil, err

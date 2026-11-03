@@ -10,7 +10,8 @@ import "../src/presentation"
 import "../src/titlepack"
 import "../src/wasm"
 
-// The entry module asks for a versus match of two bots: bad asks are refused, a good one is copied for the host.
+// The entry module asks for a versus match of two bots: bad asks are refused, a good one is copied for the host, and
+// the host view shows the phase and winner the host sets.
 // The host plays it through match.frame on the stock pack to the sim's match end, and the presenter gets the sim
 // view every frame. Needs an import.
 @(test)
@@ -36,30 +37,36 @@ entry_module_starts_a_bot_match :: proc(t: ^testing.T) {
 	defer for code in codes do wasm.module_destroy(code)
 
 	modes := []titlepack.Mode{{"versus", "gameplay.wasm", "gamerender.wasm"}}
-	intents := imports.intents_create(modes)
+	state := imports.entry_create(modes)
 	entry, err := presentation.create(engine, "entry", running)
 	if !testing.expect_value(t, err, "") do return
 	defer imports.module_destroy(entry)
-	testing.expect_value(t, imports.define_intents(entry.linker, &intents), "")
+	testing.expect_value(t, imports.define_entry(entry.linker, &state), "")
 	if !testing.expect_value(t, presentation.start(entry, codes[0]), "") do return
 	ask :: proc(t: ^testing.T, entry: ^imports.Module, name: string) -> i32 {
 		result := []wasm.Val{{}}
 		testing.expect_value(t, wasm.call(entry.store, entry.instance, name, nil, result), "")
 		return result[0].of.i32
 	}
+	testing.expect_value(t, ask(t, entry, "read_view"), 0 * 10 + 0 + 1)  // no match yet
 	testing.expect_value(t, ask(t, entry, "ask_unknown_mode"), -1)
 	testing.expect_value(t, ask(t, entry, "ask_bad_params"), -1)
 	testing.expect_value(t, ask(t, entry, "ask_versus"), 0)
 	testing.expect_value(t, ask(t, entry, "ask_versus"), -1)  // one is asked for already
-	asked, has := &intents.asked.?
+	asked, has := state.asked.?
 	if !testing.expect(t, has) do return
-	defer imports.match_request_destroy(asked, intents.allocator)
+	state.asked = nil  // the host has taken it
+	defer imports.match_request_destroy(&asked, state.allocator)
 	testing.expect_value(t, asked.mode.sim, "gameplay.wasm")
 	testing.expect_value(t, asked.bot_sides, bit_set[0 ..< 2; u32]{0, 1})
 	testing.expect_value(t, asked.params["rounds"], 2)
 	testing.expect_value(t, string(cstring(raw_data(asked.loadouts[1]))), "kazuya")
+	state.view.match = .Running
+	testing.expect_value(t, ask(t, entry, "ask_versus"), -1)  // one is running
+	state.view.match, state.view.winner = .Ended, 1
+	testing.expect_value(t, ask(t, entry, "read_view"), 2 * 10 + 1 + 1)
 
-	m, start_err := match.start(engine, codes[2], codes[1], running, asked^, 7)
+	m, start_err := match.start(engine, codes[2], codes[1], running, asked, 7)
 	if !testing.expect_value(t, start_err, "") do return
 	defer match.stop(m)
 	FRAMES_MAX :: 40_000
