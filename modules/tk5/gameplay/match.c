@@ -7,7 +7,7 @@
 #include "sim/frame.h"
 #include "sim/round.h"
 
-// (hole round-events :tags tk5mod) the KO and the round end are not reported with ow_event, only the match end.
+// (hole round-events :tags (tk5mod round-show)) the KO and the round end are not reported with ow_event, only the match end.
 
 enum {
     MODE_VERSUS = 2,           // T5World.mode of a versus match

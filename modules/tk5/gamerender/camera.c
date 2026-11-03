@@ -1,8 +1,8 @@
 // Stock TK5 presenter (gamerender.wasm): the fight camera. Per viewer, outside rollback. The camera and the timeline player are SDK libraries; TK5 gives params and data.
 #include "gamerender/presenter.h"
 
-// (hole sdk-camera :tags (sdk tk5mod) :sev gap) no general fight camera in the SDK (frames both fighters, keeps the side line, zoom and lag by params), and no TK5 params for it.
-// (hole sdk-timeline :tags (sdk tk5mod) :needs (sdk-camera intro-timelines camera-anims cue-ring)) no SDK player for intro, win and outro timelines keyed by the sim phase and phase frame (the fighter anim is a sim move).
+// (hole sdk-camera :tags (sdk tk5mod round-show) :sev gap) no general fight camera in the SDK (frames both fighters, keeps the side line, zoom and lag by params), and no TK5 params for it.
+// (hole sdk-timeline :tags (sdk tk5mod round-show) :needs (sdk-camera intro-timelines camera-anims cue-ring)) no SDK player for intro, win and outro timelines keyed by the sim phase and phase frame (the fighter anim is a sim move).
 
 static const float DISTANCE = 3.6f;      // metres from the midpoint, along the view normal
 static const float FOCUS_HEIGHT = 0.9f;  // metres

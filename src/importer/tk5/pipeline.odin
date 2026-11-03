@@ -141,9 +141,9 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 	if owner == c.id {
 		container := read_entry(im.archive, c.container) or_else nil
 		sections, _ := formats.sections(container, context.temp_allocator)
-		// (hole face-anims :tags importer) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
-		// (hole intro-re :tags importer) intros, win poses and outros are not located: motbin moves or separate data, and where their camera tracks live. Leads: move properties 0x8001..0x8008 (camera, dropped by the sim), the type-1 anim sections 1..5 (tk5decomp docs/data.md), the flashback angles, the fight camera 0x75724 (for sdk-camera params only).
-		// (hole camera-anims :tags importer :needs intro-re) camera tracks are not imported (.anim layout tk5cam: position, target, roll, fov).
+		// (hole face-anims :tags (importer fighter-detail)) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
+		// (hole intro-re :tags (importer round-show)) intros, win poses and outros are not located: motbin moves or separate data, and where their camera tracks live. Leads: move properties 0x8001..0x8008 (camera, dropped by the sim), the type-1 anim sections 1..5 (tk5decomp docs/data.md), the flashback angles, the fight camera 0x75724 (for sdk-camera params only).
+		// (hole camera-anims :tags (importer round-show) :needs intro-re) camera tracks are not imported (.anim layout tk5cam: position, target, roll, fov).
 		if len(sections) > 0 do write_bank(im, owner, sections[0])
 		if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
 	}

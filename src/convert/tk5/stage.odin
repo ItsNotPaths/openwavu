@@ -10,7 +10,7 @@ import "core:slice"
 import "../../gltf"
 import formats "../../formats/tk5"
 
-// (hole efp-import :tags importer :needs fx-spec) TK5 effect data (EFP, character slot +2, stage effects) is not converted to effect defs.
+// (hole efp-import :tags (importer effects) :needs fx-spec) TK5 effect data (EFP, character slot +2, stage effects) is not converted to effect defs.
 
 Surface :: struct {
 	layers:      bit_set[0 ..< 7; u32],  // 0: the floor under the fighters, 1..6: the lists the special queries name

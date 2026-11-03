@@ -197,7 +197,7 @@ primitive_upload :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cglt
 	if normal == nil do smooth_normals(vertices, indices)
 	if material := source.material; material != nil {
 		out.texture = texture_of(gpu, upload, assets, file, material.pbr_metallic_roughness.base_color_texture.texture, path)
-		// (hole material-blend :tags (render importer)) no alphaMode BLEND, and the importer does not write the TK5 passes' blend factors (additive glows, see-through parts); they draw opaque.
+		// (hole material-blend :tags (render importer look)) no alphaMode BLEND, and the importer does not write the TK5 passes' blend factors (additive glows, see-through parts); they draw opaque.
 		out.cutout = material.alpha_mode == .mask
 	}
 	out.mesh = mesh_upload(gpu, upload, vertices, indices) or_return

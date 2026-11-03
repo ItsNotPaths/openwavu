@@ -4,7 +4,7 @@
 package imports
 
 // (hole sdl-gpu-imports :tags (wasm render sdk)) no SDL_GPU functions: their create infos hold pointers, so each needs a deep copy.
-// (hole sdl-audio-imports :tags (wasm sdk audio)) no SDL audio stream functions, so packs can not play sound.
+// (hole sdl-audio-imports :tags (wasm sdk audio effects)) no SDL audio stream functions, so packs can not play sound.
 
 import "base:runtime"
 import "core:bytes"

@@ -6,9 +6,9 @@ import "core:math/linalg"
 import "core:strings"
 
 // Every shown glb node's meshes; models load on first use. Lives in allocator.
-// (hole render-quad :tags render) image assets and pack texture quads are not drawn, and billboard nodes do not face the camera.
-// (hole material-override :tags render) a node's material texture, shader and params are not applied; only its tint is.
-// (hole node-clip :tags render) a node's glb animation clip is not played at its clip time.
+// (hole render-quad :tags (render look)) image assets and pack texture quads are not drawn, and billboard nodes do not face the camera.
+// (hole material-override :tags (render look)) a node's material texture, shader and params are not applied; only its tint is.
+// (hole node-clip :tags (render look)) a node's glb animation clip is not played at its clip time.
 scene_draws :: proc(scene: ^Scene, assets: ^Assets, gpu: ^Gpu, allocator := context.temp_allocator) -> []Draw {
 	draws := make([dynamic]Draw, allocator)
 	for &node in scene.nodes {

@@ -14,7 +14,7 @@ Texture_File :: struct {
 }
 
 // NTP3 texture -> DDS bytes: DXT blocks as stored, ARGB8 as RGBA8.
-// (hole texture-alpha-re :tags importer) any texel alpha < 128 makes the texture cut-out; some costume textures (kazuya pants) use alpha for something else, likely a colour mask, and draw see-through.
+// (hole texture-alpha-re :tags (importer look)) any texel alpha < 128 makes the texture cut-out; some costume textures (kazuya pants) use alpha for something else, likely a colour mask, and draw see-through.
 // (hole texture-mips :tags importer :sev polish) only the top mip is read; the DDS files have no mip chain.
 texture_dds :: proc(t: formats.Texture, allocator := context.allocator) -> (file: []byte, cutout: bool, ok: bool) {
 	rgba := formats.decode_rgba(t, context.temp_allocator) or_return

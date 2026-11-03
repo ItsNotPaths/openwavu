@@ -9,7 +9,7 @@
 #include "sim/quat.h"
 #include "sqlite3.h"
 
-// (hole hand-pose :tags tk5mod :needs (visual-in-presenter face-anims)) fighter nodes get the sim pose, not the visual skeleton (fingers, face, eyes, head tilt).
+// (hole hand-pose :tags (tk5mod fighter-detail) :needs (visual-in-presenter face-anims)) fighter nodes get the sim pose, not the visual skeleton (fingers, face, eyes, head tilt).
 
 enum {
     PARTS_MAX = 8,      // per fighter
@@ -103,7 +103,7 @@ static void pose_fighter(OwTransform bones[POSED_BONES], const T5ViewFighter *fi
 
 static const OwTransform PLACE_AT_ORIGIN = {.rotation = {0, 0, 0, 1}, .scale = {1, 1, 1}};
 
-// (hole mod-scene-intro :tags tk5mod) intros, round end and match end poses show both fighters; the demo shows only the fighter whose pose it is.
+// (hole mod-scene-intro :tags (tk5mod round-show)) intros, round end and match end poses show both fighters; the demo shows only the fighter whose pose it is.
 void t5_scene_send(const T5View *view) {
     uint32_t count = 0;
     if (stage_asset) {

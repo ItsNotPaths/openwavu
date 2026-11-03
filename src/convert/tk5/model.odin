@@ -66,8 +66,8 @@ Materials :: struct {
 }
 
 // One glTF material per first-pass texture; every pass goes to extras as stored, texture hashes included.
-// (hole texture-second-layer :tags importer) only a pass's first texture is used; passes with two (kazuya_1 materials 3 and 4) likely mix the second in by the first's alpha, and those parts of the skin draw black.
-// (hole stage-white-models :tags (importer render)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
+// (hole texture-second-layer :tags (importer look)) only a pass's first texture is used; passes with two (kazuya_1 materials 3 and 4) likely mix the second in by the first's alpha, and those parts of the skin draw black.
+// (hole stage-white-models :tags (importer render look)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
 @(private = "file")
 material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material) -> int {
 	hash: u32 = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0
@@ -93,8 +93,8 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 }
 
 // Joint nodes in bind pose plus the skin. Returns the root nodes.
-// (hole helper-joint-re :tags port) TK5 SPLJNT block (section 8) and kkhelperjoint (0x1e96c4) are not decoded: twist rules and swing params (king tail, kazuya belt ends) for the helper and costume joints.
-// (hole mop-joints :tags importer :needs helper-joint-re) costume joints past the skeleton (MOP, model section 13) get an identity bind under bone 0; cloth does not animate.
+// (hole helper-joint-re :tags (port fighter-detail)) TK5 SPLJNT block (section 8) and kkhelperjoint (0x1e96c4) are not decoded: twist rules and swing params (king tail, kazuya belt ends) for the helper and costume joints.
+// (hole mop-joints :tags (importer fighter-detail) :needs helper-joint-re) costume joints past the skeleton (MOP, model section 13) get an identity bind under bone 0; cloth does not animate.
 @(private = "file")
 add_skin :: proc(g: ^gltf.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dynamic]int) {
 	bones := len(s.bones)
