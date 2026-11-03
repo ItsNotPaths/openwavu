@@ -312,6 +312,8 @@ import_stage :: proc(im: ^Import, index: int) {
 		for mesh, k in group {
 			mesh := mesh
 			mesh.name = nodes[k].name  // _DRWOFF_ in the name: a broken state, hidden at start
+			// (hole stage-shadows :tags (importer render look) :sev polish) the shadow receiver plane (_O_SMAP_, slot 5) is left out, so fighters cast no shadow on the floor.
+			if strings.contains(mesh.name, "_O_SMAP_") do continue
 			append(&meshes, mesh)
 			transform: Maybe([16]f32)
 			if mesh.single_bind >= 0 do transform = nodes[k].transform  // unbound meshes are in world space
