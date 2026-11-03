@@ -1,110 +1,182 @@
 // Stock TK5 entry module (app.wasm): the menus. Reads the pads and the host view, sends intents.
+// Mode, then character select, then stage select, then the match; after it, character select again.
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "catalog.h"
+#include "grid.h"
 #include "loadout.h"
 #include "openwavu.h"
-#include "ow_db.h"
-#include "sqlite3.h"
 
-// (hole mod-menus :tags tk5mod :sev gap) only a plain menu in SDL debug text: no TK5 look, no character select screen, no stage pick; later server and lobby lists, customization.
+// (hole mod-menus :tags tk5mod :needs menu-layouts :sev gap) the menus are SDL debug text, placed by us: no TK5 look; later server and lobby lists, customization.
+// (hole select-renders :tags (tk5mod game) :sev polish) character select shows names, not the ui/select_renders/<id>_left and _right images; a pack has no PNG decode (SDL_LoadPNG_IO returns a surface, which the SDL glue has no handle kind for).
 
-enum { CHARACTERS_MAX = 64, SCALE = 3, LINE = 12 };  // LINE: debug text rows are 8 px, at SCALE
-enum { ITEM_FIGHTER, ITEM_GHOST, ITEM_CPU, ITEMS };
-enum { NO_BOTS = 0, BOT_SIDE_2 = 1u << 1 };  // ow_match_local bot_sides
+enum { SCALE = GRID_SCALE, LINE = GRID_LINE, TOP = 24, GRID_TOP = TOP + 3 * LINE };
+enum Screen { SCREEN_MODE, SCREEN_CHARACTERS, SCREEN_STAGE, SCREEN_MATCH };
+enum Mode { MODE_VERSUS_CPU, MODE_VERSUS, MODE_WATCH, MODES };
+enum { BOT_SIDE_1 = 1u << 0, BOT_SIDE_2 = 1u << 1 };  // ow_match_local bot_sides
 
-static const char DB_PATH[] = "tk5.db";
-static char characters[CHARACTERS_MAX][T5_NAME_BYTES];
-static int character_count;
-static int item, fighter;
-static uint32_t held, frames;
-static const char *refused;  // why the last ask did not start, until the next
+static const char *const MODE_NAMES[MODES] = {"Versus CPU", "Versus", "CPU vs CPU"};
+static const uint32_t MODE_BOT_SIDES[MODES] = {BOT_SIDE_2, 0, BOT_SIDE_1 | BOT_SIDE_2};
 
-// The db's characters, in game order.
+static T5Catalog catalog;
+static enum Screen screen;
+static int mode, columns;
+static T5Cursor sides[OW_SIDES], stage;
+static uint32_t held[OW_SIDES], frames;
+static bool match_ran;
+static char notice[64];  // the last match's result, or why it did not start
+
 OW_EXPORT(ow_init) int32_t init(void) {
-    sqlite3 *db = ow_db_open(DB_PATH, sizeof DB_PATH - 1);
-    if (!db) return 1;
-    sqlite3_stmt *rows;
-    if (sqlite3_prepare_v2(db, "SELECT id FROM character ORDER BY rowid", -1, &rows, NULL) == SQLITE_OK) {
-        while (character_count < CHARACTERS_MAX && sqlite3_step(rows) == SQLITE_ROW) {
-            const char *id = (const char *)sqlite3_column_text(rows, 0);
-            if (id) strncpy(characters[character_count++], id, T5_NAME_BYTES - 1);  // a TEXT key may be NULL
+    const char *failed = catalog_load(&catalog);
+    if (failed) ow_log((OwStr){(uint32_t)strlen(failed), failed});
+    return failed ? 1 : 0;
+}
+
+// Versus: each player picks their own side. Otherwise player 0 picks side 1, then side 2.
+static int side_owner(int side) { return mode == MODE_VERSUS ? side : 0; }
+static bool side_open(int side) { return !sides[side].locked && (mode == MODE_VERSUS || side == 0 || sides[0].locked); }
+
+// Start goes back: it unlocks the player's last locked side, else player 0 leaves for the mode screen.
+static void characters_back(int player) {
+    for (int side = OW_SIDES - 1; side >= 0; side--) {
+        if (sides[side].locked && side_owner(side) == player) {
+            sides[side].locked = false;
+            return;
         }
-        sqlite3_finalize(rows);
     }
-    sqlite3_close(db);
-    return character_count > 0 ? 0 : 1;
+    if (player == 0) screen = SCREEN_MODE;
 }
 
-// A versus match of the picked fighter against a random other one (itself when it is the only one).
-static void start(uint32_t bot_sides) {
+static T5Loadout side_loadout(int side) {
+    const T5Entry *character = &catalog.characters[cursor_entry(&sides[side], catalog.character_count)];
+    T5Loadout loadout = {.costume = sides[side].button <= character->costumes ? sides[side].button : 1};
+    strcpy(loadout.character, character->id);
+    return loadout;
+}
+
+// Offline the picks start a match here. Online (lobby-intents) the same loadout goes to ow_ready, and the
+// stage param to the lobby params when this player hosts.
+static void submit(void) {
     srand(frames);
-    int others = character_count - 1;
-    int opponent = others > 0 ? (fighter + 1 + rand() % others) % character_count : fighter;
-    T5Loadout sides[2] = {{.costume = 1}, {.costume = 1}};
-    strcpy(sides[0].character, characters[fighter]);
-    strcpy(sides[1].character, characters[opponent]);
-    static const char mode[] = "versus", params[] = "stage=0";
-    int32_t asked = ow_match_local(mode, sizeof mode - 1, bot_sides, &sides[0], sizeof sides[0], &sides[1], sizeof sides[1],
-        params, sizeof params - 1);
-    refused = asked == 0 ? NULL : "the host refused the match";
-}
-
-static void step(uint32_t pressed) {
-    if (pressed & OW_PAD_UP) item = (item + ITEMS - 1) % ITEMS;
-    if (pressed & OW_PAD_DOWN) item = (item + 1) % ITEMS;
-    if (item == ITEM_FIGHTER && pressed & OW_PAD_LEFT) fighter = (fighter + character_count - 1) % character_count;
-    if (item == ITEM_FIGHTER && pressed & OW_PAD_RIGHT) fighter = (fighter + 1) % character_count;
-    if (!(pressed & (OW_PAD_BUTTON_1 | OW_PAD_START))) return;
-    if (item == ITEM_GHOST) start(NO_BOTS);
-    if (item == ITEM_CPU) start(BOT_SIDE_2);
-}
-
-static const char *match_line(const OwHostView *view) {
-    static char line[64];
-    if (view->match == OW_MATCH_ENDED) {
-        snprintf(line, sizeof line, view->winner < 0 ? "the match was a draw" : "side %d won the match", view->winner + 1);
-        return line;
-    }
-    return refused ? refused : "";
-}
-
-// While a match runs the presenter has the screen: no menu, and its buttons are the fighters'.
-OW_EXPORT(ow_frame) void frame(float dt, uint32_t cmdbuf) {
-    frames++;
-    uint32_t pad = ow_pad(0);
-    OwHostView view = {0};
-    ow_host_view(&view, sizeof view);
-    if (view.match == OW_MATCH_RUNNING) {
-        held = pad;  // a button held at the match end does not pick in the menu
+    T5Loadout loadouts[OW_SIDES] = {side_loadout(0), side_loadout(1)};
+    char params[16 + T5_NAME_BYTES];
+    int length = snprintf(params, sizeof params, "stage=%s", catalog.stages[cursor_entry(&stage, catalog.stage_count)].id);
+    static const char versus[] = "versus";
+    int32_t asked = ow_match_local(versus, sizeof versus - 1, MODE_BOT_SIDES[mode], &loadouts[0], sizeof loadouts[0],
+        &loadouts[1], sizeof loadouts[1], params, (uint32_t)length);
+    stage.locked = false;
+    if (asked != 0) {
+        snprintf(notice, sizeof notice, "the host refused the match");
         return;
     }
-    step(pad & ~held);
-    held = pad;
+    screen = SCREEN_MATCH;
+    match_ran = false;
+}
 
-    SDL_Renderer *renderer = ow_renderer();
+static void step(const uint32_t pressed[OW_SIDES]) {
+    switch (screen) {
+    case SCREEN_MODE:
+        if (pressed[0] & OW_PAD_UP) mode = (mode + MODES - 1) % MODES;
+        if (pressed[0] & OW_PAD_DOWN) mode = (mode + 1) % MODES;
+        if (pressed[0] & OW_PAD_BUTTON_1) {
+            sides[0].locked = sides[1].locked = false;
+            screen = SCREEN_CHARACTERS;
+        }
+        break;
+    case SCREEN_CHARACTERS:
+        for (int player = 0; player < OW_SIDES; player++) {
+            if (pressed[player] & OW_PAD_START) {
+                characters_back(player);
+                return;
+            }
+        }
+        bool open[OW_SIDES] = {side_open(0), side_open(1)};  // before any step: the press that locks side 1 is not side 2's
+        for (int side = 0; side < OW_SIDES; side++) {
+            if (open[side]) cursor_step(&sides[side], catalog.character_count, columns, pressed[side_owner(side)]);
+        }
+        if (sides[0].locked && sides[1].locked) screen = SCREEN_STAGE;
+        break;
+    case SCREEN_STAGE:
+        if (pressed[0] & OW_PAD_START) {
+            sides[OW_SIDES - 1].locked = false;
+            screen = SCREEN_CHARACTERS;
+            return;
+        }
+        cursor_step(&stage, catalog.stage_count, columns, pressed[0]);
+        if (stage.locked) submit();
+        break;
+    case SCREEN_MATCH:
+        break;
+    }
+}
+
+// The host starts an asked match before this module's next frame, so a match that never ran did not start: back to the
+// stage, with both fighters still picked.
+static void match_over(const OwHostView *view) {
+    if (!match_ran) {
+        snprintf(notice, sizeof notice, "the match did not start");
+        screen = SCREEN_STAGE;
+        return;
+    }
+    if (view->winner < 0) snprintf(notice, sizeof notice, "the match was a draw");
+    else snprintf(notice, sizeof notice, "side %d won the match", view->winner + 1);
+    sides[0].locked = sides[1].locked = false;
+    screen = SCREEN_CHARACTERS;
+}
+
+static void text(SDL_Renderer *renderer, float y, const char *line) { SDL_RenderDebugText(renderer, TOP, y, line); }
+
+static void draw(SDL_Renderer *renderer) {
     int width, height;
     SDL_GetRenderOutputSize(renderer, &width, &height);
     SDL_SetRenderScale(renderer, SCALE, SCALE);
-    float x = 24, y = 24;
     SDL_SetRenderDrawColor(renderer, 20, 20, 28, 255);
     SDL_RenderFillRect(renderer, &(SDL_FRect){0, 0, (float)width / SCALE, (float)height / SCALE});
     SDL_SetRenderDrawColor(renderer, 255, 200, 40, 255);
-    SDL_RenderDebugText(renderer, x, y, "TEKKEN 5 DARK RESURRECTION");
-    char fighter_line[64];
-    snprintf(fighter_line, sizeof fighter_line, "Fighter   < %s >", characters[fighter]);
-    const char *lines[ITEMS] = {fighter_line, "Ghost match vs random", "Versus CPU vs random"};
-    for (int line = 0; line < ITEMS; line++) {
-        float row = y + (line + 2) * LINE;
-        if (line == item) {
-            SDL_SetRenderDrawColor(renderer, 120, 30, 30, 255);
-            SDL_RenderFillRect(renderer, &(SDL_FRect){x - 4, row - 2, 200, LINE});
-        }
-        SDL_SetRenderDrawColor(renderer, 235, 235, 235, 255);
-        SDL_RenderDebugText(renderer, x, row, lines[line]);
-    }
+    text(renderer, TOP, "TEKKEN 5 DARK RESURRECTION");
     SDL_SetRenderDrawColor(renderer, 150, 150, 160, 255);
-    SDL_RenderDebugText(renderer, x, y + (ITEMS + 3) * LINE, match_line(&view));
-    SDL_RenderDebugText(renderer, x, y + (ITEMS + 5) * LINE, "arrows: move   U or Enter: pick");
+    float bottom = (float)height / SCALE - 2 * LINE;
+    text(renderer, bottom - LINE, notice);
+    if (screen == SCREEN_MODE) {
+        const T5Cursor cursor = {.slot = mode};
+        const T5Cursor *cursors[2] = {&cursor, NULL};
+        T5Entry entries[MODES];
+        for (int line = 0; line < MODES; line++) snprintf(entries[line].name, sizeof entries[line].name, "%s", MODE_NAMES[line]);
+        grid_draw(renderer, entries, MODES, NULL, 1, GRID_TOP, cursors);
+        text(renderer, bottom, "arrows: move   U: pick");
+    } else if (screen == SCREEN_CHARACTERS) {
+        const T5Cursor *cursors[2] = {side_open(0) || sides[0].locked ? &sides[0] : NULL, side_open(1) || sides[1].locked ? &sides[1] : NULL};
+        text(renderer, TOP + LINE, mode == MODE_VERSUS_CPU && sides[0].locked ? "Pick the CPU's fighter" : "Pick your fighter");
+        grid_draw(renderer, catalog.characters, catalog.character_count, "Random", columns, GRID_TOP, cursors);
+        text(renderer, bottom, "arrows: move   U I J K: pick with that costume   Enter: back");
+    } else if (screen == SCREEN_STAGE) {
+        const T5Cursor *cursors[2] = {&stage, NULL};
+        text(renderer, TOP + LINE, "Pick the stage");
+        grid_draw(renderer, catalog.stages, catalog.stage_count, "Random", columns, GRID_TOP, cursors);
+        text(renderer, bottom, "arrows: move   U: pick   Enter: back");
+    }
+}
+
+// While a match runs the presenter has the screen: no menu, and the buttons are the fighters'.
+OW_EXPORT(ow_frame) void frame(float dt, uint32_t cmdbuf) {
+    frames++;
+    OwHostView view = {0};
+    ow_host_view(&view, sizeof view);
+    uint32_t pressed[OW_SIDES];
+    for (int player = 0; player < OW_SIDES; player++) {
+        uint32_t pad = ow_pad((uint32_t)player);
+        pressed[player] = pad & ~held[player];  // a button held at the match end does not pick in the menu
+        held[player] = pad;
+    }
+    if (view.match == OW_MATCH_RUNNING) {
+        match_ran = true;
+        return;
+    }
+    if (screen == SCREEN_MATCH) match_over(&view);
+    SDL_Renderer *renderer = ow_renderer();
+    columns = grid_columns(renderer);
+    step(pressed);
+    draw(renderer);
 }

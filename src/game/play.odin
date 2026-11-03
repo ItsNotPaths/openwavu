@@ -14,7 +14,6 @@ import "../wasm"
 
 // Runs the picked pack's entry module, one frame call per display frame, and the matches it starts, until the window
 // closes (quit) or a module traps, which cuts off the whole pack and returns to the launcher.
-// (hole game-loop :tags game :needs mod-menus :sev blocker) no offline match vs the CPU in the stock pack, started from its menus.
 // (hole pack-leave :tags game :needs app-shell) the player can not leave a running pack for the launcher; only closing the window ends it.
 play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (quit: bool) {
 	if tp.main == "" {

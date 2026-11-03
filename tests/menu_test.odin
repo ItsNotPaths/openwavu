@@ -11,10 +11,10 @@ import "../src/wasm"
 
 STOCK_APP :: "build/modules/app.wasm"
 
-// The stock menu starts on the stock pack, and Down then button 1 asks for a ghost match: two different db characters,
-// no bot side. Needs an import.
+// The stock menus ask for the match the player picked: Versus CPU, the player's fighter, the CPU's fighter with
+// its costume button, then the stage. Needs an import.
 @(test)
-stock_menu_asks_for_a_ghost_match :: proc(t: ^testing.T) {
+stock_menus_ask_for_the_picked_match :: proc(t: ^testing.T) {
 	if !os.exists(STOCK_PACK) do return
 	bytes, read_err := os.read_entire_file(STOCK_APP, context.temp_allocator)
 	if !testing.expect(t, read_err == nil, "build.sh builds " + STOCK_APP) do return
@@ -39,17 +39,23 @@ stock_menu_asks_for_a_ghost_match :: proc(t: ^testing.T) {
 	testing.expect_value(t, imports.define_entry(entry.linker, &state), "")
 	if !testing.expect_value(t, presentation.start(entry, code), "") do return
 
-	DOWN :: 1 << 1
+	RIGHT :: 1 << 3
 	BUTTON_1 :: 1 << 4
-	for pad in ([]u32{0, DOWN, 0, BUTTON_1}) {
+	BUTTON_2 :: 1 << 5
+	// Versus CPU; paul with costume 1; one right to law, with costume 2; one right to the second stage.
+	for pad in ([]u32{0, BUTTON_1, 0, BUTTON_1, 0, RIGHT, 0, BUTTON_2, 0, RIGHT, 0, BUTTON_1}) {
 		running.pads[0] = pad
 		if !testing.expect_value(t, presentation.frame(entry, running, 1.0 / 60), "") do return
 	}
 	asked, has := state.asked.?
 	if !testing.expect(t, has, "no match was asked for") do return
 	defer imports.match_request_destroy(&asked, state.allocator)
-	testing.expect_value(t, asked.bot_sides, bit_set[0 ..< 2; u32]{})
-	fighter, opponent := string(cstring(raw_data(asked.loadouts[0]))), string(cstring(raw_data(asked.loadouts[1])))
-	testing.expect_value(t, fighter, "paul")
-	testing.expect(t, opponent != "" && opponent != fighter, "the opponent is another character")
+	testing.expect_value(t, asked.bot_sides, bit_set[0 ..< 2; u32]{1})
+	sides: [2]T5_Loadout
+	for &side, i in sides do copy(([^]byte)(&side)[:size_of(T5_Loadout)], asked.loadouts[i])
+	testing.expect_value(t, string(cstring(&sides[0].character[0])), "paul")
+	testing.expect_value(t, sides[0].costume, 1)
+	testing.expect_value(t, string(cstring(&sides[1].character[0])), "law")
+	testing.expect_value(t, sides[1].costume, 2)
+	testing.expect_value(t, asked.params["stage"], "burning_temple")
 }
