@@ -14,6 +14,8 @@ SDL_TTF=3.2.2
 SDL_TTF_SHA256=63547d58d0185c833213885b635a2c0548201cc8f301e6587c0be1a67e1e045d
 FREETYPE=2-13-3
 FREETYPE_SHA256=bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103
+GLSLANG=16.5.0
+GLSLANG_SHA256=01af17195fbeb59e39e31e9506de35bb39dfd35807ea0c9a1a99d7d1183ddd45
 FONTS_COMMIT=8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5 # google/fonts
 MICHROMA_SHA256=b62301163788bc5b7f8fcac0b74b184e34e1827e577b499ecb724da065098f87
 mkdir -p vendor
@@ -112,6 +114,20 @@ if [ ! -f vendor/sdl3_ttf/include/SDL3_ttf/SDL_ttf.h ]; then
 	cp -r "$ttf_dir/src/include/SDL3_ttf" vendor/sdl3_ttf/include/
 	rm -rf "$ttf_dir"
 	echo "vendor/sdl3_ttf: $SDL_TTF, freetype $FREETYPE"
+fi
+
+# The shader compiler: GLSL to SPIR-V for the host's 3D shaders. No optimizer, so no SPIRV-Tools.
+if [ ! -x vendor/glslang/glslang ]; then
+	glslang_dir=$(mktemp -d)
+	fetch "https://github.com/KhronosGroup/glslang/archive/refs/tags/$GLSLANG.tar.gz" "$glslang_dir/glslang.tar.gz" "$GLSLANG_SHA256"
+	mkdir -p "$glslang_dir/src" && tar xzf "$glslang_dir/glslang.tar.gz" -C "$glslang_dir/src" --strip-components=1
+	cmake -S "$glslang_dir/src" -B "$glslang_dir/build" -DCMAKE_BUILD_TYPE=Release -DENABLE_OPT=OFF -DGLSLANG_TESTS=OFF \
+		-DENABLE_HLSL=OFF -DBUILD_SHARED_LIBS=OFF >/dev/null
+	cmake --build "$glslang_dir/build" -j --target glslang-standalone >/dev/null
+	mkdir -p vendor/glslang
+	cp "$glslang_dir/build/StandAlone/glslang" "$glslang_dir/src/LICENSE.txt" vendor/glslang/
+	rm -rf "$glslang_dir"
+	echo "vendor/glslang: $GLSLANG"
 fi
 
 if [ ! -f vendor/fonts/Michroma-Regular.ttf ]; then
