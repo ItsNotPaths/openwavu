@@ -66,6 +66,8 @@ Materials :: struct {
 }
 
 // One glTF material per first-pass texture; every pass goes to extras as stored, texture hashes included.
+// (hole texture-second-layer :tags importer) only a pass's first texture is used; passes with two (kazuya_1 materials 3 and 4) likely mix the second in by the first's alpha, and those parts of the skin draw black.
+// (hole stage-white-models :tags (importer render)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
 @(private = "file")
 material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material) -> int {
 	hash: u32 = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0
