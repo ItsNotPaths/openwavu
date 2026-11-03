@@ -55,6 +55,14 @@ tk5_module() {
 	fi
 }
 tk5_module gameplay.wasm "${tk5_core[@]}" modules/tk5/gameplay/*.c
+# The host's 3D shaders, SPIR-V; src/render embeds them.
+mkdir -p build/shaders
+for shader in src/render/shaders/*.vert src/render/shaders/*.frag; do
+	out="build/shaders/$(basename "$shader").spv"
+	if [ ! -f "$out" ] || [ "$shader" -nt "$out" ]; then
+		vendor/glslang/glslang -V --quiet -o "$out" "$shader"
+	fi
+done
 # The pack SDL imports, generated from the allowlist and SDL's own signatures.
 glue=src/imports/sdl_glue.odin
 if [ -n "$(find src/imports/sdl_allow.txt src/tools/sdlglue vendor/sdl3/dynapi vendor/sdl3_ttf/include -newer "$glue" -print -quit)" ]; then

@@ -11,7 +11,7 @@ import "../ui"
 
 VERSION :: "openwavu 0.0.0-dev"
 
-// (hole app-shell :tags game :needs (render-gpu content-cache registry-verify)) no ROM import, join path for lobby links, or system overlay (controls, video, audio, leave pack).
+// (hole app-shell :tags game :needs (content-cache registry-verify)) no ROM import, join path for lobby links, or system overlay (controls, video, audio, leave pack).
 main :: proc() {
 	if len(os.args) == 3 && os.args[1] == "--package" {
 		os.exit(package_folder(os.args[2]))

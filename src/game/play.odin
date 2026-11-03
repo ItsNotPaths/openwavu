@@ -56,6 +56,10 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 			if game != nil do entry_state.view.match = .Running
 		}
 		render.begin_frame(r, {0, 0, 0, 1})
+		if !render.queue_scene(r) {
+			fmt.eprintfln("openwavu: the 3D did not draw: %s", sdl.GetError())
+			return
+		}
 		if game != nil {
 			// (hole match-pads :tags game :needs input-pad) player sides get no pad: their input is always 0.
 			ended, winner, match_err := match.frame(game, running, dt, {})
@@ -76,6 +80,10 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 		if running.scene.sent {
 			render.show_scene(r, &running.scene.scene)
 			running.scene.sent = false
+		}
+		if !render.draw_scene(r, 1) {
+			fmt.eprintfln("openwavu: the 3D did not draw: %s", sdl.GetError())
+			return
 		}
 		render.end_frame(r)
 		pace(now, frame_cap)
