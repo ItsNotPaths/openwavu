@@ -4,6 +4,7 @@ import "core:log"
 import "core:os"
 import "core:testing"
 import "../src/content"
+import "../src/imports"
 import "../src/sim"
 import "../src/wasm"
 
@@ -53,11 +54,11 @@ stock_sim_plays_a_match :: proc(t: ^testing.T) {
 			if !testing.expect_value(t, err, "") do return
 		}
 		if !testing.expect_value(t, sim.step(w, pads), "") do return
-		if len(w.events) > 0 && w.events[len(w.events) - 1].kind == .Match_End do break
+		if len(w.inputs.events) > 0 && w.inputs.events[len(w.inputs.events) - 1].kind == .Match_End do break
 	}
-	if !testing.expect(t, len(w.events) > 0, "the match did not end") do return
-	end := w.events[len(w.events) - 1]
-	testing.expect_value(t, end.kind, sim.Event_Kind.Match_End)
+	if !testing.expect(t, len(w.inputs.events) > 0, "the match did not end") do return
+	end := w.inputs.events[len(w.inputs.events) - 1]
+	testing.expect_value(t, end.kind, imports.Event_Kind.Match_End)
 	testing.expect(t, end.a >= -1 && end.a <= 1, "the winner is a side or a draw")
 	log.infof("the match ended after %d frames, winner side %d", frames, end.a)
 	view, view_err := sim.view(w)

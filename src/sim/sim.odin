@@ -2,27 +2,14 @@
 // memory plus its globals. Bit exact to the game with the stock TK5 sim.
 package sim
 
-import "base:runtime"
-import "core:fmt"
 import "core:slice"
 import "core:strings"
 import "../content"
+import "../imports"
 import "../wasm"
 
 Input :: struct {
 	pad: u32,  // OW_PAD_* bits (sdk/include/openwavu.h), the same in every Tekken
-}
-
-// ow_event kinds (openwavu.h).
-Event_Kind :: enum u32 {
-	KO        = 1,  // a = the side that fell
-	Round_End = 2,  // a = the winner side, -1 for a draw
-	Match_End = 3,  // a = the winner side, -1 for a draw
-}
-
-Event :: struct {
-	kind: Event_Kind,
-	a, b: i32,
 }
 
 World :: struct {
@@ -30,12 +17,11 @@ World :: struct {
 	linker:   wasm.Linker,
 	instance: wasm.Instance,
 	memory:   wasm.Memory,
-	params:   map[string]f64,
-	loadouts: [2][]byte,
-	seed:     u64,
-	events:   [dynamic]Event,  // reported this match, in order
+	inputs:   imports.Sim_Inputs,
 }
 
+@(private = "file")
+LOG_NAME := "sim"
 MEMORY_CAP :: 512 << 20
 INIT_FUEL :: 200_000_000_000  // loading two fighters from the db
 STEP_FUEL :: 2_000_000_000
@@ -45,15 +31,16 @@ create :: proc(engine: wasm.Engine, module: wasm.Module, pack: ^content.Pack, pa
 	w = new(World)
 	w.store = wasm.store_create(engine, MEMORY_CAP)
 	w.linker = wasm.linker_create(engine)
-	w.seed = seed
-	for name, value in params do w.params[strings.clone(name)] = value
-	for loadout, side in loadouts do w.loadouts[side] = slice.clone(loadout)
+	w.inputs.seed = seed
+	for name, value in params do w.inputs.params[strings.clone(name)] = value
+	for loadout, side in loadouts do w.inputs.loadouts[side] = slice.clone(loadout)
 	defer if err != "" {
 		destroy(w)
 		w = nil
 	}
-	if err = content.define_imports(w.linker, pack); err != "" do return
-	if err = define_imports(w); err != "" do return
+	if err = imports.define_content(w.linker, pack); err != "" do return
+	if err = imports.define_log(w.linker, &LOG_NAME); err != "" do return
+	if err = imports.define_sim(w.linker, &w.inputs); err != "" do return
 	wasm.set_fuel(w.store, INIT_FUEL)  // _initialize and ow_sim_init both run on it
 	if w.instance, err = wasm.instantiate(w.linker, w.store, module); err != "" do return
 	has_memory: bool
@@ -67,10 +54,10 @@ create :: proc(engine: wasm.Engine, module: wasm.Module, pack: ^content.Pack, pa
 destroy :: proc(w: ^World) {
 	wasm.linker_destroy(w.linker)
 	wasm.store_destroy(w.store)
-	for name in w.params do delete(name)
-	delete(w.params)
-	for loadout in w.loadouts do delete(loadout)
-	delete(w.events)
+	for name in w.inputs.params do delete(name)
+	delete(w.inputs.params)
+	for loadout in w.inputs.loadouts do delete(loadout)
+	delete(w.inputs.events)
 	free(w)
 }
 
@@ -106,65 +93,4 @@ view :: proc(w: ^World) -> (bytes: []byte, err: string) {
 	ok: bool
 	bytes, ok = wasm.span(wasm.bytes(w.store, w.memory), u32(at[0].of.i32), u32(size[0].of.i32))
 	return bytes, "" if ok else "the sim view is outside the module's memory"
-}
-
-@(private = "file")
-define_imports :: proc(w: ^World) -> (err: string) {
-	if err = wasm.define_func(w.linker, "param", {wasm.I32, wasm.I32, wasm.F64}, {wasm.F64}, param, w); err != "" do return
-	if err = wasm.define_func(w.linker, "loadout", {wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, loadout, w); err != "" do return
-	if err = wasm.define_func(w.linker, "match_seed", {}, {wasm.I64}, match_seed, w); err != "" do return
-	if err = wasm.define_func(w.linker, "log", {wasm.I32, wasm.I32}, {}, log, w); err != "" do return
-	return wasm.define_func(w.linker, "event", {wasm.I32, wasm.I32, wasm.I32}, {}, event, w)
-}
-
-// param(name, name_len, fallback) -> the final value, or the fallback for a name with no value.
-@(private = "file")
-param :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
-	context = runtime.default_context()
-	w := (^World)(env)
-	value := args[2].of.f64
-	if name, ok := wasm.span(wasm.caller_memory(caller), u32(args[0].of.i32), u32(args[1].of.i32)); ok {
-		value = w.params[string(name)] or_else value
-	}
-	results[0] = wasm.f64_val(value)
-	return nil
-}
-
-// loadout(side, buf, cap) -> the loadout's length, or -1; copies as much as fits.
-@(private = "file")
-loadout :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
-	w := (^World)(env)
-	results[0] = wasm.i32_val(-1)
-	side := u32(args[0].of.i32)
-	buf, ok := wasm.span(wasm.caller_memory(caller), u32(args[1].of.i32), u32(args[2].of.i32))
-	if side >= len(w.loadouts) || !ok do return nil
-	copy(buf, w.loadouts[side])
-	results[0] = wasm.i32_val(i32(len(w.loadouts[side])))
-	return nil
-}
-
-@(private = "file")
-match_seed :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
-	results[0] = wasm.i64_val(i64((^World)(env).seed))
-	return nil
-}
-
-@(private = "file")
-log :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
-	context = runtime.default_context()
-	if message, ok := wasm.span(wasm.caller_memory(caller), u32(args[0].of.i32), u32(args[1].of.i32)); ok {
-		fmt.eprintln("openwavu: sim:", string(message))
-	}
-	return nil
-}
-
-@(private = "file")
-event :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
-	context = runtime.default_context()
-	w := (^World)(env)
-	switch kind := Event_Kind(u32(args[0].of.i32)); kind {
-	case .KO, .Round_End, .Match_End:
-		append(&w.events, Event{kind, args[1].of.i32, args[2].of.i32})
-	}
-	return nil
 }

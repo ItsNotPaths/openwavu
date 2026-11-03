@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:os"
 import "core:testing"
 import "../src/content"
+import "../src/imports"
 import "../src/wasm"
 
 // A module linked with the SDK's SQLite reads a value from a pack's db through the host's content imports.
@@ -25,7 +26,7 @@ module_queries_a_served_db :: proc(t: ^testing.T) {
 	defer content.close_pack(&p)
 	r := rig_create(64 << 20)
 	defer rig_destroy(r)
-	testing.expect_value(t, content.define_imports(r.linker, &p), "")
+	testing.expect_value(t, imports.define_content(r.linker, &p), "")
 	m, compile_err := wasm.compile(r.engine, code)
 	if !testing.expect_value(t, compile_err, "") do return
 	defer wasm.module_destroy(m)

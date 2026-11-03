@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:os"
 import "core:testing"
 import "../src/content"
+import "../src/imports"
 import "../src/db"
 import "../src/titlepack"
 import "../src/wasm"
@@ -69,7 +70,7 @@ content_read_stays_in_module_memory :: proc(t: ^testing.T) {
 	defer content.close_pack(&p)
 	r := rig_create()
 	defer rig_destroy(r)
-	testing.expect_value(t, content.define_imports(r.linker, &p), "")
+	testing.expect_value(t, imports.define_content(r.linker, &p), "")
 	inst, ok := load(t, r, READER_WAT)
 	if !ok do return
 
