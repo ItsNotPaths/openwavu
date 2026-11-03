@@ -12,7 +12,8 @@ import "../src/titlepack"
 // A pack folder with models/quad.glb: a root with a child holding a quad, whose cut-out material uses textures/red.dds
 // (one red DXT1 block) and whose vertices are half grey; no normals. Also models/loop.glb, whose node is its own
 // child, models/outside.glb, whose texture uri leaves the pack, and models/joint_<n>.glb: a triangle skinned to joint n
-// of a one-joint skin, next to an empty primitive. The caller removes the folder.
+// of a one-joint skin, next to an empty primitive. models/bad_index.glb: a good triangle, then one whose index is past
+// its vertices. The caller removes the folder.
 @(private = "file")
 write_model_pack :: proc(t: ^testing.T, dir: string) {
 	context.allocator = context.temp_allocator
@@ -74,11 +75,23 @@ write_model_pack :: proc(t: ^testing.T, dir: string) {
 		append(&g.scenes, scene)
 		testing.expect(t, gltf.write_glb(&g, fmt.tprintf("%s/models/joint_%d.glb", dir, joint)))
 	}
+
+	g: gltf.Gltf
+	triangle := gltf.add_accessor(&g, [][3]f32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, "VEC3")
+	good := gltf.Primitive{attributes = make(map[string]int)}
+	good.attributes["POSITION"] = triangle
+	bad := gltf.Primitive{attributes = make(map[string]int), indices = gltf.add_accessor(&g, []u16{0, 1, 3}, "SCALAR")}
+	bad.attributes["POSITION"] = triangle
+	mesh: gltf.Mesh
+	append(&mesh.primitives, good, bad)
+	append(&g.meshes, mesh)
+	append(&g.nodes, gltf.Node{name = "body", mesh = 0})
+	testing.expect(t, gltf.write_glb(&g, fmt.tprintf("%s/models/bad_index.glb", dir)))
 }
 
 // A glb loads with its node tree and draws in its DDS texture's color times its vertex color; a node tree that loops
 // does not load; a texture outside the pack draws white; vertices naming a joint past their skin do not load, and an
-// empty primitive is left out.
+// empty primitive is left out; a bad primitive after a good one fails the glb and leaks nothing.
 @(test)
 glb_loads_and_draws_in_its_texture :: proc(t: ^testing.T) {
 	g, ok := test_gpu_create(t)
@@ -109,6 +122,7 @@ glb_loads_and_draws_in_its_texture :: proc(t: ^testing.T) {
 	skinned := render.asset_model(&assets, &g, render.asset_id(&assets, "models/joint_0.glb"))
 	if testing.expect(t, skinned != nil) do testing.expect_value(t, len(skinned.meshes[0]), 1)
 	testing.expect(t, render.asset_model(&assets, &g, render.asset_id(&assets, "models/joint_1.glb")) == nil)
+	testing.expect(t, render.asset_model(&assets, &g, render.asset_id(&assets, "models/bad_index.glb")) == nil)
 
 	scene := render.scene_create()
 	defer render.scene_destroy(&scene)

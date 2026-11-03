@@ -248,7 +248,11 @@ gpu_targets :: proc(g: ^Gpu, size: [2]u32) -> (ok: bool) {
 	g.size = size
 	g.color = sdl.CreateGPUTexture(g.device, {type = .D2, format = COLOR_FORMAT, usage = {.COLOR_TARGET, .SAMPLER}, width = size.x, height = size.y, layer_count_or_depth = 1, num_levels = 1})
 	g.depth = sdl.CreateGPUTexture(g.device, {type = .D2, format = DEPTH_FORMAT, usage = {.DEPTH_STENCIL_TARGET}, width = size.x, height = size.y, layer_count_or_depth = 1, num_levels = 1})
-	return g.color != nil && g.depth != nil
+	if g.color == nil || g.depth == nil {
+		release_targets(g)  // half made would pass the size check next frame
+		return false
+	}
+	return true
 }
 
 @(private = "file")

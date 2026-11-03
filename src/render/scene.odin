@@ -110,11 +110,13 @@ read_scene :: proc(s: ^Scene, block: []byte) -> (err: string) {
 	clear(&s.nodes)
 	clear(&s.fx)
 	if err = read_list(&s.lights, block, head.light_offset, head.light_count, head.light_size, "a light"); err != "" do return
+	for light in s.lights do if light.kind > max(Light_Kind) do return "a light has no such kind"
 	if err = read_list(&s.fx, block, head.fx_offset, head.fx_count, head.fx_size, "an effect"); err != "" do return
 	wire_nodes: [dynamic]Wire_Node
 	wire_nodes.allocator = context.temp_allocator
 	if err = read_list(&wire_nodes, block, head.node_offset, head.node_count, head.node_size, "a node"); err != "" do return
 	for f in s.fx do if f.node > head.node_count do return "an effect follows a node the scene does not have"
+	for n in wire_nodes do if n.class > max(Node_Class) do return "a node has no such class"
 
 	// Sized once, so the nodes' slices into it stay put.
 	bone_total: u64
@@ -126,7 +128,19 @@ read_scene :: proc(s: ^Scene, block: []byte) -> (err: string) {
 		bones := s.bones[bone_at:][:n.bone_count]
 		if err = read_array(bones, block, n.bone_offset, "a node's bones"); err != "" do return
 		bone_at += len(bones)
-		append(&s.nodes, Node{n.id, n.asset, n.part, n.texture, n.transform, bones, n.clip, n.clip_time, n.material, n.flags, n.class})
+		append(&s.nodes, Node{
+			id = n.id,
+			asset = n.asset,
+			part = n.part,
+			texture = n.texture,
+			transform = n.transform,
+			bones = bones,
+			clip = n.clip,
+			clip_time = n.clip_time,
+			material = n.material,
+			flags = n.flags,
+			class = n.class,
+		})
 	}
 	return
 }

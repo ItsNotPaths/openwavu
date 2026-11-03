@@ -87,8 +87,8 @@ queue_scene :: proc(r: ^Renderer) -> (ok: bool) {
 		sdl.SetNumberProperty(props, sdl.PROP_TEXTURE_CREATE_WIDTH_NUMBER, i64(r.gpu.size.x))
 		sdl.SetNumberProperty(props, sdl.PROP_TEXTURE_CREATE_HEIGHT_NUMBER, i64(r.gpu.size.y))
 		r.scene_image = sdl.CreateTextureWithProperties(r.r2d, props)
-		r.image_of = r.gpu.color
 		if r.scene_image == nil do return false
+		r.image_of = r.gpu.color
 	}
 	return sdl.RenderTexture(r.r2d, r.scene_image, nil, nil)
 }

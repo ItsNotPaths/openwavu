@@ -94,13 +94,12 @@ model_fill :: proc(g: ^Gpu, u: Upload, a: ^Assets, m: ^Model, file: ^gltf.Gltf, 
 	m.meshes = make([][]Primitive, len(file.meshes))
 	for mesh, i in file.meshes {
 		primitives := make([dynamic]Primitive, 0, len(mesh.primitives))
+		defer m.meshes[i] = primitives[:]  // also on a failed upload, so model_destroy frees the ones before it
 		for p in mesh.primitives {
-			if mode, has := p.mode.?; has && mode != gltf.TRIANGLES do continue
-			if position, has := p.attributes["POSITION"]; has && position >= 0 && position < len(file.accessors) && file.accessors[position].count == 0 do continue
+			if !drawn(file, p) do continue
 			uploaded := primitive_upload(g, u, file, p, textures) or_return
 			append(&primitives, uploaded)
 		}
-		m.meshes[i] = primitives[:]
 	}
 	m.skins = make([]Model_Skin, len(file.skins))
 	for skin, i in file.skins {
@@ -119,6 +118,14 @@ model_fill :: proc(g: ^Gpu, u: Upload, a: ^Assets, m: ^Model, file: ^gltf.Gltf, 
 		for p in m.meshes[node.mesh] do if p.joints > joints do return false
 	}
 	return true
+}
+
+// A triangle list with vertices; other modes and empty primitives are left out.
+@(private = "file")
+drawn :: proc(file: ^gltf.Gltf, p: gltf.Primitive) -> bool {
+	if mode, has := p.mode.?; has && mode != gltf.TRIANGLES do return false
+	position, has := p.attributes["POSITION"]
+	return !has || position < 0 || position >= len(file.accessors) || file.accessors[position].count > 0
 }
 
 // Every index in range, each node under at most one parent, no cycles, and scene roots under none.
@@ -191,7 +198,9 @@ primitive_upload :: proc(g: ^Gpu, u: Upload, file: ^gltf.Gltf, p: gltf.Primitive
 	vertices := make([]Vertex, count)
 	for &v, i in vertices do v = {position = positions[i], weights = {1, 0, 0, 0}, color = 1}
 	normals, has_normals := attribute(file, p, "NORMAL", [3]f32, count) or_return
-	for &v, i in vertices[:len(normals)] do v.normal = normals[i]
+	if has_normals {
+		for &v, i in vertices do v.normal = normals[i]
+	}
 	if uvs, has := attribute(file, p, "TEXCOORD_0", [2]f32, count) or_return; has {
 		for &v, i in vertices do v.uv = uvs[i]
 	}

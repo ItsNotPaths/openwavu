@@ -74,7 +74,7 @@ asset_texture :: proc(g: ^Gpu, u: Upload, a: ^Assets, path: string) -> ^sdl.GPUT
 			t = image_texture(g, u, data)
 		}
 	}
-	a.textures[strings.clone(path, a.paths.allocator)] = t
+	a.textures[strings.clone(path, a.textures.allocator)] = t
 	return t
 }
 
