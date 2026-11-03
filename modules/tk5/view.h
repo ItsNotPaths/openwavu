@@ -29,6 +29,8 @@ typedef struct {
     uint32_t wins_needed;
     char stage[T5_NAME_BYTES];  // the db stage id
     T5ViewFighter fighters[T5_FIGHTER_COUNT];
+    float view_normal[2];  // xz direction from the fighters to the camera; screen sides follow it
+    bool snap;             // a scene cut: the fighters jump, so the display must not blend into this frame
 } T5View;
 
 #endif

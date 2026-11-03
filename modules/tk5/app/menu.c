@@ -8,7 +8,7 @@
 #include "ow_db.h"
 #include "sqlite3.h"
 
-// (hole mod-menus :tags tk5mod :needs sdk-ui :sev gap) only a plain menu in SDL debug text: no TK5 look, no character select screen, no stage pick; later server and lobby lists, customization.
+// (hole mod-menus :tags tk5mod :sev gap) only a plain menu in SDL debug text: no TK5 look, no character select screen, no stage pick; later server and lobby lists, customization.
 
 enum { CHARACTERS_MAX = 64, SCALE = 3, LINE = 12 };  // LINE: debug text rows are 8 px, at SCALE
 enum { ITEM_FIGHTER, ITEM_GHOST, ITEM_CPU, ITEMS };
@@ -61,21 +61,25 @@ static void step(uint32_t pressed) {
     if (item == ITEM_CPU) start(BOT_SIDE_2);
 }
 
-static const char *match_line(void) {
+static const char *match_line(const OwHostView *view) {
     static char line[64];
-    OwHostView view = {0};
-    ow_host_view(&view, sizeof view);
-    if (view.match == OW_MATCH_RUNNING) return "a match is running";
-    if (view.match == OW_MATCH_ENDED) {
-        snprintf(line, sizeof line, view.winner < 0 ? "the match was a draw" : "side %d won the match", view.winner + 1);
+    if (view->match == OW_MATCH_ENDED) {
+        snprintf(line, sizeof line, view->winner < 0 ? "the match was a draw" : "side %d won the match", view->winner + 1);
         return line;
     }
     return refused ? refused : "";
 }
 
+// While a match runs the presenter has the screen: no menu, and its buttons are the fighters'.
 OW_EXPORT(ow_frame) void frame(float dt, uint32_t cmdbuf) {
     frames++;
     uint32_t pad = ow_pad(0);
+    OwHostView view = {0};
+    ow_host_view(&view, sizeof view);
+    if (view.match == OW_MATCH_RUNNING) {
+        held = pad;  // a button held at the match end does not pick in the menu
+        return;
+    }
     step(pad & ~held);
     held = pad;
 
@@ -101,6 +105,6 @@ OW_EXPORT(ow_frame) void frame(float dt, uint32_t cmdbuf) {
         SDL_RenderDebugText(renderer, x, row, lines[line]);
     }
     SDL_SetRenderDrawColor(renderer, 150, 150, 160, 255);
-    SDL_RenderDebugText(renderer, x, y + (ITEMS + 3) * LINE, match_line());
+    SDL_RenderDebugText(renderer, x, y + (ITEMS + 3) * LINE, match_line(&view));
     SDL_RenderDebugText(renderer, x, y + (ITEMS + 5) * LINE, "arrows: move   U or Enter: pick");
 }

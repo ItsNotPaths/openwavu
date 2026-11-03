@@ -139,6 +139,8 @@ OW_EXPORT(ow_sim_view) const void *ow_sim_view(void) {
         .round = w->round.round,
         .timer = w->round.timer.ticks,
         .wins_needed = w->rules.wins_needed,
+        .view_normal = {t5_match.view_normal[0], t5_match.view_normal[1]},
+        .snap = w->blend_snap_left > 0,
     };
     memcpy(view.stage, t5_match_data.stage_id, sizeof view.stage);
     for (uint32_t side = 0; side < T5_FIGHTER_COUNT; side++) view.fighters[side] = view_fighter(side);

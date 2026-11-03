@@ -1,12 +1,16 @@
 package tests
 
 import "core:log"
+import "core:math/linalg"
 import "core:os"
+import "core:strings"
 import "core:testing"
+import sdl "vendor:sdl3"
 import "../src/content"
 import "../src/imports"
 import "../src/match"
 import "../src/presentation"
+import "../src/render"
 import "../src/titlepack"
 import "../src/wasm"
 
@@ -86,7 +90,7 @@ entry_module_starts_a_bot_match :: proc(t: ^testing.T) {
 	log.infof("the match ended after %d frames", frames)
 }
 
-// A mode whose presenter does not start (an empty module, as the stock gamerender.wasm still is), or whose sim does
+// A mode whose presenter does not start (an empty module), or whose sim does
 // not, gives an error and leaves nothing running. Needs an import.
 @(test)
 match_with_a_broken_presenter_does_not_start :: proc(t: ^testing.T) {
@@ -115,4 +119,67 @@ match_with_a_broken_presenter_does_not_start :: proc(t: ^testing.T) {
 	m, err = match.start(engine, sim_code, presenter_code, running, request, 7)
 	testing.expect(t, m == nil)
 	testing.expect(t, err != "", "a loadout with no character starts no match")
+}
+
+STOCK_GAMERENDER :: "build/modules/gamerender.wasm"
+
+// The stock presenter, in a bot match on the stock pack, sends the stage and each fighter's costume parts posed by the
+// sim (unit rotations, the fighters apart on the floor) with the camera between the fighters, and draws its HUD on the
+// pack's renderer. Needs an import.
+@(test)
+stock_presenter_shows_the_fighters_on_the_stage :: proc(t: ^testing.T) {
+	if !os.exists(STOCK_PACK) do return
+	sim_bytes, sim_read_err := os.read_entire_file(GAMEPLAY, context.temp_allocator)
+	presenter_bytes, presenter_read_err := os.read_entire_file(STOCK_GAMERENDER, context.temp_allocator)
+	if !testing.expect(t, sim_read_err == nil && presenter_read_err == nil, "build.sh builds the stock modules") do return
+	pack, opened := content.open_pack(STOCK_PACK)
+	if !testing.expect(t, opened) do return
+	defer content.close_pack(&pack)
+	surface := sdl.CreateSurface(320, 240, .RGBA32)
+	defer sdl.DestroySurface(surface)
+	renderer := sdl.CreateSoftwareRenderer(surface)
+	defer sdl.DestroyRenderer(renderer)
+	running := presentation.pack_create(&pack, renderer)
+	defer presentation.pack_destroy(running)
+	engine := wasm.engine_create()
+	defer wasm.engine_destroy(engine)
+	sim_code, sim_err := wasm.compile(engine, sim_bytes)
+	presenter_code, presenter_err := wasm.compile(engine, presenter_bytes)
+	if !testing.expect_value(t, sim_err, "") || !testing.expect_value(t, presenter_err, "") do return
+	defer wasm.module_destroy(sim_code)
+	defer wasm.module_destroy(presenter_code)
+	params := make(map[string]f64, context.temp_allocator)
+	request := imports.Match_Request{{"versus", "gameplay.wasm", "gamerender.wasm"}, {0, 1}, {loadout_bytes("paul"), loadout_bytes("law")}, params}
+	m, err := match.start(engine, sim_code, presenter_code, running, request, 7)
+	if !testing.expect_value(t, err, "") do return
+	defer match.stop(m)
+	for _ in 0 ..< 600 {
+		_, _, frame_err := match.frame(m, running, match.TICK_NS, {})
+		if !testing.expect_value(t, frame_err, "") do return
+	}
+
+	scene := &running.scene.scene
+	if !testing.expect(t, running.scene.sent, "no scene was sent") || !testing.expect_value(t, len(scene.nodes), 3) do return
+	stage := scene.nodes[0]
+	testing.expect_value(t, string(cstring(&stage.id[0])), "stage")
+	testing.expect_value(t, stage.class, render.Node_Class.Scenery)
+	stage_path := running.scene.assets.paths[stage.asset - 1]
+	testing.expectf(t, strings.has_prefix(stage_path, "stages/") && strings.has_suffix(stage_path, ".glb"), "stage %q", stage_path)
+	roots: [2][3]f32
+	for &node, side in scene.nodes[1:] {
+		testing.expect_value(t, string(cstring(&node.id[0])), side == 0 ? "1:paul_1" : "2:law_1")
+		testing.expect_value(t, running.scene.assets.paths[node.asset - 1], side == 0 ? "parts/paul/paul_1.glb" : "parts/law/law_1.glb")
+		testing.expect_value(t, node.class, render.Node_Class.Gameplay)
+		if !testing.expect_value(t, len(node.bones), 23) do continue
+		for bone in node.bones {
+			length := abs(bone.rotation)
+			testing.expectf(t, length > 0.999 && length < 1.001, "a bone rotation of length %v", length)
+		}
+		roots[side] = node.bones[0].position
+	}
+	apart := linalg.length(roots[0].xz - roots[1].xz)
+	testing.expectf(t, apart > 0.3 && apart < 10, "the fighters are %v m apart", apart)
+	middle := (roots[0].xz + roots[1].xz) / 2
+	testing.expectf(t, linalg.length(scene.camera.target.xz - middle) < 0.001, "camera target %v, fighters' middle %v", scene.camera.target, middle)
+	testing.expect(t, linalg.length(scene.camera.position - scene.camera.target) > 1, "the camera stands back")
 }
