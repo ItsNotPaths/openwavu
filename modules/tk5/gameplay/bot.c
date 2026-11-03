@@ -5,6 +5,7 @@
 #include "gameplay/bot.h"
 #include "gameplay/match.h"
 #include "openwavu.h"
+#include "sim/rng.h"
 
 typedef struct {
     int32_t think_interval;              // frames a plan lasts at least
@@ -67,7 +68,7 @@ typedef struct {
 } BotMove;
 
 typedef struct {
-    uint32_t rng;
+    T5Rng rng;
     BotMove moves[MOVES_MAX];
     int32_t move_count;
     BotKey plan[PLAN_MAX];
@@ -78,15 +79,10 @@ typedef struct {
 
 static Bot bots[T5_FIGHTER_COUNT];
 
-static uint32_t next_random(Bot *bot) {  // xorshift32
-    bot->rng ^= bot->rng << 13;
-    bot->rng ^= bot->rng >> 17;
-    bot->rng ^= bot->rng << 5;
-    return bot->rng;
-}
+enum { CHANCE_STEPS = 10000 };
 
-static int32_t pick(Bot *bot, int32_t count) { return (int32_t)(next_random(bot) % (uint32_t)count); }
-static bool chance(Bot *bot, float probability) { return (float)(next_random(bot) % 10000) < probability * 10000; }
+static int32_t pick(Bot *bot, int32_t count) { return t5_rand_n(&bot->rng, count); }
+static bool chance(Bot *bot, float probability) { return (float)t5_rand_n(&bot->rng, CHANCE_STEPS) < probability * CHANCE_STEPS; }
 static int32_t between(Bot *bot, int32_t low, int32_t high) { return low + pick(bot, high - low + 1); }
 
 // --- the move list
@@ -128,7 +124,7 @@ void t5_bots_begin(uint64_t seed) {
     for (uint32_t side = 0; side < T5_FIGHTER_COUNT; side++) {
         Bot *bot = &bots[side];
         const T5Motbin *motbin = &t5_match_data.sides[side].data.moves;
-        *bot = (Bot){.rng = (uint32_t)(seed * 2 + side + 1)};  // never 0: xorshift would stay 0
+        *bot = (Bot){.rng = {(uint32_t)(seed >> 32) + side}};  // the world rng takes the low half
         const T5Move *idle = &motbin->moves[move_index(motbin, T5_ALIAS_IDLE_STAND)];
         scan(bot, motbin, &motbin->cancels[idle->cancels]);
     }
