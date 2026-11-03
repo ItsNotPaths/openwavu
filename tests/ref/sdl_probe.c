@@ -58,6 +58,14 @@ OW_EXPORT(closeio_on_shared_stream) void closeio_on_shared_stream(void) {
     TTF_OpenFontIO(stream, true, 12);
 }
 
+// A destroyed texture's handle, after a new texture took its slot.
+OW_EXPORT(stale_texture) void stale_texture(void) {
+    SDL_Texture *old = SDL_CreateTexture(ow_renderer(), SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, 2, 2);
+    SDL_DestroyTexture(old);
+    SDL_CreateTexture(ow_renderer(), SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, 2, 2);
+    SDL_RenderTexture(ow_renderer(), old, NULL, NULL);
+}
+
 OW_EXPORT(font_as_texture) void font_as_texture(void) {
     SDL_RenderTexture(ow_renderer(), (SDL_Texture *)font, NULL, NULL);
 }

@@ -8,13 +8,13 @@ package imports
 
 import "base:runtime"
 import "core:bytes"
+import hm "core:container/handle_map"
 import "core:fmt"
 import sdl "vendor:sdl3"
 import "vendor:sdl3/ttf"
 import "../wasm"
 
 Sdl_Kind :: enum u8 {
-	Free,
 	Renderer,
 	Texture,
 	IO_Stream,
@@ -23,39 +23,44 @@ Sdl_Kind :: enum u8 {
 	Text,
 }
 
+// A pack sees a handle as one u32; 0 is NULL. A destroyed object's handle never names a later object in its slot.
+Sdl_Handle :: hm.Handle32
+
 // owners: the handles it was made with; destroying one of them destroys this first.
 Sdl_Object :: struct {
+	handle:  Sdl_Handle,
 	kind:    Sdl_Kind,
 	pointer: rawptr,
 	owners:  [2]u32,
 }
 
-// One pack's SDL objects. A handle is its index + 1; handle 1 is the host's renderer.
+// One pack's SDL objects.
 Sdl_Set :: struct {
-	objects: [dynamic]Sdl_Object,
-	free:    [dynamic]u32,
+	objects:  hm.Dynamic_Handle_Map(Sdl_Object, Sdl_Handle),
+	renderer: u32,  // the host's renderer
 }
 
-SDL_RENDERER :: 1
-
-// The imports grow its lists with the allocator they are made with here.
+// The imports grow its lists with the allocator it is made with here.
 sdl_set_create :: proc(renderer: ^sdl.Renderer) -> (set: Sdl_Set) {
-	set.objects = make([dynamic]Sdl_Object)
-	set.free = make([dynamic]u32)
-	append(&set.objects, Sdl_Object{kind = .Renderer, pointer = renderer})
+	hm.dynamic_init(&set.objects, context.allocator)
+	set.renderer = sdl_new(&set, .Renderer, renderer, {})
 	return
 }
 
 // Destroys every object the pack left.
 sdl_set_destroy :: proc(set: ^Sdl_Set) {
-	for _, i in set.objects do sdl_destroy(set, u32(i + 1))
-	delete(set.objects)
-	delete(set.free)
+	handles := make([dynamic]u32, context.temp_allocator)
+	iterator := hm.iterator_make(&set.objects)
+	for _, handle in hm.iterate(&iterator) do append(&handles, transmute(u32)handle)
+	for handle in handles do sdl_destroy(set, handle)
+	hm.dynamic_destroy(&set.objects)
 }
 
 // Puts back the renderer state the allowlist lets a pack change: draw color, draw blend mode, clip, scale.
 sdl_reset :: proc(set: ^Sdl_Set) {
-	renderer := (^sdl.Renderer)(set.objects[SDL_RENDERER - 1].pointer)
+	object, valid := hm.get(&set.objects, transmute(Sdl_Handle)set.renderer)
+	if !valid do return
+	renderer := (^sdl.Renderer)(object.pointer)
 	_ = sdl.SetRenderDrawColor(renderer, 0, 0, 0, 255)
 	_ = sdl.SetRenderDrawBlendMode(renderer, sdl.BLENDMODE_BLEND)
 	_ = sdl.SetRenderClipRect(renderer, nil)
@@ -99,9 +104,9 @@ sdl_call :: proc(env: rawptr, caller: ^wasm.C_Caller, name: string) -> Sdl_Call 
 // The object behind a handle of this kind; handle 0 is NULL.
 @(private)
 sdl_handle :: proc(call: ^Sdl_Call, arg: int, v: wasm.Val, kind: Sdl_Kind) -> rawptr {
-	handle := u32(v.of.i32)
-	if handle == 0 do return nil
-	if handle <= u32(len(call.set.objects)) && call.set.objects[handle - 1].kind == kind do return call.set.objects[handle - 1].pointer
+	handle := transmute(Sdl_Handle)u32(v.of.i32)
+	if handle == {} do return nil
+	if object, valid := hm.get(&call.set.objects, handle); valid && object.kind == kind do return object.pointer
 	fail(call, arg, fmt.tprintf("is not a %v handle", kind))
 	return nil
 }
@@ -134,35 +139,31 @@ sdl_text :: proc(call: ^Sdl_Call, arg: int, v: wasm.Val, length: u64) -> rawptr 
 @(private)
 sdl_new :: proc(set: ^Sdl_Set, kind: Sdl_Kind, pointer: rawptr, owners: [2]u32) -> u32 {
 	if pointer == nil do return 0
-	o := Sdl_Object{kind, pointer, owners}
-	if handle, reused := pop_safe(&set.free); reused {
-		set.objects[handle - 1] = o
-		return handle
-	}
-	append(&set.objects, o)
-	return u32(len(set.objects))
+	handle := hm.add(&set.objects, Sdl_Object{kind = kind, pointer = pointer, owners = owners})
+	return transmute(u32)handle
 }
 
 // Destroys an object and, first, everything made with it. Owners are always older handles, so this ends.
 @(private)
 sdl_destroy :: proc(set: ^Sdl_Set, handle: u32) {
-	if handle == 0 || set.objects[handle - 1].kind == .Free do return
-	for o, i in set.objects do if made_with(o, handle) do sdl_destroy(set, u32(i + 1))
-	o := set.objects[handle - 1]
-	sdl_destroy_object(o.kind, o.pointer)
+	found, valid := hm.get(&set.objects, transmute(Sdl_Handle)handle)
+	if !valid do return
+	object := found^
+	iterator := hm.iterator_make(&set.objects)
+	for other, other_handle in hm.iterate(&iterator) do if made_with(other^, handle) do sdl_destroy(set, transmute(u32)other_handle)
+	sdl_destroy_object(object.kind, object.pointer)
 	release(set, handle)
 }
 
 @(private = "file")
-made_with :: proc(o: Sdl_Object, handle: u32) -> bool {
-	return o.kind != .Free && (o.owners[0] == handle || o.owners[1] == handle)
+made_with :: proc(object: Sdl_Object, handle: u32) -> bool {
+	return object.owners[0] == handle || object.owners[1] == handle
 }
 
 // Frees the handle's slot; the object itself is destroyed already, or now belongs to another object.
 @(private = "file")
 release :: proc(set: ^Sdl_Set, handle: u32) {
-	set.objects[handle - 1] = {}
-	if handle != SDL_RENDERER do append(&set.free, handle)
+	_, _ = hm.remove(&set.objects, transmute(Sdl_Handle)handle)
 }
 
 @(private = "file")
@@ -172,7 +173,7 @@ fail :: proc(call: ^Sdl_Call, arg: int, why: string) {
 
 @(private = "file")
 renderer :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
-	results[0] = wasm.i32_val(SDL_RENDERER)
+	results[0] = wasm.i32_val(i32((^Sdl_Set)(env).renderer))
 	return nil
 }
 
@@ -226,7 +227,8 @@ open_font_io :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val
 	handle, closeio := u32(args[0].of.i32), args[1].of.i32 != 0
 	owners := [2]u32{}
 	if closeio {
-		for o in call.set.objects do if made_with(o, handle) do return wasm.trap("TTF_OpenFontIO: closeio on a stream another font still reads")
+		iterator := hm.iterator_make(&call.set.objects)
+		for other, _ in hm.iterate(&iterator) do if made_with(other^, handle) do return wasm.trap("TTF_OpenFontIO: closeio on a stream another font still reads")
 		if stream != nil do release(call.set, handle)
 	} else {
 		owners[0] = handle
