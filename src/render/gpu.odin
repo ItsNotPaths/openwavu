@@ -18,6 +18,7 @@ Vertex :: struct {
 	uv:       [2]f32,
 	joints:   [4]u16,  // into the draw's joints
 	weights:  [4]f32,
+	color:    [4]f32,  // 1 = the texture as is
 }
 
 Mesh :: struct {
@@ -31,6 +32,15 @@ Draw :: struct {
 	joints:  []matrix[4, 4]f32,
 	texture: ^sdl.GPUTexture,
 	tint:    [4]f32,
+	cutout:  bool,  // drop pixels below half alpha
+}
+
+// scene.frag's Material block.
+@(private = "file")
+Material :: struct {
+	tint:   [4]f32,
+	cutout: f32,
+	_:      [3]f32,
 }
 
 Gpu :: struct {
@@ -59,6 +69,7 @@ gpu_create :: proc(device: ^sdl.GPUDevice) -> (g: Gpu, ok: bool) {
 		{2, 0, .FLOAT2, u32(offset_of(Vertex, uv))},
 		{3, 0, .USHORT4, u32(offset_of(Vertex, joints))},
 		{4, 0, .FLOAT4, u32(offset_of(Vertex, weights))},
+		{5, 0, .FLOAT4, u32(offset_of(Vertex, color))},
 	}
 	targets := []sdl.GPUColorTargetDescription{{format = COLOR_FORMAT}}
 	g.pipeline = sdl.CreateGPUGraphicsPipeline(device, {
@@ -74,7 +85,10 @@ gpu_create :: proc(device: ^sdl.GPUDevice) -> (g: Gpu, ok: bool) {
 	g.sampler = sdl.CreateGPUSampler(device, {min_filter = .LINEAR, mag_filter = .LINEAR, mipmap_mode = .LINEAR, address_mode_u = .REPEAT, address_mode_v = .REPEAT, address_mode_w = .REPEAT})
 	if g.sampler == nil do return
 	white := [4]u8{255, 255, 255, 255}
-	g.white = texture_upload(&g, white[:], 1, 1) or_return
+	u := upload_begin(&g) or_return
+	white_ok: bool
+	g.white, white_ok = texture_upload(&g, u, COLOR_FORMAT, white[:], 1, 1)
+	if !upload_end(u) || !white_ok do return g, false
 	return g, true
 }
 
@@ -88,10 +102,28 @@ gpu_destroy :: proc(g: ^Gpu) {
 	g^ = {device = g.device}
 }
 
-mesh_upload :: proc(g: ^Gpu, vertices: []Vertex, indices: []u32) -> (m: Mesh, ok: bool) {
+// Uploads that go in one copy pass and one submit: upload_begin, any mesh_upload and texture_upload, upload_end.
+Upload :: struct {
+	command: ^sdl.GPUCommandBuffer,
+	pass:    ^sdl.GPUCopyPass,
+}
+
+upload_begin :: proc(g: ^Gpu) -> (u: Upload, ok: bool) {
+	u.command = sdl.AcquireGPUCommandBuffer(g.device)
+	if u.command == nil do return {}, false
+	u.pass = sdl.BeginGPUCopyPass(u.command)
+	return u, true
+}
+
+upload_end :: proc(u: Upload) -> (ok: bool) {
+	sdl.EndGPUCopyPass(u.pass)
+	return sdl.SubmitGPUCommandBuffer(u.command)
+}
+
+mesh_upload :: proc(g: ^Gpu, u: Upload, vertices: []Vertex, indices: []u32) -> (m: Mesh, ok: bool) {
 	m.index_count = u32(len(indices))
-	m.vertices = buffer_upload(g, {.VERTEX}, raw_data(vertices), len(vertices) * size_of(Vertex)) or_return
-	if m.indices, ok = buffer_upload(g, {.INDEX}, raw_data(indices), len(indices) * size_of(u32)); !ok {
+	m.vertices = buffer_upload(g, u, {.VERTEX}, raw_data(vertices), len(vertices) * size_of(Vertex)) or_return
+	if m.indices, ok = buffer_upload(g, u, {.INDEX}, raw_data(indices), len(indices) * size_of(u32)); !ok {
 		sdl.ReleaseGPUBuffer(g.device, m.vertices)
 		return {}, false
 	}
@@ -103,17 +135,18 @@ mesh_destroy :: proc(g: ^Gpu, m: Mesh) {
 	sdl.ReleaseGPUBuffer(g.device, m.indices)
 }
 
-// RGBA8 pixels, rows top first, for a mesh's base color.
-texture_upload :: proc(g: ^Gpu, pixels: []u8, width, height: u32) -> (t: ^sdl.GPUTexture, ok: bool) {
-	t = sdl.CreateGPUTexture(g.device, {type = .D2, format = COLOR_FORMAT, usage = {.SAMPLER}, width = width, height = height, layer_count_or_depth = 1, num_levels = 1})
+// One mip, rows top first, for a mesh's base color: RGBA8 pixels or BC blocks as stored.
+texture_upload :: proc(g: ^Gpu, u: Upload, format: sdl.GPUTextureFormat, data: []u8, width, height: u32) -> (t: ^sdl.GPUTexture, ok: bool) {
+	t = sdl.CreateGPUTexture(g.device, {type = .D2, format = format, usage = {.SAMPLER}, width = width, height = height, layer_count_or_depth = 1, num_levels = 1})
 	if t == nil do return nil, false
-	upload := staged(g, raw_data(pixels), len(pixels)) or_return
-	defer sdl.ReleaseGPUTransferBuffer(g.device, upload)
-	command := sdl.AcquireGPUCommandBuffer(g.device)
-	pass := sdl.BeginGPUCopyPass(command)
-	sdl.UploadToGPUTexture(pass, {transfer_buffer = upload}, {texture = t, w = width, h = height, d = 1}, false)
-	sdl.EndGPUCopyPass(pass)
-	return t, sdl.SubmitGPUCommandBuffer(command)
+	staging, staged_ok := staged(g, raw_data(data), len(data))
+	if !staged_ok {
+		sdl.ReleaseGPUTexture(g.device, t)
+		return nil, false
+	}
+	sdl.UploadToGPUTexture(u.pass, {transfer_buffer = staging}, {texture = t, w = width, h = height, d = 1}, false)
+	sdl.ReleaseGPUTransferBuffer(g.device, staging)  // freed once the upload has run
+	return t, true
 }
 
 // Draws the draws, seen by the scene's camera and lit by its lights, into color, which then holds the frame's 3D.
@@ -136,9 +169,9 @@ draw_3d :: proc(g: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, s: ^Scene
 	if joint_count > 0 do sdl.BindGPUVertexStorageBuffers(pass, 0, &g.joints, 1)
 	joint_base: u32
 	for d in draws {
-		tint := d.tint
+		material := Material{tint = d.tint, cutout = d.cutout ? 1 : 0}
 		sdl.PushGPUVertexUniformData(command, 1, &joint_base, size_of(joint_base))
-		sdl.PushGPUFragmentUniformData(command, 1, &tint, size_of(tint))
+		sdl.PushGPUFragmentUniformData(command, 1, &material, size_of(material))
 		binding := sdl.GPUTextureSamplerBinding{d.texture != nil ? d.texture : g.white, g.sampler}
 		sdl.BindGPUFragmentSamplers(pass, 0, &binding, 1)
 		vertices := sdl.GPUBufferBinding{d.mesh.vertices, 0}
@@ -256,20 +289,17 @@ upload_joints :: proc(g: ^Gpu, command: ^sdl.GPUCommandBuffer, draws: []Draw, co
 }
 
 @(private = "file")
-buffer_upload :: proc(g: ^Gpu, usage: sdl.GPUBufferUsageFlags, data: rawptr, size: int) -> (b: ^sdl.GPUBuffer, ok: bool) {
+buffer_upload :: proc(g: ^Gpu, u: Upload, usage: sdl.GPUBufferUsageFlags, data: rawptr, size: int) -> (b: ^sdl.GPUBuffer, ok: bool) {
 	b = sdl.CreateGPUBuffer(g.device, {usage = usage, size = u32(size)})
 	if b == nil do return nil, false
-	upload, staged_ok := staged(g, data, size)
+	staging, staged_ok := staged(g, data, size)
 	if !staged_ok {
 		sdl.ReleaseGPUBuffer(g.device, b)
 		return nil, false
 	}
-	defer sdl.ReleaseGPUTransferBuffer(g.device, upload)
-	command := sdl.AcquireGPUCommandBuffer(g.device)
-	pass := sdl.BeginGPUCopyPass(command)
-	sdl.UploadToGPUBuffer(pass, {transfer_buffer = upload}, {b, 0, u32(size)}, false)
-	sdl.EndGPUCopyPass(pass)
-	return b, sdl.SubmitGPUCommandBuffer(command)
+	sdl.UploadToGPUBuffer(u.pass, {transfer_buffer = staging}, {b, 0, u32(size)}, false)
+	sdl.ReleaseGPUTransferBuffer(g.device, staging)
+	return b, true
 }
 
 // A transfer buffer holding a copy of the bytes, for one upload.
