@@ -51,6 +51,7 @@ enum {
 	OW_NODE_BILLBOARD = 1 << 0,  // faces the camera
 	OW_NODE_NO_SHADOW = 1 << 1,
 	OW_NODE_NO_BLEND = 1 << 2,   // this frame: a snap (teleport, side switch, round reset), not a move
+	OW_NODE_HIDDEN = 1 << 3,     // not drawn; a hidden part also leaves the whole glb's draw
 };
 
 enum { OW_CLASS_GAMEPLAY = 0, OW_CLASS_SCENERY = 1 };
@@ -58,14 +59,14 @@ enum { OW_CLASS_GAMEPLAY = 0, OW_CLASS_SCENERY = 1 };
 typedef struct {
 	char id[32];             // the pack's name for it, NUL padded; matches the node across frames
 	uint32_t asset;          // ow_asset id of a glb or an image (a quad); 0 with texture for a pack texture quad
+	uint32_t part;           // glb node index + 1: that node and what is under it; 0 = the whole glb, which leaves
+	                         // out _DRWOFF_ nodes (broken props: send one as its own part to show it)
 	uint32_t texture;        // an SDL texture handle of the pack, for a quad; 0 = none
 	OwTransform transform;
 	uint32_t bone_count;     // the pose, one OwTransform per glb skin joint, in joint order; 0 = the glb's own pose
 	uint32_t bone_offset;
 	uint32_t clip;           // glb animation index + 1, played at clip_time; 0 = none
 	float clip_time;         // seconds
-	uint32_t flip_count;     // glb mesh indices (uint32_t) shown or hidden against their default: meshes are
-	uint32_t flip_offset;    // shown, except _DRWOFF_ ones (broken props), which start hidden
 	OwMaterial material;
 	uint32_t flags;          // OW_NODE_*
 	uint32_t class;          // OW_CLASS_*

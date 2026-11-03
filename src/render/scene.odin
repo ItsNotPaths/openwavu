@@ -44,6 +44,7 @@ Node_Flag :: enum u32 {
 	Billboard,
 	No_Shadow,
 	No_Blend,
+	Hidden,
 }
 
 Node_Class :: enum u32 {
@@ -53,12 +54,13 @@ Node_Class :: enum u32 {
 
 Node :: struct {
 	id:              [32]u8,
-	asset, texture:  u32,
+	asset:           u32,
+	part:            u32,          // glb node index + 1; 0 = the whole glb but its _DRWOFF_ nodes
+	texture:         u32,
 	transform:       Transform,
 	bones:           []Transform,  // into Scene.bones; empty is the glb's own pose
 	clip:            u32,          // glb animation index + 1
 	clip_time:       f32,
-	flips:           []u32,        // into Scene.flips: glb meshes shown or hidden against their default
 	material:        Material,
 	flags:           bit_set[Node_Flag; u32],
 	class:           Node_Class,
@@ -79,7 +81,6 @@ Scene :: struct {
 	nodes:   [dynamic]Node,
 	fx:      [dynamic]Fx,
 	bones:   [dynamic]Transform,
-	flips:   [dynamic]u32,
 }
 
 // Reading a block grows the lists with the allocator they are made with here.
@@ -89,7 +90,6 @@ scene_create :: proc() -> Scene {
 		nodes = make([dynamic]Node),
 		fx = make([dynamic]Fx),
 		bones = make([dynamic]Transform),
-		flips = make([dynamic]u32),
 	}
 }
 
@@ -98,7 +98,6 @@ scene_destroy :: proc(s: ^Scene) {
 	delete(s.nodes)
 	delete(s.fx)
 	delete(s.bones)
-	delete(s.flips)
 }
 
 // Reads a block into s, reusing its arrays. On err s holds part of the block; the caller drops it.
@@ -117,29 +116,22 @@ read_scene :: proc(s: ^Scene, block: []byte) -> (err: string) {
 	if err = read_list(&wire_nodes, block, head.node_offset, head.node_count, head.node_size, "a node"); err != "" do return
 	for f in s.fx do if f.node > head.node_count do return "an effect follows a node the scene does not have"
 
-	// Sized once, so the nodes' slices into them stay put.
-	bone_total, flip_total: u64
-	for n in wire_nodes {
-		bone_total += u64(n.bone_count)
-		flip_total += u64(n.flip_count)
-	}
-	if bone_total * size_of(Transform) + flip_total * size_of(u32) > u64(len(block)) do return "the nodes' bones and flips do not fit in the scene"
+	// Sized once, so the nodes' slices into it stay put.
+	bone_total: u64
+	for n in wire_nodes do bone_total += u64(n.bone_count)
+	if bone_total * size_of(Transform) > u64(len(block)) do return "the nodes' bones do not fit in the scene"
 	resize(&s.bones, int(bone_total))
-	resize(&s.flips, int(flip_total))
-	bone_at, flip_at := 0, 0
+	bone_at := 0
 	for n in wire_nodes {
 		bones := s.bones[bone_at:][:n.bone_count]
-		flips := s.flips[flip_at:][:n.flip_count]
 		if err = read_array(bones, block, n.bone_offset, "a node's bones"); err != "" do return
-		if err = read_array(flips, block, n.flip_offset, "a node's mesh flips"); err != "" do return
 		bone_at += len(bones)
-		flip_at += len(flips)
-		append(&s.nodes, Node{n.id, n.asset, n.texture, n.transform, bones, n.clip, n.clip_time, flips, n.material, n.flags, n.class})
+		append(&s.nodes, Node{n.id, n.asset, n.part, n.texture, n.transform, bones, n.clip, n.clip_time, n.material, n.flags, n.class})
 	}
 	return
 }
 
-// The block's layout: as ow_scene.h, with byte offsets where Node has slices.
+// The block's layout: as ow_scene.h, with a byte offset where Node has a slice.
 @(private = "file")
 Wire_Scene :: struct {
 	version:                                     u32,
@@ -155,12 +147,11 @@ Wire_Scene :: struct {
 @(private = "file")
 Wire_Node :: struct {
 	id:                      [32]u8,
-	asset, texture:          u32,
+	asset, part, texture:    u32,
 	transform:               Transform,
 	bone_count, bone_offset: u32,
 	clip:                    u32,
 	clip_time:               f32,
-	flip_count, flip_offset: u32,
 	material:                Material,
 	flags:                   bit_set[Node_Flag; u32],
 	class:                   Node_Class,

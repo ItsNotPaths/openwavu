@@ -9,7 +9,6 @@ static struct {
     OwNode nodes[2];
     OwFx fx;
     OwTransform bones[3];
-    uint32_t flips[2];
 } block;
 
 // 1 when the same path gives the same id and a missing file gives 0.
@@ -28,9 +27,9 @@ OW_EXPORT(send) int32_t send(void) {
     block.bones[2].scale.z = 2;
     block.nodes[0].flags = OW_NODE_NO_BLEND;
     block.nodes[0].class = OW_CLASS_SCENERY;
-    strcpy(block.nodes[1].id, "stage");
-    block.nodes[1].flip_count = 2, block.nodes[1].flip_offset = offsetof(typeof(block), flips);
-    block.flips[0] = 4, block.flips[1] = 9;
+    strcpy(block.nodes[1].id, "broken_prop");
+    block.nodes[1].part = 9;
+    block.nodes[1].flags = OW_NODE_HIDDEN;
     block.fx.node = 1, block.fx.age = 1.5f, block.fx.seed = 77;
     ow_scene_submit(&block.head, sizeof block);
     return notes != 0 && ow_asset(OW_STR("notes.txt")) == notes && ow_asset(OW_STR("missing.glb")) == 0;

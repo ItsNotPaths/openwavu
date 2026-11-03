@@ -72,6 +72,6 @@ show_scene :: proc(r: ^Renderer, s: ^Scene) {
 
 // alpha: how far the display is between the last two sim ticks.
 // (hole render-fighter :tags render :needs (render-gpu glb-loader)) skinned scene nodes are not drawn from their bones (position, rotation, scale).
-// (hole render-stage :tags render :needs (render-gpu glb-loader)) mesh scene nodes are not drawn; mesh flips and the hidden-by-default _DRWOFF_ meshes are not applied.
+// (hole render-stage :tags render :needs (render-gpu glb-loader)) mesh scene nodes are not drawn: no part of a glb, no hidden parts left out of the whole glb, _DRWOFF_ nodes not left out.
 // (hole scene-blend :tags render) no blending between the scenes of the last two sim ticks: nodes matched by id, bones, camera, clip times, fx ages; no-blend flag, gameplay class and the fps setting.
 draw_scene :: proc(r: ^Renderer, alpha: f32) {}

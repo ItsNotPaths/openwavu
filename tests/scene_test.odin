@@ -42,16 +42,16 @@ scene_from_a_module_reads_back :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(s.lights), 1)
 	testing.expect_value(t, s.lights[0].range, 7)
 	if !testing.expect_value(t, len(s.nodes), 2) do return
-	fighter, stage := s.nodes[0], s.nodes[1]
+	fighter, prop := s.nodes[0], s.nodes[1]
 	testing.expect_value(t, string(cstring(&fighter.id[0])), "fighter")
 	testing.expect_value(t, running.scene.assets[fighter.asset - 1], "notes.txt")
 	testing.expect_value(t, len(fighter.bones), 3)
 	testing.expect_value(t, fighter.bones[2].scale.z, 2)
 	testing.expect_value(t, fighter.flags, bit_set[render.Node_Flag; u32]{.No_Blend})
 	testing.expect_value(t, fighter.class, render.Node_Class.Scenery)
-	testing.expect_value(t, string(cstring(&stage.id[0])), "stage")
-	testing.expect_value(t, len(stage.flips), 2)
-	if len(stage.flips) == 2 do testing.expect_value(t, stage.flips[1], 9)
+	testing.expect_value(t, string(cstring(&prop.id[0])), "broken_prop")
+	testing.expect_value(t, prop.part, 9)
+	testing.expect_value(t, prop.flags, bit_set[render.Node_Flag; u32]{.Hidden})
 	if testing.expect_value(t, len(s.fx), 1) {
 		testing.expect_value(t, s.fx[0].node, 1)
 		testing.expect_value(t, s.fx[0].age, 1.5)
