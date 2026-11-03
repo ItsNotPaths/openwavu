@@ -31,6 +31,7 @@ void main() {
     vec4 base = texture(base_color, texture_uv) * vertex_color * tint;
     if (base.a < cutoff) discard;
     vec3 n = normalize(world_normal);
+    if (dot(n, camera_position.xyz - world_position) < 0.0) n = -n;  // culling is off: light a back side like its front
     vec3 light = ambient.rgb;
     for (int i = 0; i < LIGHTS; i++) {
         vec3 to_light = -light_direction[i].xyz;
