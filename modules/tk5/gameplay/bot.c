@@ -78,16 +78,16 @@ typedef struct {
 
 static Bot bots[T5_FIGHTER_COUNT];
 
-static uint32_t next(Bot *b) {  // xorshift32
-    b->rng ^= b->rng << 13;
-    b->rng ^= b->rng >> 17;
-    b->rng ^= b->rng << 5;
-    return b->rng;
+static uint32_t next_random(Bot *bot) {  // xorshift32
+    bot->rng ^= bot->rng << 13;
+    bot->rng ^= bot->rng >> 17;
+    bot->rng ^= bot->rng << 5;
+    return bot->rng;
 }
 
-static int32_t pick(Bot *b, int32_t n) { return (int32_t)(next(b) % (uint32_t)n); }
-static bool chance(Bot *b, float p) { return (float)(next(b) % 10000) < p * 10000; }
-static int32_t between(Bot *b, int32_t low, int32_t high) { return low + pick(b, high - low + 1); }
+static int32_t pick(Bot *bot, int32_t count) { return (int32_t)(next_random(bot) % (uint32_t)count); }
+static bool chance(Bot *bot, float probability) { return (float)(next_random(bot) % 10000) < probability * 10000; }
+static int32_t between(Bot *bot, int32_t low, int32_t high) { return low + pick(bot, high - low + 1); }
 
 // --- the move list
 
@@ -104,94 +104,100 @@ static bool attacks(const T5Motbin *motbin, uint16_t id) {
 static bool one_press(const T5Cancel *entry) {
     T5Command command = entry->command;
     T5ButtonSet press = t5_buttons_pressed(command.buttons), held = t5_buttons_held(command.buttons);
-    return command.code < T5_CANCEL_END && !(command.code & ~(DIRECTION_BITS | T5_DIRECTION_NEW_PRESS))
-        && !(command.buttons & SUMMARY_BITS) && !(entry->option & (T5_OPTION_NO_INPUT | T5_OPTION_REVERSAL)) && press
-        && !(held & ~press) && !(t5_buttons_not_held(command.buttons) & press);
+    bool plain_direction = command.code < T5_CANCEL_END && !(command.code & ~(DIRECTION_BITS | T5_DIRECTION_NEW_PRESS));
+    bool plain_buttons = press && !(command.buttons & SUMMARY_BITS) && !(held & ~press) && !(t5_buttons_not_held(command.buttons) & press);
+    bool takes_input = !(entry->option & (T5_OPTION_NO_INPUT | T5_OPTION_REVERSAL));
+    return plain_direction && plain_buttons && takes_input;
 }
 
-static void add_move(Bot *b, BotMove move) {
-    for (int32_t i = 0; i < b->move_count; i++)
-        if (b->moves[i].directions == move.directions && b->moves[i].buttons == move.buttons) return;
-    if (b->move_count < MOVES_MAX) b->moves[b->move_count++] = move;
+static void add_move(Bot *bot, BotMove move) {
+    for (int32_t index = 0; index < bot->move_count; index++)
+        if (bot->moves[index].directions == move.directions && bot->moves[index].buttons == move.buttons) return;
+    if (bot->move_count < MOVES_MAX) bot->moves[bot->move_count++] = move;
 }
 
-static void scan(Bot *b, const T5Motbin *motbin, const T5Cancel *entry) {
+static void scan(Bot *bot, const T5Motbin *motbin, const T5Cancel *entry) {
     for (; entry->command.code != T5_CANCEL_END && entry->command.code != T5_CANCEL_GROUP_END; entry++) {
-        if (entry->command.code == T5_CANCEL_GROUP) scan(b, motbin, &motbin->group_cancels[entry->move]);
+        if (entry->command.code == T5_CANCEL_GROUP) scan(bot, motbin, &motbin->group_cancels[entry->move]);
         else if (one_press(entry) && attacks(motbin, entry->move))
-            add_move(b, (BotMove){entry->command.code & DIRECTION_BITS, t5_buttons_pressed(entry->command.buttons)});
+            add_move(bot, (BotMove){entry->command.code & DIRECTION_BITS, t5_buttons_pressed(entry->command.buttons)});
     }
 }
 
 void t5_bots_begin(uint64_t seed) {
     for (uint32_t side = 0; side < T5_FIGHTER_COUNT; side++) {
-        Bot *b = &bots[side];
+        Bot *bot = &bots[side];
         const T5Motbin *motbin = &t5_match_data.sides[side].data.moves;
-        *b = (Bot){.rng = (uint32_t)(seed * 2 + side + 1)};  // never 0: xorshift would stay 0
+        *bot = (Bot){.rng = (uint32_t)(seed * 2 + side + 1)};  // never 0: xorshift would stay 0
         const T5Move *idle = &motbin->moves[move_index(motbin, T5_ALIAS_IDLE_STAND)];
-        scan(b, motbin, &motbin->cancels[idle->cancels]);
+        scan(bot, motbin, &motbin->cancels[idle->cancels]);
     }
 }
 
 // --- plans: a few frames of keys, then a new decision
 
-static void push(Bot *b, int forward, int vertical, T5ButtonSet buttons, int32_t frames) {
-    for (; frames > 0 && b->plan_length < PLAN_MAX; frames--) b->plan[b->plan_length++] = (BotKey){(int8_t)forward, (int8_t)vertical, buttons};
+static void push(Bot *bot, int forward, int vertical, T5ButtonSet buttons, int32_t frames) {
+    for (; frames > 0 && bot->plan_length < PLAN_MAX; frames--) bot->plan[bot->plan_length++] = (BotKey){(int8_t)forward, (int8_t)vertical, buttons};
 }
 
-static void plan_reset(Bot *b) { b->plan_length = b->plan_at = 0; }
-static void wait_out(Bot *b) { push(b, 0, 0, 0, TUNING.think_interval - b->plan_length); }
-
-static void dash(Bot *b, int forward) {
-    push(b, forward, 0, 0, TAP_FRAMES);
-    push(b, 0, 0, 0, TAP_FRAMES);
-    push(b, forward, 0, 0, forward > 0 ? TUNING.think_interval : TAP_FRAMES);
+// Numpad key 1..9 held for frames: 1 is down-back, 5 neutral, 9 up-forward.
+static void push_key(Bot *bot, int32_t key, T5ButtonSet buttons, int32_t frames) {
+    push(bot, (key - 1) % 3 - 1, (key - 1) / 3 - 1, buttons, frames);
 }
 
-static void attack(Bot *b) {
-    if (b->move_count == 0) return;
-    BotMove move = b->moves[pick(b, b->move_count)];
+static void plan_reset(Bot *bot) { bot->plan_length = bot->plan_at = 0; }
+static void wait_out(Bot *bot) { push(bot, 0, 0, 0, TUNING.think_interval - bot->plan_length); }
+
+static void dash(Bot *bot, int forward) {
+    push(bot, forward, 0, 0, TAP_FRAMES);
+    push(bot, 0, 0, 0, TAP_FRAMES);
+    push(bot, forward, 0, 0, forward > 0 ? TUNING.think_interval : TAP_FRAMES);
+}
+
+static void attack(Bot *bot) {
+    if (bot->move_count == 0) return;
+    BotMove move = bot->moves[pick(bot, bot->move_count)];
     int32_t key = NEUTRAL_KEY;  // any direction goes
-    if (move.directions) do key = between(b, 1, 9); while (!(move.directions & 1u << key));
-    push(b, 0, 0, 0, TAP_FRAMES);  // a fresh direction press
-    push(b, (key - 1) % 3 - 1, (key - 1) / 3 - 1, move.buttons, PRESS_FRAMES);
+    if (move.directions) do key = between(bot, 1, 9); while (!(move.directions & 1u << key));
+    push(bot, 0, 0, 0, TAP_FRAMES);  // a fresh direction press
+    push_key(bot, key, move.buttons, PRESS_FRAMES);
 }
 
-static void block(Bot *b) {
-    plan_reset(b);
-    push(b, -1, chance(b, TUNING.crouch_block_chance) ? -1 : 0, 0, TUNING.block_frames);
+static void block(Bot *bot) {
+    plan_reset(bot);
+    push(bot, -1, chance(bot, TUNING.crouch_block_chance) ? -1 : 0, 0, TUNING.block_frames);
 }
 
-static void think(Bot *b, BotView v) {
-    plan_reset(b);
-    if (v.distance > TUNING.far_distance) {
-        if (chance(b, TUNING.dash_chance)) dash(b, 1);
-        else push(b, 1, 0, 0, TUNING.think_interval);
-    } else if (v.distance < TUNING.close_distance && chance(b, TUNING.throw_chance)) {
-        push(b, 0, 0, 0, TAP_FRAMES);
-        push(b, 0, 0, THROWS[pick(b, 2)], PRESS_FRAMES);
-    } else if (chance(b, TUNING.aggression)) {
-        attack(b);
-    } else if (chance(b, TUNING.backdash_chance)) {
-        dash(b, -1);
-    } else if (chance(b, TUNING.step_chance)) {
-        push(b, 1, 0, 0, TUNING.think_interval);  // step in
+static void think(Bot *bot, BotView view) {
+    plan_reset(bot);
+    if (view.distance > TUNING.far_distance) {
+        if (chance(bot, TUNING.dash_chance)) dash(bot, 1);
+        else push(bot, 1, 0, 0, TUNING.think_interval);
+    } else if (view.distance < TUNING.close_distance && chance(bot, TUNING.throw_chance)) {
+        push(bot, 0, 0, 0, TAP_FRAMES);
+        push(bot, 0, 0, THROWS[pick(bot, 2)], PRESS_FRAMES);
+    } else if (chance(bot, TUNING.aggression)) {
+        attack(bot);
+    } else if (chance(bot, TUNING.backdash_chance)) {
+        dash(bot, -1);
+    } else if (chance(bot, TUNING.step_chance)) {
+        push(bot, 1, 0, 0, TUNING.think_interval);  // step in
     }
-    wait_out(b);
+    wait_out(bot);
 }
 
-static BotKey bot_key(Bot *b, BotView v) {
-    if (!v.fighting) {
-        plan_reset(b);
-        b->saw_attack = false;
-        b->react_in = 0;
+static BotKey bot_key(Bot *bot, BotView view) {
+    if (!view.fighting) {
+        plan_reset(bot);
+        bot->saw_attack = false;
+        bot->react_in = 0;
         return (BotKey){};
     }
-    if (v.opp_attacking && !b->saw_attack) b->react_in = between(b, TUNING.reaction_min, TUNING.reaction_max);
-    b->saw_attack = v.opp_attacking;
-    if (b->react_in > 0 && --b->react_in == 0 && chance(b, TUNING.block_chance)) block(b);
-    if (b->plan_at >= b->plan_length) think(b, v);
-    return b->plan[b->plan_at++];
+    if (view.opp_attacking && !bot->saw_attack) bot->react_in = between(bot, TUNING.reaction_min, TUNING.reaction_max);
+    bot->saw_attack = view.opp_attacking;
+    if (bot->react_in > 0 && --bot->react_in == 0 && chance(bot, TUNING.block_chance)) block(bot);
+    if (bot->plan_at >= bot->plan_length) think(bot, view);
+    return bot->plan[bot->plan_at++];
 }
 
 // --- what the bot sees, and its keys as a pad word
@@ -225,6 +231,6 @@ static uint32_t pad_word(BotKey key, bool on_right) {
 
 OW_EXPORT(ow_bot_pad) uint32_t ow_bot_pad(uint32_t side) {
     if (side >= T5_FIGHTER_COUNT) return 0;
-    BotView v = bot_view(side);
-    return pad_word(bot_key(&bots[side], v), v.on_right);
+    BotView view = bot_view(side);
+    return pad_word(bot_key(&bots[side], view), view.on_right);
 }

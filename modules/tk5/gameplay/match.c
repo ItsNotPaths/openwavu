@@ -21,14 +21,14 @@ static T5View view;
 
 // The fields the passes read of a fresh fighter on a side (no position, no move: the round init places it).
 static void fighter_init(T5World *w, T5Fighter *f, uint32_t side) {
-    const T5SideData *picked = &t5_match_data.sides[side];
-    T5FighterData *d = &t5_match_data.sides[side].data;
-    w->data[side] = d;
+    T5SideData *picked = &t5_match_data.sides[side];
+    T5FighterData *data = &picked->data;
+    w->data[side] = data;
     w->fighters[side] = f;
     t5_fighter_clear_refs(f);
     f->force_update = true;  // the move change sets update_divider -1, which would whiff every hit
-    f->rig = d->bind;
-    f->scale_base = d->skeleton.scale;
+    f->rig = data->bind;
+    f->scale_base = data->skeleton.scale;
     f->data = f->moveset = (uint8_t)side;
     f->slot = (uint16_t)side;
     f->side_index = (int16_t)side;
@@ -36,9 +36,9 @@ static void fighter_init(T5World *w, T5Fighter *f, uint32_t side) {
     f->health = f->max_health = START_HEALTH;
     f->chara = picked->chara;
     f->chara_40 = picked->model;
-    f->body = t5_motbin_body(&d->moves);
-    f->body_points = t5_motbin_body_points(&d->moves);
-    f->gaze = t5_motbin_gaze(&d->moves);
+    f->body = t5_motbin_body(&data->moves);
+    f->body_points = t5_motbin_body_points(&data->moves);
+    f->gaze = t5_motbin_gaze(&data->moves);
     f->input.mode = T5_INPUT_LIVE;
     f->input.direction_held = T5_DIRECTION_N;
     f->base_position_w = 1.0f;

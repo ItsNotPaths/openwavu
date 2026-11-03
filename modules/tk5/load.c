@@ -939,16 +939,25 @@ const char *t5_load_clips(void **clips, uint32_t *count, T5ClipKind kind, sqlite
     return failed;
 }
 
-const char *t5_load_anims_storage(sqlite3 *db, const char *character, size_t *bytes) {
-    char owners[3][T5_OWNER_BYTES];
+// Arena bytes of the character's three anim banks, and how many anims they hold.
+static const char *anims_storage(sqlite3 *db, const char *character, size_t *bytes, uint32_t *anim_count) {
+    char owners[BANKS][T5_OWNER_BYTES];
     const char *failed = bank_owners(db, character, owners);
     *bytes = 0;
-    for (int bank = 0; bank < 3 && !failed; bank++) {
-        size_t bank_bytes;
-        failed = t5_load_clips_storage(db, owners[bank], ANIMS, &bank_bytes);
-        *bytes += bank_bytes;
+    *anim_count = 0;
+    for (int bank = 0; bank < BANKS && !failed; bank++) {
+        int32_t numbered;
+        uint32_t count;
+        failed = bank_count(db, owners[bank], &numbered, &count);
+        *bytes += clips_bytes(count, ANIMS);
+        *anim_count += count;
     }
     return failed;
+}
+
+const char *t5_load_anims_storage(sqlite3 *db, const char *character, size_t *bytes) {
+    uint32_t anim_count;
+    return anims_storage(db, character, bytes, &anim_count);
 }
 
 const char *t5_load_anim_bank_storage(sqlite3 *db, const char *owner, size_t *bytes) { return t5_load_clips_storage(db, owner, ANIMS, bytes); }
@@ -965,26 +974,12 @@ const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *charac
     return failed;
 }
 
-static const char *anim_total(sqlite3 *db, const char *character, uint32_t *total) {
-    char owners[BANKS][T5_OWNER_BYTES];
-    const char *failed = bank_owners(db, character, owners);
-    *total = 0;
-    for (int bank = 0; bank < BANKS && !failed; bank++) {
-        int32_t numbered;
-        uint32_t count;
-        failed = bank_count(db, owners[bank], &numbered, &count);
-        *total += count;
-    }
-    return failed;
-}
-
 const char *t5_load_fighter_storage(sqlite3 *db, const char *character, size_t *bytes) {
     size_t anims, motbin;
     uint32_t anim_count;
     int32_t move_count;
-    const char *failed = t5_load_anims_storage(db, character, &anims);
+    const char *failed = anims_storage(db, character, &anims, &anim_count);
     if (!failed) failed = t5_load_motbin_storage(db, character, &motbin);
-    if (!failed) failed = anim_total(db, character, &anim_count);
     if (!failed) failed = count_rows(db, character, &tables[0], &move_count);  // tables[0]: the moves
     *bytes = failed ? 0 : anims + motbin + t5_fighter_finish_storage(anim_count, move_count);
     return failed;

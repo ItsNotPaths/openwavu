@@ -12,6 +12,7 @@
 
 enum { CHARACTERS_MAX = 64, SCALE = 3, LINE = 12 };  // LINE: debug text rows are 8 px, at SCALE
 enum { ITEM_FIGHTER, ITEM_GHOST, ITEM_CPU, ITEMS };
+enum { NO_BOTS = 0, BOT_SIDE_2 = 1u << 1 };  // ow_match_local bot_sides
 
 static const char DB_PATH[] = "tk5.db";
 static char characters[CHARACTERS_MAX][T5_NAME_BYTES];
@@ -27,7 +28,8 @@ OW_EXPORT(ow_init) int32_t init(void) {
     sqlite3_stmt *rows;
     if (sqlite3_prepare_v2(db, "SELECT id FROM character ORDER BY rowid", -1, &rows, NULL) == SQLITE_OK) {
         while (character_count < CHARACTERS_MAX && sqlite3_step(rows) == SQLITE_ROW) {
-            strncpy(characters[character_count++], (const char *)sqlite3_column_text(rows, 0), T5_NAME_BYTES - 1);
+            const char *id = (const char *)sqlite3_column_text(rows, 0);
+            if (id) strncpy(characters[character_count++], id, T5_NAME_BYTES - 1);  // a TEXT key may be NULL
         }
         sqlite3_finalize(rows);
     }
@@ -35,10 +37,11 @@ OW_EXPORT(ow_init) int32_t init(void) {
     return character_count > 0 ? 0 : 1;
 }
 
-// A versus match of the picked fighter against a random other one; bot_sides 0 is a ghost match.
+// A versus match of the picked fighter against a random other one (itself when it is the only one).
 static void start(uint32_t bot_sides) {
     srand(frames);
-    int opponent = (fighter + 1 + rand() % (character_count - 1)) % character_count;
+    int others = character_count - 1;
+    int opponent = others > 0 ? (fighter + 1 + rand() % others) % character_count : fighter;
     T5Loadout sides[2] = {{.costume = 1}, {.costume = 1}};
     strcpy(sides[0].character, characters[fighter]);
     strcpy(sides[1].character, characters[opponent]);
@@ -54,8 +57,8 @@ static void step(uint32_t pressed) {
     if (item == ITEM_FIGHTER && pressed & OW_PAD_LEFT) fighter = (fighter + character_count - 1) % character_count;
     if (item == ITEM_FIGHTER && pressed & OW_PAD_RIGHT) fighter = (fighter + 1) % character_count;
     if (!(pressed & (OW_PAD_BUTTON_1 | OW_PAD_START))) return;
-    if (item == ITEM_GHOST) start(0);
-    if (item == ITEM_CPU) start(1u << 1);
+    if (item == ITEM_GHOST) start(NO_BOTS);
+    if (item == ITEM_CPU) start(BOT_SIDE_2);
 }
 
 static const char *match_line(void) {
@@ -76,28 +79,28 @@ OW_EXPORT(ow_frame) void frame(float dt, uint32_t cmdbuf) {
     step(pad & ~held);
     held = pad;
 
-    SDL_Renderer *r = ow_renderer();
-    int w, h;
-    SDL_GetRenderOutputSize(r, &w, &h);
-    SDL_SetRenderScale(r, SCALE, SCALE);
+    SDL_Renderer *renderer = ow_renderer();
+    int width, height;
+    SDL_GetRenderOutputSize(renderer, &width, &height);
+    SDL_SetRenderScale(renderer, SCALE, SCALE);
     float x = 24, y = 24;
-    SDL_SetRenderDrawColor(r, 20, 20, 28, 255);
-    SDL_RenderFillRect(r, &(SDL_FRect){0, 0, (float)w / SCALE, (float)h / SCALE});
-    SDL_SetRenderDrawColor(r, 255, 200, 40, 255);
-    SDL_RenderDebugText(r, x, y, "TEKKEN 5 DARK RESURRECTION");
+    SDL_SetRenderDrawColor(renderer, 20, 20, 28, 255);
+    SDL_RenderFillRect(renderer, &(SDL_FRect){0, 0, (float)width / SCALE, (float)height / SCALE});
+    SDL_SetRenderDrawColor(renderer, 255, 200, 40, 255);
+    SDL_RenderDebugText(renderer, x, y, "TEKKEN 5 DARK RESURRECTION");
     char fighter_line[64];
     snprintf(fighter_line, sizeof fighter_line, "Fighter   < %s >", characters[fighter]);
     const char *lines[ITEMS] = {fighter_line, "Ghost match vs random", "Versus CPU vs random"};
-    for (int i = 0; i < ITEMS; i++) {
-        float row = y + (i + 2) * LINE;
-        if (i == item) {
-            SDL_SetRenderDrawColor(r, 120, 30, 30, 255);
-            SDL_RenderFillRect(r, &(SDL_FRect){x - 4, row - 2, 200, LINE});
+    for (int line = 0; line < ITEMS; line++) {
+        float row = y + (line + 2) * LINE;
+        if (line == item) {
+            SDL_SetRenderDrawColor(renderer, 120, 30, 30, 255);
+            SDL_RenderFillRect(renderer, &(SDL_FRect){x - 4, row - 2, 200, LINE});
         }
-        SDL_SetRenderDrawColor(r, 235, 235, 235, 255);
-        SDL_RenderDebugText(r, x, row, lines[i]);
+        SDL_SetRenderDrawColor(renderer, 235, 235, 235, 255);
+        SDL_RenderDebugText(renderer, x, row, lines[line]);
     }
-    SDL_SetRenderDrawColor(r, 150, 150, 160, 255);
-    SDL_RenderDebugText(r, x, y + (ITEMS + 3) * LINE, match_line());
-    SDL_RenderDebugText(r, x, y + (ITEMS + 5) * LINE, "arrows: move   U or Enter: pick");
+    SDL_SetRenderDrawColor(renderer, 150, 150, 160, 255);
+    SDL_RenderDebugText(renderer, x, y + (ITEMS + 3) * LINE, match_line());
+    SDL_RenderDebugText(renderer, x, y + (ITEMS + 5) * LINE, "arrows: move   U or Enter: pick");
 }
