@@ -27,6 +27,7 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 	for mesh, mesh_index in meshes {
 		out := gltf.Mesh{name = mesh.name}
 		for p in mesh.polys {
+			if len(p.positions) == 0 do continue  // glTF accessors hold at least one element
 			prim := gltf.Primitive{attributes = make(map[string]int)}
 			prim.attributes["POSITION"] = gltf.add_accessor(&g, metres(p.positions), "VEC3", gltf.ARRAY_BUFFER, with_bounds = true)
 			if p.normals != nil do prim.attributes["NORMAL"] = gltf.add_accessor(&g, unit(p.normals), "VEC3", gltf.ARRAY_BUFFER)

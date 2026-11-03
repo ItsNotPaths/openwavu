@@ -27,6 +27,20 @@ if [ ! -f "$clay_lib" ] || [ vendor/clay/clay.h -nt "$clay_lib" ]; then
 	cc -O2 -fPIC -DCLAY_IMPLEMENTATION -x c -c vendor/clay/clay.h -o vendor/clay/clay.o
 	ar rcs "$clay_lib" vendor/clay/clay.o
 fi
+if [ ! -f vendor/tomlc17/libtomlc17.a ] || [ vendor/tomlc17/tomlc17.c -nt vendor/tomlc17/libtomlc17.a ]; then
+	cc -O2 -c vendor/tomlc17/tomlc17.c -o vendor/tomlc17/tomlc17.o
+	ar rcs vendor/tomlc17/libtomlc17.a vendor/tomlc17/tomlc17.o
+fi
+# The cgltf binding links lib/cgltf.a (lib/darwin/cgltf.a on macOS) next to cgltf.odin.
+case "$(uname -s)" in
+	Darwin) cgltf_lib=vendor/cgltf/lib/darwin/cgltf.a ;;
+	*) cgltf_lib=vendor/cgltf/lib/cgltf.a ;;
+esac
+if [ ! -f "$cgltf_lib" ] || [ vendor/cgltf/src/cgltf.h -nt "$cgltf_lib" ]; then
+	mkdir -p "$(dirname "$cgltf_lib")"
+	cc -O2 -fPIC -c vendor/cgltf/src/cgltf.c -o vendor/cgltf/cgltf.o
+	ar rcs "$cgltf_lib" vendor/cgltf/cgltf.o
+fi
 # ow_input.h is header-only; the Odin binding (src/command) links it.
 if [ ! -f build/libow_input.a ] || [ sdk/include/ow_input.h -nt build/libow_input.a ]; then
 	cc -std=c23 -O2 -DOW_INPUT_IMPLEMENTATION -x c -c sdk/include/ow_input.h -o build/ow_input.o

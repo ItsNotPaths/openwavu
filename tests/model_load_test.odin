@@ -8,11 +8,12 @@ import "../src/dds"
 import "../src/gltf"
 import "../src/render"
 import "../src/titlepack"
+import "../vendor/cgltf"
 
 // A pack folder with models/quad.glb: a root with a child holding a quad, whose cut-out material uses textures/red.dds
 // (one red DXT1 block) and whose vertices are half grey; no normals. Also models/loop.glb, whose node is its own
 // child, models/outside.glb, whose texture uri leaves the pack, and models/joint_<n>.glb: a triangle skinned to joint n
-// of a one-joint skin, next to an empty primitive. models/bad_index.glb: a good triangle, then one whose index is past
+// of a one-joint skin. models/bad_index.glb: a good triangle, then one whose index is past
 // its vertices. The caller removes the folder.
 @(private = "file")
 write_model_pack :: proc(t: ^testing.T, dir: string) {
@@ -61,10 +62,8 @@ write_model_pack :: proc(t: ^testing.T, dir: string) {
 		p.attributes["POSITION"] = gltf.add_accessor(&g, [][3]f32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, "VEC3")
 		p.attributes["JOINTS_0"] = gltf.add_accessor(&g, [][4]u16{joint, joint, joint}, "VEC4")
 		p.attributes["WEIGHTS_0"] = gltf.add_accessor(&g, [][4]f32{{1, 0, 0, 0}, {1, 0, 0, 0}, {1, 0, 0, 0}}, "VEC4")
-		empty := gltf.Primitive{attributes = make(map[string]int)}
-		empty.attributes["POSITION"] = gltf.add_accessor(&g, [][3]f32{}, "VEC3")
 		mesh: gltf.Mesh
-		append(&mesh.primitives, p, empty)
+		append(&mesh.primitives, p)
 		append(&g.meshes, mesh)
 		skin: gltf.Skin
 		append(&skin.joints, 0)
@@ -90,8 +89,7 @@ write_model_pack :: proc(t: ^testing.T, dir: string) {
 }
 
 // A glb loads with its node tree and draws in its DDS texture's color times its vertex color; a node tree that loops
-// does not load; a texture outside the pack draws white; vertices naming a joint past their skin do not load, and an
-// empty primitive is left out; a bad primitive after a good one fails the glb and leaks nothing.
+// does not load; a texture outside the pack draws white; vertices naming a joint past their skin do not load; a bad primitive after a good one fails the glb and leaks nothing.
 @(test)
 glb_loads_and_draws_in_its_texture :: proc(t: ^testing.T) {
 	g, ok := test_gpu_create(t)
@@ -120,7 +118,7 @@ glb_loads_and_draws_in_its_texture :: proc(t: ^testing.T) {
 	outside := render.asset_model(&assets, &g, render.asset_id(&assets, "models/outside.glb"))
 	if testing.expect(t, outside != nil) do testing.expect(t, outside.meshes[0][0].texture == nil)
 	skinned := render.asset_model(&assets, &g, render.asset_id(&assets, "models/joint_0.glb"))
-	if testing.expect(t, skinned != nil) do testing.expect_value(t, len(skinned.meshes[0]), 1)
+	testing.expect(t, skinned != nil)
 	testing.expect(t, render.asset_model(&assets, &g, render.asset_id(&assets, "models/joint_1.glb")) == nil)
 	testing.expect(t, render.asset_model(&assets, &g, render.asset_id(&assets, "models/bad_index.glb")) == nil)
 
@@ -153,12 +151,12 @@ stock_models_load_with_their_textures :: proc(t: ^testing.T) {
 		m := render.asset_model(&assets, &g, render.asset_id(&assets, path))
 		if !testing.expectf(t, m != nil, "%s does not load", path) do continue
 		data, _ := titlepack.read_file(files, path)
-		file, read := gltf.read_glb(data, context.temp_allocator)
-		if !testing.expect(t, read) do continue
+		file, parsed := cgltf.parse({type = .glb}, raw_data(data), uint(len(data)))
+		if !testing.expect_value(t, parsed, cgltf.result.success) do continue
+		defer cgltf.free(file)
 		for mesh, i in file.meshes {
 			for p, k in mesh.primitives {
-				material := p.material.? or_else -1
-				textured := material >= 0 && file.materials[material].pbrMetallicRoughness.baseColorTexture != nil
+				textured := p.material != nil && p.material.pbr_metallic_roughness.base_color_texture.texture != nil
 				testing.expectf(t, !textured || m.meshes[i][k].texture != nil, "%s mesh %d: texture does not load", path, i)
 			}
 		}

@@ -3,6 +3,7 @@
 // lobby. Each layer sets values and exposes a subset.
 package titlepack
 
+import "core:c"
 import "core:path/filepath"
 import "core:slice"
 import "core:strings"
@@ -31,24 +32,27 @@ Title_Pack :: struct {
 	id, name, version: string,
 	main:              string,  // the entry module; "" for a pack without code (a db mod)
 	modes:             []Mode,    // sorted by name
-	// (hole pack-base :tags titlepack) bases are not checked; a pack whose base the player lacks, or has at another version, fails inside the sim, not at join.
+	// (hole pack-base :tags titlepack) bases are not checked: each must be a stock pack id (tekken5dr, later tekken6br), and a pack whose base is not installed should be refused at install, not fail inside the sim.
 	bases:             []string,  // pack ids, bottom first; a stock pack has none
 }
 
 // pack.toml text -> the pack. id and version are required; name falls back to the id. Each [modes.x] needs both a sim
 // and a presenter.
 read_titlepack :: proc(manifest: string, allocator := context.allocator) -> (tp: Title_Pack, ok: bool) {
-	table, err := read_toml(manifest, context.temp_allocator)
-	if err != "" do return
-	id := table.values["id"].(string) or_return
-	version := table.values["version"].(string) or_return
-	name := table.values["name"].(string) or_else id
-	main := table.values["main"].(string) or_else ""
-	modes := read_modes(table, context.temp_allocator) or_return
+	if len(manifest) > int(max(c.int)) do return
+	result := toml_parse(raw_data(manifest), c.int(len(manifest)))
+	defer toml_free(result)
+	if !result.ok do return
+	top := result.top
+	id := toml_text(toml_get(top, "id")) or_return
+	version := toml_text(toml_get(top, "version")) or_return
+	name := toml_text(toml_get(top, "name")) or_else id
+	main := toml_text(toml_get(top, "main")) or_else ""
+	modes := read_modes(top) or_return
 	bases := make([dynamic]string, allocator)
-	if list, has := table.values["bases"].([dynamic]Toml_Value); has {
-		for base in list {
-			if s, is_string := base.(string); is_string do append(&bases, strings.clone(s, allocator))
+	if list := toml_get(top, "bases"); list.type == .Array {
+		for element in list.array.elements[:list.array.size] {
+			if base, is_text := toml_text(element); is_text do append(&bases, strings.clone(base, allocator))
 		}
 	}
 	tp = {
@@ -63,20 +67,22 @@ read_titlepack :: proc(manifest: string, allocator := context.allocator) -> (tp:
 	return tp, true
 }
 
-// The [modes.x] tables, sorted by name; views into table.
+// The [modes.x] tables, sorted by name; views into top's result, in the temp allocator.
 @(private = "file")
-read_modes :: proc(table: ^Toml_Table, allocator := context.allocator) -> (modes: []Mode, ok: bool) {
-	section, has := table.values["modes"].(^Toml_Table)
-	if !has do return nil, true
-	list := make([dynamic]Mode, allocator)
-	for name, value in section.values {
-		mode := value.(^Toml_Table) or_return
-		sim := mode.values["sim"].(string) or_return
-		presenter := mode.values["presenter"].(string) or_return
-		append(&list, Mode{name, sim, presenter})
+read_modes :: proc(top: Toml_Datum) -> (modes: []Mode, ok: bool) {
+	section := toml_get(top, "modes")
+	if section.type == .Unknown do return nil, true
+	if section.type != .Table do return
+	modes = make([]Mode, section.table.size, context.temp_allocator)
+	for &mode, index in modes {
+		entry := section.table.values[index]
+		if entry.type != .Table do return
+		mode.name = string(section.table.keys[index][:section.table.key_lengths[index]])
+		mode.sim = toml_text(toml_get(entry, "sim")) or_return
+		mode.presenter = toml_text(toml_get(entry, "presenter")) or_return
 	}
-	slice.sort_by(list[:], proc(a, b: Mode) -> bool {return a.name < b.name})
-	return list[:], true
+	slice.sort_by(modes, proc(a, b: Mode) -> bool {return a.name < b.name})
+	return modes, true
 }
 
 destroy_titlepack :: proc(tp: Title_Pack, allocator := context.allocator) {

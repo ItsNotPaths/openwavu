@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dependencies into vendor/: zig (the C compiler for pack modules, pinned so ow build is reproducible), wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding,
+# Dependencies into vendor/: zig (the C compiler for pack modules, pinned so ow build is reproducible), wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding, cgltf, tomlc17,
 # SDL3 and SDL3_ttf built static (FreeType) with their headers for pack modules, and the UI font. Delete a vendor/ folder to refetch it.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -14,6 +14,8 @@ SDL_TTF=3.2.2
 SDL_TTF_SHA256=63547d58d0185c833213885b635a2c0548201cc8f301e6587c0be1a67e1e045d
 FREETYPE=2-13-3
 FREETYPE_SHA256=bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103
+TOMLC17=R261003
+TOMLC17_SHA256=48876f14bd7a123f95f16074dd0d5681f75c397c1bce61f1a52f42201f90eacc
 GLSLANG=16.5.0
 GLSLANG_SHA256=01af17195fbeb59e39e31e9506de35bb39dfd35807ea0c9a1a99d7d1183ddd45
 FONTS_COMMIT=8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5 # google/fonts
@@ -128,6 +130,25 @@ if [ ! -x vendor/glslang/glslang ]; then
 	cp "$glslang_dir/build/StandAlone/glslang" "$glslang_dir/src/LICENSE.txt" vendor/glslang/
 	rm -rf "$glslang_dir"
 	echo "vendor/glslang: $GLSLANG"
+fi
+
+if [ ! -f vendor/tomlc17/tomlc17.c ]; then
+	toml_dir=$(mktemp -d)
+	fetch "https://github.com/cktan/tomlc17/archive/refs/tags/$TOMLC17.tar.gz" "$toml_dir/tomlc17.tar.gz" "$TOMLC17_SHA256"
+	tar xzf "$toml_dir/tomlc17.tar.gz" -C "$toml_dir" --strip-components=1
+	mkdir -p vendor/tomlc17
+	cp "$toml_dir/src/tomlc17.c" "$toml_dir/src/tomlc17.h" "$toml_dir/LICENSE" vendor/tomlc17/
+	rm -rf "$toml_dir"
+	echo "vendor/tomlc17: $TOMLC17"
+fi
+
+# glb reading: the cgltf binding and C source that ship with the installed Odin, so the two always match.
+if [ ! -f vendor/cgltf/cgltf.odin ]; then
+	odin_cgltf="$(odin root)/vendor/cgltf"
+	mkdir -p vendor/cgltf/src
+	cp "$odin_cgltf/cgltf.odin" "$odin_cgltf/LICENSE" vendor/cgltf/
+	cp "$odin_cgltf/src/cgltf.c" "$odin_cgltf/src/cgltf.h" "$odin_cgltf/src/cgltf_write.h" vendor/cgltf/src/
+	echo "vendor/cgltf: from $(odin version)"
 fi
 
 if [ ! -f vendor/fonts/Michroma-Regular.ttf ]; then
