@@ -15,12 +15,8 @@ import "../src/wasm"
 // that is not the pack's, a handle of the wrong kind, and a text whose font is closed each stop it before SDL runs.
 @(test)
 module_draws_through_sdl_imports :: proc(t: ^testing.T) {
-	module_path :: "build/sdl_probe.wasm"
-	command := []string{"vendor/zig/zig", "cc", "-target", "wasm32-wasi", "-O2", "-std=c23", "-mexec-model=reactor",
-		"-Isdk/include", "-Ivendor/sdl3/include", "-Ivendor/sdl3_ttf/include", "-Wl,--import-symbols", "-o", module_path, "tests/ref/sdl_probe.c"}
-	state, _, stderr, err := os.process_exec({command = command}, context.temp_allocator)
-	if !testing.expectf(t, err == nil && state.exit_code == 0, "sdl_probe.c did not build: %s", stderr) do return
-	code, _ := os.read_entire_file(module_path, context.temp_allocator)
+	code, built := build_module(t, "tests/ref/sdl_probe.c")
+	if !built do return
 
 	dir := fmt.tprintf("build/%s", #procedure)
 	os.make_directory(dir)

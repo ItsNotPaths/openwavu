@@ -1,5 +1,8 @@
 package tests
 
+import "core:fmt"
+import "core:os"
+import "core:path/filepath"
 import "core:testing"
 import "../src/wasm"
 
@@ -47,6 +50,20 @@ rig_destroy :: proc(r: Rig) {
 	wasm.linker_destroy(r.linker)
 	wasm.store_destroy(r.store)
 	wasm.engine_destroy(r.engine)
+}
+
+// A pack module from C in tests/ref, built as a pack builds one, against the SDK and SDL headers. extra: more sources and libs.
+build_module :: proc(t: ^testing.T, source: string, extra: ..string) -> (code: []byte, ok: bool) {
+	out := fmt.tprintf("build/%s.wasm", filepath.stem(source))
+	command := make([dynamic]string, context.temp_allocator)
+	append(&command, "vendor/zig/zig", "cc", "-target", "wasm32-wasi", "-O2", "-std=c23", "-mexec-model=reactor", "-Isdk/include",
+		"-Ivendor/sdl3/include", "-Ivendor/sdl3_ttf/include", "-Ivendor/sqlite", "-Wl,--import-symbols", "-o", out, source)
+	append(&command, ..extra)
+	state, _, stderr, err := os.process_exec({command = command[:]}, context.temp_allocator)
+	if !testing.expectf(t, err == nil && state.exit_code == 0, "%s did not build: %s", source, stderr) do return
+	read_err: os.Error
+	code, read_err = os.read_entire_file(out, context.temp_allocator)
+	return code, read_err == nil
 }
 
 load :: proc(t: ^testing.T, r: Rig, wat: string) -> (inst: wasm.Instance, ok: bool) {

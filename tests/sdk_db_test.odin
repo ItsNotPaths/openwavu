@@ -10,12 +10,8 @@ import "../src/wasm"
 // A module linked with the SDK's SQLite reads a value from a pack's db through the host's content imports.
 @(test)
 module_queries_a_served_db :: proc(t: ^testing.T) {
-	module_path :: "build/db_probe.wasm"
-	command := []string{"vendor/zig/zig", "cc", "-target", "wasm32-wasi", "-Os", "-std=c23", "-mexec-model=reactor",
-		"-Isdk/include", "-Ivendor/sqlite", "-o", module_path, "tests/ref/db_probe.c", "build/sdk/libow_db.a"}
-	state, _, stderr, err := os.process_exec({command = command}, context.temp_allocator)
-	if !testing.expectf(t, err == nil && state.exit_code == 0, "db_probe.c did not build: %s", stderr) do return
-	code, _ := os.read_entire_file(module_path, context.temp_allocator)
+	code, built := build_module(t, "tests/ref/db_probe.c", "build/sdk/libow_db.a")
+	if !built do return
 	fmt.printfln("db_probe.wasm: %d bytes", len(code))
 
 	tar, written := write_test_pack(t, #procedure)
