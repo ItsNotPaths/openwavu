@@ -2,10 +2,10 @@
 package render
 
 import "core:c"
-import "core:encoding/endian"
 import "core:strings"
 import stbi "vendor:stb/image"
 import sdl "vendor:sdl3"
+import "../dds"
 import "../titlepack"
 
 Assets :: struct {
@@ -78,57 +78,21 @@ asset_texture :: proc(g: ^Gpu, u: Upload, a: ^Assets, path: string) -> ^sdl.GPUT
 	return t
 }
 
-// The top mip of a DDS: DXT1, DXT3 or DXT5 blocks as stored, or 32-bit RGBA or BGRA pixels.
+@(private = "file", rodata)
+DDS_FORMATS := [dds.Format]sdl.GPUTextureFormat{.BC1 = .BC1_RGBA_UNORM, .BC2 = .BC2_RGBA_UNORM, .BC3 = .BC3_RGBA_UNORM, .RGBA8 = COLOR_FORMAT}
+
 @(private = "file")
 dds_texture :: proc(g: ^Gpu, u: Upload, data: []byte) -> ^sdl.GPUTexture {
-	d, ok := read_dds(data)
-	if !ok || !sdl.GPUTextureSupportsFormat(g.device, d.format, .D2, {.SAMPLER}) do return nil
-	if d.bgra {
-		swapped := make([]byte, len(d.data), context.temp_allocator)
-		for i := 0; i < len(swapped); i += 4 do swapped[i], swapped[i + 1], swapped[i + 2], swapped[i + 3] = d.data[i + 2], d.data[i + 1], d.data[i], d.data[i + 3]
-		d.data = swapped
+	image, ok := dds.read(data)
+	format := DDS_FORMATS[image.format]
+	if !ok || !sdl.GPUTextureSupportsFormat(g.device, format, .D2, {.SAMPLER}) do return nil
+	pixels := image.data
+	if image.bgra {
+		pixels = make([]byte, len(image.data), context.temp_allocator)
+		for i := 0; i < len(pixels); i += 4 do pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3] = image.data[i + 2], image.data[i + 1], image.data[i], image.data[i + 3]
 	}
-	t, _ := texture_upload(g, u, d.format, d.data, d.width, d.height)
+	t, _ := texture_upload(g, u, format, pixels, u32(image.width), u32(image.height))
 	return t
-}
-
-@(private = "file")
-Dds :: struct {
-	format:        sdl.GPUTextureFormat,
-	width, height: u32,
-	data:          []byte,  // the top mip, in place
-	bgra:          bool,    // pixels with red and blue swapped
-}
-
-@(private = "file")
-read_dds :: proc(data: []byte) -> (d: Dds, ok: bool) {
-	HEADER :: 4 + 124
-	MAX_SIDE :: 16384
-	if len(data) < HEADER || string(data[:4]) != "DDS " do return
-	field :: proc(data: []byte, offset: int) -> int {
-		v, _ := endian.get_u32(data[4 + offset:], .Little)
-		return int(v)
-	}
-	height, width := field(data, 8), field(data, 12)
-	if width == 0 || height == 0 || width > MAX_SIDE || height > MAX_SIDE do return
-	blocks := ((width + 3) / 4) * ((height + 3) / 4)
-	size: int
-	if field(data, 76) & 0x4 != 0 {  // four cc
-		switch string(data[4 + 80:][:4]) {
-		case "DXT1": d.format, size = .BC1_RGBA_UNORM, blocks * 8
-		case "DXT3": d.format, size = .BC2_RGBA_UNORM, blocks * 16
-		case "DXT5": d.format, size = .BC3_RGBA_UNORM, blocks * 16
-		case: return
-		}
-	} else {
-		red, blue := field(data, 88), field(data, 96)
-		rgba, bgra := red == 0xff && blue == 0xff0000, red == 0xff0000 && blue == 0xff
-		if field(data, 84) != 32 || !(rgba || bgra) do return
-		d.format, size, d.bgra = COLOR_FORMAT, width * height * 4, bgra
-	}
-	if len(data) - HEADER < size do return
-	d.width, d.height, d.data = u32(width), u32(height), data[HEADER:][:size]
-	return d, true
 }
 
 @(private = "file")

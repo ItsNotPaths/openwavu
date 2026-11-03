@@ -4,7 +4,7 @@ import "core:fmt"
 import "core:math"
 import "core:os"
 import "core:testing"
-import "../src/convert"
+import "../src/dds"
 import "../src/gltf"
 import "../src/render"
 import "../src/titlepack"
@@ -20,7 +20,7 @@ write_model_pack :: proc(t: ^testing.T, dir: string) {
 	os.make_directory(fmt.tprintf("%s/models", dir))
 	os.make_directory(fmt.tprintf("%s/textures", dir))
 	red_block := []byte{0x00, 0xf8, 0x00, 0xf8, 0, 0, 0, 0}  // both colors 565 red, every texel color 0
-	testing.expect(t, os.write_entire_file(fmt.tprintf("%s/textures/red.dds", dir), convert.encode_dds(.BC1, 4, 4, red_block)) == nil)
+	testing.expect(t, os.write_entire_file(fmt.tprintf("%s/textures/red.dds", dir), dds.encode(.BC1, 4, 4, red_block)) == nil)
 
 	quad :: proc(t: ^testing.T, path, uri: string, nodes: []gltf.Node) {
 		g: gltf.Gltf
