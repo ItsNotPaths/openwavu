@@ -102,7 +102,12 @@ match_local :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val,
 	if !known do return nil
 	params, read := parse_params(string(params_text))
 	if !read do return nil
-	entry.asked = Match_Request{mode, transmute(bit_set[0 ..< 2; u32])(u32(args[2].of.i32) & 0b11), {slice.clone(loadout0), slice.clone(loadout1)}, params}
+	entry.asked = Match_Request{
+		mode      = mode,
+		bot_sides = transmute(bit_set[0 ..< 2; u32])(u32(args[2].of.i32) & 0b11),
+		loadouts  = {slice.clone(loadout0), slice.clone(loadout1)},
+		params    = params,
+	}
 	results[0] = wasm.i32_val(0)
 	return nil
 }

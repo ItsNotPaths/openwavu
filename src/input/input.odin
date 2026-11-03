@@ -13,13 +13,16 @@ DOWN :: 1 << 1
 LEFT :: 1 << 2
 RIGHT :: 1 << 3
 BUTTON_1 :: 1 << 4
+BUTTON_2 :: 1 << 5
+BUTTON_3 :: 1 << 6
+BUTTON_4 :: 1 << 7
 START :: 1 << 8
 
 @(private = "file")
 KEYS := [?]struct {
 	key: sdl.Scancode,
 	bit: u32,
-}{{.UP, UP}, {.DOWN, DOWN}, {.LEFT, LEFT}, {.RIGHT, RIGHT}, {.U, BUTTON_1}, {.I, BUTTON_1 << 1}, {.J, BUTTON_1 << 2}, {.K, BUTTON_1 << 3}, {.RETURN, START}}
+}{{.UP, UP}, {.DOWN, DOWN}, {.LEFT, LEFT}, {.RIGHT, RIGHT}, {.U, BUTTON_1}, {.I, BUTTON_2}, {.J, BUTTON_3}, {.K, BUTTON_4}, {.RETURN, START}}
 
 @(private = "file")
 BUTTONS := [?]struct {
@@ -27,7 +30,7 @@ BUTTONS := [?]struct {
 	bit:    u32,
 }{
 	{.DPAD_UP, UP}, {.DPAD_DOWN, DOWN}, {.DPAD_LEFT, LEFT}, {.DPAD_RIGHT, RIGHT},
-	{.WEST, BUTTON_1}, {.NORTH, BUTTON_1 << 1}, {.SOUTH, BUTTON_1 << 2}, {.EAST, BUTTON_1 << 3}, {.START, START},
+	{.WEST, BUTTON_1}, {.NORTH, BUTTON_2}, {.SOUTH, BUTTON_3}, {.EAST, BUTTON_4}, {.START, START},
 }
 
 // Opens a gamepad as it is plugged in; call it for every event.
