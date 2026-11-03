@@ -28,79 +28,79 @@ assets_create :: proc(files: titlepack.Pack_Files) -> Assets {
 }
 
 // g: the GPU the models and textures were loaded on; nil when none were.
-assets_destroy :: proc(a: ^Assets, g: ^Gpu) {
-	for _, m in a.models do if m != nil do model_destroy(g, m)
-	for path, t in a.textures {
-		if t != nil do sdl.ReleaseGPUTexture(g.device, t)
+assets_destroy :: proc(assets: ^Assets, gpu: ^Gpu) {
+	for _, model in assets.models do if model != nil do model_destroy(gpu, model)
+	for path, texture in assets.textures {
+		if texture != nil do sdl.ReleaseGPUTexture(gpu.device, texture)
 		delete(path)
 	}
-	for path in a.paths do delete(path)
-	delete(a.paths)
-	delete(a.ids)
-	delete(a.models)
-	delete(a.textures)
+	for path in assets.paths do delete(path)
+	delete(assets.paths)
+	delete(assets.ids)
+	delete(assets.models)
+	delete(assets.textures)
 }
 
 // The id of a pack file, the same for the same path; 0 when the pack has no such file.
-asset_id :: proc(a: ^Assets, path: string) -> u32 {
-	if id, known := a.ids[path]; known do return id
-	if _, found := titlepack.read_file(a.files, path); !found do return 0
-	append(&a.paths, strings.clone(path, a.paths.allocator))
-	id := u32(len(a.paths))
-	a.ids[a.paths[id - 1]] = id
+asset_id :: proc(assets: ^Assets, path: string) -> u32 {
+	if id, known := assets.ids[path]; known do return id
+	if _, found := titlepack.read_file(assets.files, path); !found do return 0
+	append(&assets.paths, strings.clone(path, assets.paths.allocator))
+	id := u32(len(assets.paths))
+	assets.ids[assets.paths[id - 1]] = id
 	return id
 }
 
 // The glb of an asset id, loaded on first use; nil when the id is unknown or the file is no model.
-asset_model :: proc(a: ^Assets, g: ^Gpu, id: u32) -> ^Model {
-	if m, tried := a.models[id]; tried do return m
-	if id == 0 || int(id) > len(a.paths) do return nil
-	path := a.paths[id - 1]
-	m: ^Model
-	if data, found := titlepack.read_file(a.files, path); found do m, _ = model_load(g, a, path, data)
-	a.models[id] = m
-	return m
+asset_model :: proc(assets: ^Assets, gpu: ^Gpu, id: u32) -> ^Model {
+	if model, tried := assets.models[id]; tried do return model
+	if id == 0 || int(id) > len(assets.paths) do return nil
+	path := assets.paths[id - 1]
+	model: ^Model
+	if data, found := titlepack.read_file(assets.files, path); found do model, _ = model_load(gpu, assets, path, data)
+	assets.models[id] = model
+	return model
 }
 
 // A DDS, PNG or JPEG file as a texture, loaded once per path; nil when it does not load.
 @(private = "package")
-asset_texture :: proc(g: ^Gpu, u: Upload, a: ^Assets, path: string) -> ^sdl.GPUTexture {
-	if t, tried := a.textures[path]; tried do return t
-	t: ^sdl.GPUTexture
-	if data, found := titlepack.read_file(a.files, path); found {
+asset_texture :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, path: string) -> ^sdl.GPUTexture {
+	if texture, tried := assets.textures[path]; tried do return texture
+	texture: ^sdl.GPUTexture
+	if data, found := titlepack.read_file(assets.files, path); found {
 		if strings.has_suffix(path, ".dds") {
-			t = dds_texture(g, u, data)
+			texture = dds_texture(gpu, upload, data)
 		} else {
-			t = image_texture(g, u, data)
+			texture = image_texture(gpu, upload, data)
 		}
 	}
-	a.textures[strings.clone(path, a.textures.allocator)] = t
-	return t
+	assets.textures[strings.clone(path, assets.textures.allocator)] = texture
+	return texture
 }
 
 @(private = "file", rodata)
 DDS_FORMATS := [dds.Format]sdl.GPUTextureFormat{.BC1 = .BC1_RGBA_UNORM, .BC2 = .BC2_RGBA_UNORM, .BC3 = .BC3_RGBA_UNORM, .RGBA8 = COLOR_FORMAT}
 
 @(private = "file")
-dds_texture :: proc(g: ^Gpu, u: Upload, data: []byte) -> ^sdl.GPUTexture {
+dds_texture :: proc(gpu: ^Gpu, upload: Upload, data: []byte) -> ^sdl.GPUTexture {
 	image, ok := dds.read(data)
 	format := DDS_FORMATS[image.format]
-	if !ok || !sdl.GPUTextureSupportsFormat(g.device, format, .D2, {.SAMPLER}) do return nil
+	if !ok || !sdl.GPUTextureSupportsFormat(gpu.device, format, .D2, {.SAMPLER}) do return nil
 	pixels := image.data
 	if image.bgra {
 		pixels = make([]byte, len(image.data), context.temp_allocator)
-		for i := 0; i < len(pixels); i += 4 do pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3] = image.data[i + 2], image.data[i + 1], image.data[i], image.data[i + 3]
+		for index := 0; index < len(pixels); index += 4 do pixels[index], pixels[index + 1], pixels[index + 2], pixels[index + 3] = image.data[index + 2], image.data[index + 1], image.data[index], image.data[index + 3]
 	}
-	t, _ := texture_upload(g, u, format, pixels, u32(image.width), u32(image.height))
-	return t
+	texture, _ := texture_upload(gpu, upload, format, pixels, u32(image.width), u32(image.height))
+	return texture
 }
 
 @(private = "file")
-image_texture :: proc(g: ^Gpu, u: Upload, data: []byte) -> ^sdl.GPUTexture {
-	w, h, channels: c.int
-	pixels := stbi.load_from_memory(raw_data(data), c.int(len(data)), &w, &h, &channels, 4)
+image_texture :: proc(gpu: ^Gpu, upload: Upload, data: []byte) -> ^sdl.GPUTexture {
+	width, height, channels: c.int
+	pixels := stbi.load_from_memory(raw_data(data), c.int(len(data)), &width, &height, &channels, 4)
 	if pixels == nil do return nil
 	defer stbi.image_free(pixels)
-	t, _ := texture_upload(g, u, COLOR_FORMAT, pixels[:w * h * 4], u32(w), u32(h))
-	return t
+	texture, _ := texture_upload(gpu, upload, COLOR_FORMAT, pixels[:width * height * 4], u32(width), u32(height))
+	return texture
 }

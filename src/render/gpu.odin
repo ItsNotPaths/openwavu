@@ -55,9 +55,9 @@ Gpu :: struct {
 	joint_cap:     int,
 }
 
-gpu_create :: proc(device: ^sdl.GPUDevice) -> (g: Gpu, ok: bool) {
-	g.device = device
-	defer if !ok do gpu_destroy(&g)
+gpu_create :: proc(device: ^sdl.GPUDevice) -> (gpu: Gpu, ok: bool) {
+	gpu.device = device
+	defer if !ok do gpu_destroy(&gpu)
 	vertex_shader := shader(device, #load("../../build/shaders/scene.vert.spv"), .VERTEX, storage_buffers = 1, uniform_buffers = 2) or_return
 	defer sdl.ReleaseGPUShader(device, vertex_shader)
 	fragment_shader := shader(device, #load("../../build/shaders/scene.frag.spv"), .FRAGMENT, samplers = 1, uniform_buffers = 2) or_return
@@ -72,7 +72,7 @@ gpu_create :: proc(device: ^sdl.GPUDevice) -> (g: Gpu, ok: bool) {
 		{5, 0, .FLOAT4, u32(offset_of(Vertex, color))},
 	}
 	targets := []sdl.GPUColorTargetDescription{{format = COLOR_FORMAT}}
-	g.pipeline = sdl.CreateGPUGraphicsPipeline(device, {
+	gpu.pipeline = sdl.CreateGPUGraphicsPipeline(device, {
 		vertex_shader = vertex_shader,
 		fragment_shader = fragment_shader,
 		vertex_input_state = {raw_data(buffers), u32(len(buffers)), raw_data(attributes), u32(len(attributes))},
@@ -81,25 +81,25 @@ gpu_create :: proc(device: ^sdl.GPUDevice) -> (g: Gpu, ok: bool) {
 		depth_stencil_state = {compare_op = .LESS, enable_depth_test = true, enable_depth_write = true},
 		target_info = {color_target_descriptions = raw_data(targets), num_color_targets = 1, depth_stencil_format = DEPTH_FORMAT, has_depth_stencil_target = true},
 	})
-	if g.pipeline == nil do return
-	g.sampler = sdl.CreateGPUSampler(device, {min_filter = .LINEAR, mag_filter = .LINEAR, mipmap_mode = .LINEAR, address_mode_u = .REPEAT, address_mode_v = .REPEAT, address_mode_w = .REPEAT})
-	if g.sampler == nil do return
+	if gpu.pipeline == nil do return
+	gpu.sampler = sdl.CreateGPUSampler(device, {min_filter = .LINEAR, mag_filter = .LINEAR, mipmap_mode = .LINEAR, address_mode_u = .REPEAT, address_mode_v = .REPEAT, address_mode_w = .REPEAT})
+	if gpu.sampler == nil do return
 	white := [4]u8{255, 255, 255, 255}
-	u := upload_begin(&g) or_return
+	upload := upload_begin(&gpu) or_return
 	white_ok: bool
-	g.white, white_ok = texture_upload(&g, u, COLOR_FORMAT, white[:], 1, 1)
-	if !upload_end(u) || !white_ok do return g, false
-	return g, true
+	gpu.white, white_ok = texture_upload(&gpu, upload, COLOR_FORMAT, white[:], 1, 1)
+	if !upload_end(upload) || !white_ok do return gpu, false
+	return gpu, true
 }
 
-gpu_destroy :: proc(g: ^Gpu) {
-	release_targets(g)
-	if g.joints != nil do sdl.ReleaseGPUBuffer(g.device, g.joints)
-	if g.joint_upload != nil do sdl.ReleaseGPUTransferBuffer(g.device, g.joint_upload)
-	if g.white != nil do sdl.ReleaseGPUTexture(g.device, g.white)
-	if g.sampler != nil do sdl.ReleaseGPUSampler(g.device, g.sampler)
-	if g.pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(g.device, g.pipeline)
-	g^ = {device = g.device}
+gpu_destroy :: proc(gpu: ^Gpu) {
+	release_targets(gpu)
+	if gpu.joints != nil do sdl.ReleaseGPUBuffer(gpu.device, gpu.joints)
+	if gpu.joint_upload != nil do sdl.ReleaseGPUTransferBuffer(gpu.device, gpu.joint_upload)
+	if gpu.white != nil do sdl.ReleaseGPUTexture(gpu.device, gpu.white)
+	if gpu.sampler != nil do sdl.ReleaseGPUSampler(gpu.device, gpu.sampler)
+	if gpu.pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.pipeline)
+	gpu^ = {device = gpu.device}
 }
 
 // Uploads that go in one copy pass and one submit: upload_begin, any mesh_upload and texture_upload, upload_end.
@@ -108,91 +108,91 @@ Upload :: struct {
 	pass:    ^sdl.GPUCopyPass,
 }
 
-upload_begin :: proc(g: ^Gpu) -> (u: Upload, ok: bool) {
-	u.command = sdl.AcquireGPUCommandBuffer(g.device)
-	if u.command == nil do return {}, false
-	u.pass = sdl.BeginGPUCopyPass(u.command)
-	return u, true
+upload_begin :: proc(gpu: ^Gpu) -> (upload: Upload, ok: bool) {
+	upload.command = sdl.AcquireGPUCommandBuffer(gpu.device)
+	if upload.command == nil do return {}, false
+	upload.pass = sdl.BeginGPUCopyPass(upload.command)
+	return upload, true
 }
 
-upload_end :: proc(u: Upload) -> (ok: bool) {
-	sdl.EndGPUCopyPass(u.pass)
-	return sdl.SubmitGPUCommandBuffer(u.command)
+upload_end :: proc(upload: Upload) -> (ok: bool) {
+	sdl.EndGPUCopyPass(upload.pass)
+	return sdl.SubmitGPUCommandBuffer(upload.command)
 }
 
-mesh_upload :: proc(g: ^Gpu, u: Upload, vertices: []Vertex, indices: []u32) -> (m: Mesh, ok: bool) {
-	m.index_count = u32(len(indices))
-	m.vertices = buffer_upload(g, u, {.VERTEX}, raw_data(vertices), len(vertices) * size_of(Vertex)) or_return
-	if m.indices, ok = buffer_upload(g, u, {.INDEX}, raw_data(indices), len(indices) * size_of(u32)); !ok {
-		sdl.ReleaseGPUBuffer(g.device, m.vertices)
+mesh_upload :: proc(gpu: ^Gpu, upload: Upload, vertices: []Vertex, indices: []u32) -> (mesh: Mesh, ok: bool) {
+	mesh.index_count = u32(len(indices))
+	mesh.vertices = buffer_upload(gpu, upload, {.VERTEX}, raw_data(vertices), len(vertices) * size_of(Vertex)) or_return
+	if mesh.indices, ok = buffer_upload(gpu, upload, {.INDEX}, raw_data(indices), len(indices) * size_of(u32)); !ok {
+		sdl.ReleaseGPUBuffer(gpu.device, mesh.vertices)
 		return {}, false
 	}
-	return m, true
+	return mesh, true
 }
 
-mesh_destroy :: proc(g: ^Gpu, m: Mesh) {
-	sdl.ReleaseGPUBuffer(g.device, m.vertices)
-	sdl.ReleaseGPUBuffer(g.device, m.indices)
+mesh_destroy :: proc(gpu: ^Gpu, mesh: Mesh) {
+	sdl.ReleaseGPUBuffer(gpu.device, mesh.vertices)
+	sdl.ReleaseGPUBuffer(gpu.device, mesh.indices)
 }
 
 // One mip, rows top first, for a mesh's base color: RGBA8 pixels or BC blocks as stored.
-texture_upload :: proc(g: ^Gpu, u: Upload, format: sdl.GPUTextureFormat, data: []u8, width, height: u32) -> (t: ^sdl.GPUTexture, ok: bool) {
-	t = sdl.CreateGPUTexture(g.device, {type = .D2, format = format, usage = {.SAMPLER}, width = width, height = height, layer_count_or_depth = 1, num_levels = 1})
-	if t == nil do return nil, false
-	staging, staged_ok := staged(g, raw_data(data), len(data))
+texture_upload :: proc(gpu: ^Gpu, upload: Upload, format: sdl.GPUTextureFormat, data: []u8, width, height: u32) -> (texture: ^sdl.GPUTexture, ok: bool) {
+	texture = sdl.CreateGPUTexture(gpu.device, {type = .D2, format = format, usage = {.SAMPLER}, width = width, height = height, layer_count_or_depth = 1, num_levels = 1})
+	if texture == nil do return nil, false
+	staging, staged_ok := staged(gpu, raw_data(data), len(data))
 	if !staged_ok {
-		sdl.ReleaseGPUTexture(g.device, t)
+		sdl.ReleaseGPUTexture(gpu.device, texture)
 		return nil, false
 	}
-	sdl.UploadToGPUTexture(u.pass, {transfer_buffer = staging}, {texture = t, w = width, h = height, d = 1}, false)
-	sdl.ReleaseGPUTransferBuffer(g.device, staging)  // freed once the upload has run
-	return t, true
+	sdl.UploadToGPUTexture(upload.pass, {transfer_buffer = staging}, {texture = texture, w = width, h = height, d = 1}, false)
+	sdl.ReleaseGPUTransferBuffer(gpu.device, staging)  // freed once the upload has run
+	return texture, true
 }
 
 // Draws the draws, seen by the scene's camera and lit by its lights, into color, which then holds the frame's 3D.
 // The targets follow size.
-draw_3d :: proc(g: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, s: ^Scene, draws: []Draw) -> (ok: bool) {
-	gpu_targets(g, size) or_return
+draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: ^Scene, draws: []Draw) -> (ok: bool) {
+	gpu_targets(gpu, size) or_return
 	joint_count := 0
-	for d in draws do joint_count += len(d.joints)
-	upload_joints(g, command, draws, joint_count) or_return
+	for draw in draws do joint_count += len(draw.joints)
+	upload_joints(gpu, command, draws, joint_count) or_return
 
-	clear := s.fog.end > 0 ? s.fog.color : [4]f32{0, 0, 0, 1}
-	color := sdl.GPUColorTargetInfo{texture = g.color, clear_color = sdl.FColor(clear), load_op = .CLEAR, store_op = .STORE}
-	depth := sdl.GPUDepthStencilTargetInfo{texture = g.depth, clear_depth = 1, load_op = .CLEAR, store_op = .DONT_CARE}
+	clear := scene.fog.end > 0 ? scene.fog.color : [4]f32{0, 0, 0, 1}
+	color := sdl.GPUColorTargetInfo{texture = gpu.color, clear_color = sdl.FColor(clear), load_op = .CLEAR, store_op = .STORE}
+	depth := sdl.GPUDepthStencilTargetInfo{texture = gpu.depth, clear_depth = 1, load_op = .CLEAR, store_op = .DONT_CARE}
 	pass := sdl.BeginGPURenderPass(command, &color, 1, &depth)
-	sdl.BindGPUGraphicsPipeline(pass, g.pipeline)
-	view_projection := camera_matrix(s.camera, f32(size.x) / f32(size.y))
+	sdl.BindGPUGraphicsPipeline(pass, gpu.pipeline)
+	view_projection := camera_matrix(scene.camera, f32(size.x) / f32(size.y))
 	sdl.PushGPUVertexUniformData(command, 0, &view_projection, size_of(view_projection))
-	lighting := scene_lighting(s)
+	lighting := scene_lighting(scene)
 	sdl.PushGPUFragmentUniformData(command, 0, &lighting, size_of(lighting))
-	if joint_count > 0 do sdl.BindGPUVertexStorageBuffers(pass, 0, &g.joints, 1)
+	if joint_count > 0 do sdl.BindGPUVertexStorageBuffers(pass, 0, &gpu.joints, 1)
 	joint_base: u32
-	for d in draws {
-		material := Material{tint = d.tint, cutout = d.cutout ? 1 : 0}
+	for draw in draws {
+		material := Material{tint = draw.tint, cutout = draw.cutout ? 1 : 0}
 		sdl.PushGPUVertexUniformData(command, 1, &joint_base, size_of(joint_base))
 		sdl.PushGPUFragmentUniformData(command, 1, &material, size_of(material))
-		binding := sdl.GPUTextureSamplerBinding{d.texture != nil ? d.texture : g.white, g.sampler}
+		binding := sdl.GPUTextureSamplerBinding{draw.texture != nil ? draw.texture : gpu.white, gpu.sampler}
 		sdl.BindGPUFragmentSamplers(pass, 0, &binding, 1)
-		vertices := sdl.GPUBufferBinding{d.mesh.vertices, 0}
+		vertices := sdl.GPUBufferBinding{draw.mesh.vertices, 0}
 		sdl.BindGPUVertexBuffers(pass, 0, &vertices, 1)
-		sdl.BindGPUIndexBuffer(pass, {d.mesh.indices, 0}, ._32BIT)
-		sdl.DrawGPUIndexedPrimitives(pass, d.mesh.index_count, 1, 0, 0, 0)
-		joint_base += u32(len(d.joints))
+		sdl.BindGPUIndexBuffer(pass, {draw.mesh.indices, 0}, ._32BIT)
+		sdl.DrawGPUIndexedPrimitives(pass, draw.mesh.index_count, 1, 0, 0, 0)
+		joint_base += u32(len(draw.joints))
 	}
 	sdl.EndGPURenderPass(pass)
 	return true
 }
 
 // Projection times view, Vulkan depth 0 to 1, right handed and Y up as glTF.
-camera_matrix :: proc(c: Camera, aspect: f32) -> matrix[4, 4]f32 {
-	forward := linalg.normalize(c.target - c.position)
-	up := linalg.quaternion128_mul_vector3(linalg.quaternion_angle_axis_f32(c.roll, forward), [3]f32{0, 1, 0})
-	view := linalg.matrix4_look_at_f32(c.position, c.target, up)
-	f := 1 / math.tan(c.fov / 2)
+camera_matrix :: proc(camera: Camera, aspect: f32) -> matrix[4, 4]f32 {
+	forward := linalg.normalize(camera.target - camera.position)
+	up := linalg.quaternion128_mul_vector3(linalg.quaternion_angle_axis_f32(camera.roll, forward), [3]f32{0, 1, 0})
+	view := linalg.matrix4_look_at_f32(camera.position, camera.target, up)
+	focal_length := 1 / math.tan(camera.fov / 2)
 	projection := matrix[4, 4]f32{
-		f / aspect, 0, 0, 0,
-		0, f, 0, 0,
+		focal_length / aspect, 0, 0, 0,
+		0, focal_length, 0, 0,
 		0, 0, FAR / (NEAR - FAR), NEAR * FAR / (NEAR - FAR),
 		0, 0, -1, 0,
 	}
@@ -213,22 +213,22 @@ Lighting :: struct {
 
 // The first LIGHTS lights; the rest are not drawn.
 @(private = "file")
-scene_lighting :: proc(s: ^Scene) -> (l: Lighting) {
-	l.ambient = s.ambient
-	for light, i in s.lights[:min(len(s.lights), LIGHTS)] {
-		l.light_position[i] = {light.position.x, light.position.y, light.position.z, light.kind == .Point ? 1 : 0}
-		l.light_direction[i] = {light.direction.x, light.direction.y, light.direction.z, light.range}
-		l.light_color[i] = light.color
+scene_lighting :: proc(scene: ^Scene) -> (lighting: Lighting) {
+	lighting.ambient = scene.ambient
+	for light, index in scene.lights[:min(len(scene.lights), LIGHTS)] {
+		lighting.light_position[index] = {light.position.x, light.position.y, light.position.z, light.kind == .Point ? 1 : 0}
+		lighting.light_direction[index] = {light.direction.x, light.direction.y, light.direction.z, light.range}
+		lighting.light_color[index] = light.color
 	}
-	l.fog_color = s.fog.color
-	l.fog_range = {s.fog.start, s.fog.end, 0, 0}
-	l.camera_position = {s.camera.position.x, s.camera.position.y, s.camera.position.z, 1}
+	lighting.fog_color = scene.fog.color
+	lighting.fog_range = {scene.fog.start, scene.fog.end, 0, 0}
+	lighting.camera_position = {scene.camera.position.x, scene.camera.position.y, scene.camera.position.z, 1}
 	return
 }
 
 @(private = "file")
-shader :: proc(device: ^sdl.GPUDevice, code: []u8, stage: sdl.GPUShaderStage, samplers: u32 = 0, storage_buffers: u32 = 0, uniform_buffers: u32 = 0) -> (s: ^sdl.GPUShader, ok: bool) {
-	s = sdl.CreateGPUShader(device, {
+shader :: proc(device: ^sdl.GPUDevice, code: []u8, stage: sdl.GPUShaderStage, samplers: u32 = 0, storage_buffers: u32 = 0, uniform_buffers: u32 = 0) -> (result: ^sdl.GPUShader, ok: bool) {
+	result = sdl.CreateGPUShader(device, {
 		code_size = len(code),
 		code = raw_data(code),
 		entrypoint = "main",
@@ -238,85 +238,85 @@ shader :: proc(device: ^sdl.GPUDevice, code: []u8, stage: sdl.GPUShaderStage, sa
 		num_storage_buffers = storage_buffers,
 		num_uniform_buffers = uniform_buffers,
 	})
-	return s, s != nil
+	return result, result != nil
 }
 
 // The color and depth targets at size, made again when it changes.
-gpu_targets :: proc(g: ^Gpu, size: [2]u32) -> (ok: bool) {
-	if g.size == size && g.color != nil do return true
-	release_targets(g)
-	g.size = size
-	g.color = sdl.CreateGPUTexture(g.device, {type = .D2, format = COLOR_FORMAT, usage = {.COLOR_TARGET, .SAMPLER}, width = size.x, height = size.y, layer_count_or_depth = 1, num_levels = 1})
-	g.depth = sdl.CreateGPUTexture(g.device, {type = .D2, format = DEPTH_FORMAT, usage = {.DEPTH_STENCIL_TARGET}, width = size.x, height = size.y, layer_count_or_depth = 1, num_levels = 1})
-	if g.color == nil || g.depth == nil {
-		release_targets(g)  // half made would pass the size check next frame
+gpu_targets :: proc(gpu: ^Gpu, size: [2]u32) -> (ok: bool) {
+	if gpu.size == size && gpu.color != nil do return true
+	release_targets(gpu)
+	gpu.size = size
+	gpu.color = sdl.CreateGPUTexture(gpu.device, {type = .D2, format = COLOR_FORMAT, usage = {.COLOR_TARGET, .SAMPLER}, width = size.x, height = size.y, layer_count_or_depth = 1, num_levels = 1})
+	gpu.depth = sdl.CreateGPUTexture(gpu.device, {type = .D2, format = DEPTH_FORMAT, usage = {.DEPTH_STENCIL_TARGET}, width = size.x, height = size.y, layer_count_or_depth = 1, num_levels = 1})
+	if gpu.color == nil || gpu.depth == nil {
+		release_targets(gpu)  // half made would pass the size check next frame
 		return false
 	}
 	return true
 }
 
 @(private = "file")
-release_targets :: proc(g: ^Gpu) {
-	if g.color != nil do sdl.ReleaseGPUTexture(g.device, g.color)
-	if g.depth != nil do sdl.ReleaseGPUTexture(g.device, g.depth)
-	g.color, g.depth = nil, nil
+release_targets :: proc(gpu: ^Gpu) {
+	if gpu.color != nil do sdl.ReleaseGPUTexture(gpu.device, gpu.color)
+	if gpu.depth != nil do sdl.ReleaseGPUTexture(gpu.device, gpu.depth)
+	gpu.color, gpu.depth = nil, nil
 }
 
 // All draws' joints into g.joints, in a copy pass before the render pass; the buffer grows to fit.
 @(private = "file")
-upload_joints :: proc(g: ^Gpu, command: ^sdl.GPUCommandBuffer, draws: []Draw, count: int) -> (ok: bool) {
+upload_joints :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, draws: []Draw, count: int) -> (ok: bool) {
 	if count == 0 do return true
-	if count > g.joint_cap {
-		if g.joints != nil do sdl.ReleaseGPUBuffer(g.device, g.joints)
-		if g.joint_upload != nil do sdl.ReleaseGPUTransferBuffer(g.device, g.joint_upload)
-		g.joint_cap = max(count, 2 * g.joint_cap)
-		bytes := u32(g.joint_cap * size_of(matrix[4, 4]f32))
-		g.joints = sdl.CreateGPUBuffer(g.device, {usage = {.GRAPHICS_STORAGE_READ}, size = bytes})
-		g.joint_upload = sdl.CreateGPUTransferBuffer(g.device, {usage = .UPLOAD, size = bytes})
-		if g.joints == nil || g.joint_upload == nil {
-			g.joint_cap = 0
+	if count > gpu.joint_cap {
+		if gpu.joints != nil do sdl.ReleaseGPUBuffer(gpu.device, gpu.joints)
+		if gpu.joint_upload != nil do sdl.ReleaseGPUTransferBuffer(gpu.device, gpu.joint_upload)
+		gpu.joint_cap = max(count, 2 * gpu.joint_cap)
+		bytes := u32(gpu.joint_cap * size_of(matrix[4, 4]f32))
+		gpu.joints = sdl.CreateGPUBuffer(gpu.device, {usage = {.GRAPHICS_STORAGE_READ}, size = bytes})
+		gpu.joint_upload = sdl.CreateGPUTransferBuffer(gpu.device, {usage = .UPLOAD, size = bytes})
+		if gpu.joints == nil || gpu.joint_upload == nil {
+			gpu.joint_cap = 0
 			return false
 		}
 	}
-	mapped := ([^]matrix[4, 4]f32)(sdl.MapGPUTransferBuffer(g.device, g.joint_upload, true))
+	mapped := ([^]matrix[4, 4]f32)(sdl.MapGPUTransferBuffer(gpu.device, gpu.joint_upload, true))
 	if mapped == nil do return false
 	at := 0
-	for d in draws {
-		copy(mapped[at:][:len(d.joints)], d.joints)
-		at += len(d.joints)
+	for draw in draws {
+		copy(mapped[at:][:len(draw.joints)], draw.joints)
+		at += len(draw.joints)
 	}
-	sdl.UnmapGPUTransferBuffer(g.device, g.joint_upload)
+	sdl.UnmapGPUTransferBuffer(gpu.device, gpu.joint_upload)
 	pass := sdl.BeginGPUCopyPass(command)
-	sdl.UploadToGPUBuffer(pass, {transfer_buffer = g.joint_upload}, {g.joints, 0, u32(count * size_of(matrix[4, 4]f32))}, true)
+	sdl.UploadToGPUBuffer(pass, {transfer_buffer = gpu.joint_upload}, {gpu.joints, 0, u32(count * size_of(matrix[4, 4]f32))}, true)
 	sdl.EndGPUCopyPass(pass)
 	return true
 }
 
 @(private = "file")
-buffer_upload :: proc(g: ^Gpu, u: Upload, usage: sdl.GPUBufferUsageFlags, data: rawptr, size: int) -> (b: ^sdl.GPUBuffer, ok: bool) {
-	b = sdl.CreateGPUBuffer(g.device, {usage = usage, size = u32(size)})
-	if b == nil do return nil, false
-	staging, staged_ok := staged(g, data, size)
+buffer_upload :: proc(gpu: ^Gpu, upload: Upload, usage: sdl.GPUBufferUsageFlags, data: rawptr, size: int) -> (buffer: ^sdl.GPUBuffer, ok: bool) {
+	buffer = sdl.CreateGPUBuffer(gpu.device, {usage = usage, size = u32(size)})
+	if buffer == nil do return nil, false
+	staging, staged_ok := staged(gpu, data, size)
 	if !staged_ok {
-		sdl.ReleaseGPUBuffer(g.device, b)
+		sdl.ReleaseGPUBuffer(gpu.device, buffer)
 		return nil, false
 	}
-	sdl.UploadToGPUBuffer(u.pass, {transfer_buffer = staging}, {b, 0, u32(size)}, false)
-	sdl.ReleaseGPUTransferBuffer(g.device, staging)
-	return b, true
+	sdl.UploadToGPUBuffer(upload.pass, {transfer_buffer = staging}, {buffer, 0, u32(size)}, false)
+	sdl.ReleaseGPUTransferBuffer(gpu.device, staging)
+	return buffer, true
 }
 
 // A transfer buffer holding a copy of the bytes, for one upload.
 @(private = "file")
-staged :: proc(g: ^Gpu, data: rawptr, size: int) -> (t: ^sdl.GPUTransferBuffer, ok: bool) {
-	t = sdl.CreateGPUTransferBuffer(g.device, {usage = .UPLOAD, size = u32(size)})
-	if t == nil do return nil, false
-	mapped := sdl.MapGPUTransferBuffer(g.device, t, false)
+staged :: proc(gpu: ^Gpu, data: rawptr, size: int) -> (transfer: ^sdl.GPUTransferBuffer, ok: bool) {
+	transfer = sdl.CreateGPUTransferBuffer(gpu.device, {usage = .UPLOAD, size = u32(size)})
+	if transfer == nil do return nil, false
+	mapped := sdl.MapGPUTransferBuffer(gpu.device, transfer, false)
 	if mapped == nil {
-		sdl.ReleaseGPUTransferBuffer(g.device, t)
+		sdl.ReleaseGPUTransferBuffer(gpu.device, transfer)
 		return nil, false
 	}
 	copy(([^]u8)(mapped)[:size], ([^]u8)(data)[:size])
-	sdl.UnmapGPUTransferBuffer(g.device, t)
-	return t, true
+	sdl.UnmapGPUTransferBuffer(gpu.device, transfer)
+	return transfer, true
 }

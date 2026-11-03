@@ -93,53 +93,53 @@ scene_create :: proc() -> Scene {
 	}
 }
 
-scene_destroy :: proc(s: ^Scene) {
-	delete(s.lights)
-	delete(s.nodes)
-	delete(s.fx)
-	delete(s.bones)
+scene_destroy :: proc(scene: ^Scene) {
+	delete(scene.lights)
+	delete(scene.nodes)
+	delete(scene.fx)
+	delete(scene.bones)
 }
 
 // Reads a block into s, reusing its arrays. On err s holds part of the block; the caller drops it.
-read_scene :: proc(s: ^Scene, block: []byte) -> (err: string) {
+read_scene :: proc(scene: ^Scene, block: []byte) -> (err: string) {
 	head: Wire_Scene
 	if err = read_record(&head, block, 0, wire_size(block, 4), "the scene"); err != "" do return
 	if head.version < 1 do return "the scene has no version"
-	s.camera, s.ambient, s.fog = head.camera, head.ambient, head.fog
-	clear(&s.lights)
-	clear(&s.nodes)
-	clear(&s.fx)
-	if err = read_list(&s.lights, block, head.light_offset, head.light_count, head.light_size, "a light"); err != "" do return
-	for light in s.lights do if light.kind > max(Light_Kind) do return "a light has no such kind"
-	if err = read_list(&s.fx, block, head.fx_offset, head.fx_count, head.fx_size, "an effect"); err != "" do return
+	scene.camera, scene.ambient, scene.fog = head.camera, head.ambient, head.fog
+	clear(&scene.lights)
+	clear(&scene.nodes)
+	clear(&scene.fx)
+	if err = read_list(&scene.lights, block, head.light_offset, head.light_count, head.light_size, "a light"); err != "" do return
+	for light in scene.lights do if light.kind > max(Light_Kind) do return "a light has no such kind"
+	if err = read_list(&scene.fx, block, head.fx_offset, head.fx_count, head.fx_size, "an effect"); err != "" do return
 	wire_nodes: [dynamic]Wire_Node
 	wire_nodes.allocator = context.temp_allocator
 	if err = read_list(&wire_nodes, block, head.node_offset, head.node_count, head.node_size, "a node"); err != "" do return
-	for f in s.fx do if f.node > head.node_count do return "an effect follows a node the scene does not have"
-	for n in wire_nodes do if n.class > max(Node_Class) do return "a node has no such class"
+	for effect in scene.fx do if effect.node > head.node_count do return "an effect follows a node the scene does not have"
+	for wire_node in wire_nodes do if wire_node.class > max(Node_Class) do return "a node has no such class"
 
 	// Sized once, so the nodes' slices into it stay put.
 	bone_total: u64
-	for n in wire_nodes do bone_total += u64(n.bone_count)
+	for wire_node in wire_nodes do bone_total += u64(wire_node.bone_count)
 	if bone_total * size_of(Transform) > u64(len(block)) do return "the nodes' bones do not fit in the scene"
-	resize(&s.bones, int(bone_total))
+	resize(&scene.bones, int(bone_total))
 	bone_at := 0
-	for n in wire_nodes {
-		bones := s.bones[bone_at:][:n.bone_count]
-		if err = read_array(bones, block, n.bone_offset, "a node's bones"); err != "" do return
+	for wire_node in wire_nodes {
+		bones := scene.bones[bone_at:][:wire_node.bone_count]
+		if err = read_array(bones, block, wire_node.bone_offset, "a node's bones"); err != "" do return
 		bone_at += len(bones)
-		append(&s.nodes, Node{
-			id = n.id,
-			asset = n.asset,
-			part = n.part,
-			texture = n.texture,
-			transform = n.transform,
+		append(&scene.nodes, Node{
+			id = wire_node.id,
+			asset = wire_node.asset,
+			part = wire_node.part,
+			texture = wire_node.texture,
+			transform = wire_node.transform,
 			bones = bones,
-			clip = n.clip,
-			clip_time = n.clip_time,
-			material = n.material,
-			flags = n.flags,
-			class = n.class,
+			clip = wire_node.clip,
+			clip_time = wire_node.clip_time,
+			material = wire_node.material,
+			flags = wire_node.flags,
+			class = wire_node.class,
 		})
 	}
 	return
@@ -191,9 +191,9 @@ read_record :: proc(out: ^$T, block: []byte, offset, size: u32, what: string) ->
 read_list :: proc(list: ^[dynamic]$T, block: []byte, offset, count, size: u32, what: string) -> (err: string) {
 	if count == 0 do return
 	if u64(offset) + u64(count) * u64(size) > u64(len(block)) do return fmt.tprintf("%s list is outside the scene", what)
-	for i in 0 ..< count {
+	for index in 0 ..< count {
 		item: T
-		if err = read_record(&item, block, offset + i * size, size, what); err != "" do return
+		if err = read_record(&item, block, offset + index * size, size, what); err != "" do return
 		append(list, item)
 	}
 	return

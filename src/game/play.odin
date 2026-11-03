@@ -29,7 +29,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (
 	defer content.close_pack(&pack)
 	codes := Codes{engine = wasm.engine_create(), pack = &pack}
 	defer codes_destroy(&codes)
-	running := presentation.pack_create(&pack, r.r2d, &r.gpu)
+	running := presentation.pack_create(&pack, r.renderer_2d, &r.gpu)
 	defer presentation.pack_destroy(running)
 	entry_state := imports.entry_create(tp.modes)
 	defer if asked, has := &entry_state.asked.?; has do imports.match_request_destroy(asked, entry_state.allocator)

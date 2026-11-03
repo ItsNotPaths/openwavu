@@ -24,7 +24,7 @@ main :: proc() {
 	}
 	defer render.destroy(&r)
 	u: ui.Ui
-	if !ui.init(&u, r.r2d, render.size(&r)) {
+	if !ui.init(&u, r.renderer_2d, render.size(&r)) {
 		fmt.eprintln("openwavu:", sdl.GetError())
 		os.exit(1)
 	}
@@ -41,7 +41,7 @@ main :: proc() {
 		defer free_all(context.temp_allocator)
 		e: sdl.Event
 		for sdl.PollEvent(&e) {
-			sdl.ConvertEventToRenderCoordinates(r.r2d, &e)
+			sdl.ConvertEventToRenderCoordinates(r.renderer_2d, &e)
 			if e.type == .QUIT do l.quit = true
 			input.handle_event(e)
 			ui.handle_event(&u, e)
