@@ -81,42 +81,54 @@ asset_texture :: proc(g: ^Gpu, u: Upload, a: ^Assets, path: string) -> ^sdl.GPUT
 // The top mip of a DDS: DXT1, DXT3 or DXT5 blocks as stored, or 32-bit RGBA or BGRA pixels.
 @(private = "file")
 dds_texture :: proc(g: ^Gpu, u: Upload, data: []byte) -> ^sdl.GPUTexture {
+	d, ok := read_dds(data)
+	if !ok || !sdl.GPUTextureSupportsFormat(g.device, d.format, .D2, {.SAMPLER}) do return nil
+	if d.bgra {
+		swapped := make([]byte, len(d.data), context.temp_allocator)
+		for i := 0; i < len(swapped); i += 4 do swapped[i], swapped[i + 1], swapped[i + 2], swapped[i + 3] = d.data[i + 2], d.data[i + 1], d.data[i], d.data[i + 3]
+		d.data = swapped
+	}
+	t, _ := texture_upload(g, u, d.format, d.data, d.width, d.height)
+	return t
+}
+
+@(private = "file")
+Dds :: struct {
+	format:        sdl.GPUTextureFormat,
+	width, height: u32,
+	data:          []byte,  // the top mip, in place
+	bgra:          bool,    // pixels with red and blue swapped
+}
+
+@(private = "file")
+read_dds :: proc(data: []byte) -> (d: Dds, ok: bool) {
 	HEADER :: 4 + 124
-	if len(data) < HEADER || string(data[:4]) != "DDS " do return nil
+	MAX_SIDE :: 16384
+	if len(data) < HEADER || string(data[:4]) != "DDS " do return
 	field :: proc(data: []byte, offset: int) -> int {
 		v, _ := endian.get_u32(data[4 + offset:], .Little)
 		return int(v)
 	}
 	height, width := field(data, 8), field(data, 12)
-	if width == 0 || height == 0 || width > 16384 || height > 16384 do return nil
+	if width == 0 || height == 0 || width > MAX_SIDE || height > MAX_SIDE do return
 	blocks := ((width + 3) / 4) * ((height + 3) / 4)
-	format: sdl.GPUTextureFormat
 	size: int
-	pixels := data[HEADER:]
-	if field(data, 76) & 0x4 != 0 {
+	if field(data, 76) & 0x4 != 0 {  // four cc
 		switch string(data[4 + 80:][:4]) {
-		case "DXT1": format, size = .BC1_RGBA_UNORM, blocks * 8
-		case "DXT3": format, size = .BC2_RGBA_UNORM, blocks * 16
-		case "DXT5": format, size = .BC3_RGBA_UNORM, blocks * 16
-		case: return nil
+		case "DXT1": d.format, size = .BC1_RGBA_UNORM, blocks * 8
+		case "DXT3": d.format, size = .BC2_RGBA_UNORM, blocks * 16
+		case "DXT5": d.format, size = .BC3_RGBA_UNORM, blocks * 16
+		case: return
 		}
 	} else {
-		if field(data, 84) != 32 do return nil
-		format, size = COLOR_FORMAT, width * height * 4
-		if len(pixels) < size do return nil
 		red, blue := field(data, 88), field(data, 96)
-		switch {
-		case red == 0xff && blue == 0xff0000:
-		case red == 0xff0000 && blue == 0xff:
-			swapped := make([]byte, size, context.temp_allocator)
-			for i := 0; i < size; i += 4 do swapped[i], swapped[i + 1], swapped[i + 2], swapped[i + 3] = pixels[i + 2], pixels[i + 1], pixels[i], pixels[i + 3]
-			pixels = swapped
-		case: return nil
-		}
+		rgba, bgra := red == 0xff && blue == 0xff0000, red == 0xff0000 && blue == 0xff
+		if field(data, 84) != 32 || !(rgba || bgra) do return
+		d.format, size, d.bgra = COLOR_FORMAT, width * height * 4, bgra
 	}
-	if len(pixels) < size || !sdl.GPUTextureSupportsFormat(g.device, format, .D2, {.SAMPLER}) do return nil
-	t, _ := texture_upload(g, u, format, pixels[:size], u32(width), u32(height))
-	return t
+	if len(data) - HEADER < size do return
+	d.width, d.height, d.data = u32(width), u32(height), data[HEADER:][:size]
+	return d, true
 }
 
 @(private = "file")

@@ -11,7 +11,8 @@ import "../src/titlepack"
 
 // A pack folder with models/quad.glb: a root with a child holding a quad, whose cut-out material uses textures/red.dds
 // (one red DXT1 block) and whose vertices are half grey; no normals. Also models/loop.glb, whose node is its own
-// child, and models/outside.glb, whose texture uri leaves the pack. The caller removes the folder.
+// child, models/outside.glb, whose texture uri leaves the pack, and models/joint_<n>.glb: a triangle skinned to joint n
+// of a one-joint skin, next to an empty primitive. The caller removes the folder.
 @(private = "file")
 write_model_pack :: proc(t: ^testing.T, dir: string) {
 	context.allocator = context.temp_allocator
@@ -52,10 +53,32 @@ write_model_pack :: proc(t: ^testing.T, dir: string) {
 	looped := gltf.Node{name = "loop", mesh = 0}
 	append(&looped.children, 0)
 	quad(t, fmt.tprintf("%s/models/loop.glb", dir), "../textures/red.dds", {looped})
+
+	for joint in ([]u16{0, 1}) {
+		g: gltf.Gltf
+		p := gltf.Primitive{attributes = make(map[string]int)}
+		p.attributes["POSITION"] = gltf.add_accessor(&g, [][3]f32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, "VEC3")
+		p.attributes["JOINTS_0"] = gltf.add_accessor(&g, [][4]u16{joint, joint, joint}, "VEC4")
+		p.attributes["WEIGHTS_0"] = gltf.add_accessor(&g, [][4]f32{{1, 0, 0, 0}, {1, 0, 0, 0}, {1, 0, 0, 0}}, "VEC4")
+		empty := gltf.Primitive{attributes = make(map[string]int)}
+		empty.attributes["POSITION"] = gltf.add_accessor(&g, [][3]f32{}, "VEC3")
+		mesh: gltf.Mesh
+		append(&mesh.primitives, p, empty)
+		append(&g.meshes, mesh)
+		skin: gltf.Skin
+		append(&skin.joints, 0)
+		append(&g.skins, skin)
+		append(&g.nodes, gltf.Node{name = "bone"}, gltf.Node{name = "body", mesh = 0, skin = 0})
+		scene: gltf.Scene
+		append(&scene.nodes, 0, 1)
+		append(&g.scenes, scene)
+		testing.expect(t, gltf.write_glb(&g, fmt.tprintf("%s/models/joint_%d.glb", dir, joint)))
+	}
 }
 
 // A glb loads with its node tree and draws in its DDS texture's color times its vertex color; a node tree that loops
-// does not load; a texture outside the pack draws white.
+// does not load; a texture outside the pack draws white; vertices naming a joint past their skin do not load, and an
+// empty primitive is left out.
 @(test)
 glb_loads_and_draws_in_its_texture :: proc(t: ^testing.T) {
 	g, ok := test_gpu_create(t)
@@ -83,6 +106,9 @@ glb_loads_and_draws_in_its_texture :: proc(t: ^testing.T) {
 	testing.expect(t, render.asset_model(&assets, &g, render.asset_id(&assets, "models/loop.glb")) == nil)
 	outside := render.asset_model(&assets, &g, render.asset_id(&assets, "models/outside.glb"))
 	if testing.expect(t, outside != nil) do testing.expect(t, outside.meshes[0][0].texture == nil)
+	skinned := render.asset_model(&assets, &g, render.asset_id(&assets, "models/joint_0.glb"))
+	if testing.expect(t, skinned != nil) do testing.expect_value(t, len(skinned.meshes[0]), 1)
+	testing.expect(t, render.asset_model(&assets, &g, render.asset_id(&assets, "models/joint_1.glb")) == nil)
 
 	scene := render.scene_create()
 	defer render.scene_destroy(&scene)

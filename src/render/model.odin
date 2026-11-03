@@ -25,6 +25,7 @@ Model_Node :: struct {
 
 Primitive :: struct {
 	mesh:    Mesh,
+	joints:  int,              // how many the vertices name: 1 unskinned, else the highest + 1
 	texture: ^sdl.GPUTexture,  // nil: white; owned by Assets
 	cutout:  bool,
 }
@@ -35,7 +36,8 @@ Model_Skin :: struct {
 }
 
 // Reads the glb at path from data. Its textures come through a; one that does not load draws white.
-// Fails on a glb that does not read or whose indices point outside it; only triangle lists are drawn.
+// Fails on a glb that does not read or whose indices point outside it, also a vertex joint past its node's skin;
+// only triangle lists with vertices are drawn.
 model_load :: proc(g: ^Gpu, a: ^Assets, path: string, data: []byte) -> (m: ^Model, ok: bool) {
 	file := gltf.read_glb(data) or_return
 	defer gltf.destroy_gltf(&file)
@@ -94,6 +96,7 @@ model_fill :: proc(g: ^Gpu, u: Upload, a: ^Assets, m: ^Model, file: ^gltf.Gltf, 
 		primitives := make([dynamic]Primitive, 0, len(mesh.primitives))
 		for p in mesh.primitives {
 			if mode, has := p.mode.?; has && mode != gltf.TRIANGLES do continue
+			if position, has := p.attributes["POSITION"]; has && position >= 0 && position < len(file.accessors) && file.accessors[position].count == 0 do continue
 			uploaded := primitive_upload(g, u, file, p, textures) or_return
 			append(&primitives, uploaded)
 		}
@@ -109,6 +112,11 @@ model_fill :: proc(g: ^Gpu, u: Upload, a: ^Assets, m: ^Model, file: ^gltf.Gltf, 
 		binds := gltf.read_accessor(file, accessor, [16]f32, context.temp_allocator) or_return
 		if len(binds) < len(skin.joints) do return false
 		for &bind, k in m.skins[i].inverse_binds do bind = transmute(matrix[4, 4]f32)binds[k]
+	}
+	for node in m.nodes {
+		if node.mesh < 0 do continue
+		joints := node.skin < 0 ? 1 : len(m.skins[node.skin].joints)
+		for p in m.meshes[node.mesh] do if p.joints > joints do return false
 	}
 	return true
 }
@@ -182,22 +190,25 @@ primitive_upload :: proc(g: ^Gpu, u: Upload, file: ^gltf.Gltf, p: gltf.Primitive
 	count := len(positions)
 	vertices := make([]Vertex, count)
 	for &v, i in vertices do v = {position = positions[i], weights = {1, 0, 0, 0}, color = 1}
-	if normals, has := attribute(file, p, "NORMAL", [3]f32, count) or_return; has {
-		for &v, i in vertices do v.normal = normals[i]
-	}
+	normals, has_normals := attribute(file, p, "NORMAL", [3]f32, count) or_return
+	for &v, i in vertices[:len(normals)] do v.normal = normals[i]
 	if uvs, has := attribute(file, p, "TEXCOORD_0", [2]f32, count) or_return; has {
 		for &v, i in vertices do v.uv = uvs[i]
 	}
 	if colors, has := colors_attribute(file, p, count) or_return; has {
 		for &v, i in vertices do v.color = colors[i]
 	}
+	out.joints = 1
 	if joints, has := joints_attribute(file, p, count) or_return; has {
 		weights, weighted := attribute(file, p, "WEIGHTS_0", [4]f32, count) or_return
 		if !weighted do return
-		for &v, i in vertices do v.joints, v.weights = joints[i], weights[i]
+		for &v, i in vertices {
+			v.joints, v.weights = joints[i], weights[i]
+			for joint in v.joints do out.joints = max(out.joints, int(joint) + 1)  // the shader reads all four
+		}
 	}
 	indices := index_list(file, p.indices, count) or_return
-	if _, has := p.attributes["NORMAL"]; !has do smooth_normals(vertices, indices)
+	if !has_normals do smooth_normals(vertices, indices)
 	if material, has := p.material.?; has {
 		if material < 0 || material >= len(file.materials) do return
 		mat := file.materials[material]
