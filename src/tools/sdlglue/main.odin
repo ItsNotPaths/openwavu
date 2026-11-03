@@ -168,6 +168,11 @@ c_type :: proc(c: string) -> string {
 // Every type of a generated function must be known; hand functions only need to exist.
 check :: proc(e: Entry) -> (err: string) {
 	if e.hand do return
+	if err = check_params(e); err != "" do return
+	return check_result(e)
+}
+
+check_params :: proc(e: Entry) -> (err: string) {
 	for p, i in e.params {
 		arg := i + 1
 		if _, ok := scalar(p); ok do continue
@@ -178,6 +183,11 @@ check :: proc(e: Entry) -> (err: string) {
 			if _, ok := scalar(e.params[count - 1]); !ok do return fmt.tprintf("%s: argument %d is not a count", e.name, count)
 		}
 	}
+	return
+}
+
+// A made handle is owned by the handles it was made with, at most 2 (Sdl_Object.owners).
+check_result :: proc(e: Entry) -> (err: string) {
 	if e.result == "void" do return
 	if _, ok := scalar(e.result); ok do return
 	if _, ok := handle_kind(e.result); !ok do return fmt.tprintf("%s: unknown result type %s", e.name, e.result)

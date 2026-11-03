@@ -19,13 +19,19 @@ OW_EXPORT(draw) int draw(void) {
     return ok;
 }
 
-// "Hi" in white from the pack's font.ttf, at (0, 8).
-OW_EXPORT(text) int draw_text(void) {
+// The pack's font.ttf as a stream; NULL if it does not read.
+static SDL_IOStream *font_stream(void) {
     int32_t size = ow_content_size(OW_STR("font.ttf"));
+    if (size <= 0) return NULL;
     void *bytes = malloc(size);
-    if (size <= 0 || ow_content_read(OW_STR("font.ttf"), 0, bytes, size) != size) return 0;
-    font = TTF_OpenFontIO(SDL_IOFromConstMem(bytes, size), true, 12);
+    SDL_IOStream *stream = ow_content_read(OW_STR("font.ttf"), 0, bytes, size) == size ? SDL_IOFromConstMem(bytes, size) : NULL;
     free(bytes);  // the host copied it
+    return stream;
+}
+
+// "Hi" in white from the pack's font, at (0, 8).
+OW_EXPORT(text) int draw_text(void) {
+    font = TTF_OpenFontIO(font_stream(), true, 12);
     TTF_TextEngine *engine = TTF_CreateRendererTextEngine(ow_renderer());
     text = TTF_CreateText(engine, font, "Hi", 0);
     return text && TTF_SetTextColor(text, 255, 255, 255, 255) && TTF_DrawRendererText(text, 0, 8);
@@ -37,6 +43,19 @@ OW_EXPORT(bad_rect) void bad_rect(void) {
 
 OW_EXPORT(bad_handle) void bad_handle(void) {
     SDL_RenderTexture(ow_renderer(), (SDL_Texture *)0x7777, NULL, NULL);
+}
+
+// A 2x2 texture's 16 bytes of pixels, starting 8 bytes before the end of memory.
+OW_EXPORT(pixels_past_memory) void pixels_past_memory(void) {
+    SDL_Texture *t = SDL_CreateTexture(ow_renderer(), SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, 2, 2);
+    SDL_UpdateTexture(t, NULL, (void *)(__builtin_wasm_memory_size(0) * 65536 - 8), 8);
+}
+
+// The first font reads the stream; a second that would close it with itself must not get it.
+OW_EXPORT(closeio_on_shared_stream) void closeio_on_shared_stream(void) {
+    SDL_IOStream *stream = font_stream();
+    TTF_OpenFontIO(stream, false, 12);
+    TTF_OpenFontIO(stream, true, 12);
 }
 
 OW_EXPORT(font_as_texture) void font_as_texture(void) {

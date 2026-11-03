@@ -11,8 +11,9 @@ import "../src/imports"
 import "../src/titlepack"
 import "../src/wasm"
 
-// A module draws shapes, a texture and text on the host's renderer through the SDL imports. A bad pointer, a handle
-// that is not the pack's, a handle of the wrong kind, and a text whose font is closed each stop it before SDL runs.
+// A module draws shapes, a texture and text on the host's renderer through the SDL imports. A bad pointer, pixels past
+// its memory, a handle that is not the pack's or of the wrong kind, a stream two fonts would close, and a text whose
+// font is closed each stop it before SDL runs.
 @(test)
 module_draws_through_sdl_imports :: proc(t: ^testing.T) {
 	code, built := build_module(t, "tests/ref/sdl_probe.c")
@@ -69,6 +70,8 @@ module_draws_through_sdl_imports :: proc(t: ^testing.T) {
 	traps := [][2]string{
 		{"bad_rect", "SDL_RenderFillRect: argument 2 is outside the module's memory"},
 		{"bad_handle", "SDL_RenderTexture: argument 2 is not a Texture handle"},
+		{"pixels_past_memory", "SDL_UpdateTexture: argument 3 is outside the module's memory"},
+		{"closeio_on_shared_stream", "TTF_OpenFontIO: closeio on a stream another font still reads"},
 		{"font_as_texture", "SDL_RenderTexture: argument 2 is not a Texture handle"},
 		{"text_after_font_closed", "TTF_DrawRendererText: argument 1 is not a Text handle"},
 	}

@@ -65,8 +65,9 @@ define_sdl :: proc(l: wasm.Linker, set: ^Sdl_Set) -> (err: string) {
 		{"SDL_IOFromConstMem", {wasm.I32, wasm.I32}, {wasm.I32}, io_from_const_mem},
 		{"TTF_OpenFontIO", {wasm.I32, wasm.I32, wasm.F32}, {wasm.I32}, open_font_io},
 	}
-	for d in hand do if err = wasm.define_func(l, d.name, d.params, d.results, d.callback, set, "env"); err != "" do return
-	for d in sdl_glue() do if err = wasm.define_func(l, d.name, d.params, d.results, d.callback, set, "env"); err != "" do return
+	for list in ([][]Sdl_Define{hand[:], sdl_glue()}) {
+		for d in list do if err = wasm.define_func(l, d.name, d.params, d.results, d.callback, set, "env"); err != "" do return
+	}
 	return wasm.define_func(l, "renderer", {}, {wasm.I32}, renderer, set)
 }
 
@@ -142,17 +143,21 @@ sdl_new :: proc(set: ^Sdl_Set, kind: Sdl_Kind, pointer: rawptr, owners: [2]u32) 
 @(private)
 sdl_destroy :: proc(set: ^Sdl_Set, handle: u32) {
 	if handle == 0 || set.objects[handle - 1].kind == .Free do return
-	for o, i in set.objects do if o.kind != .Free && (o.owners[0] == handle || o.owners[1] == handle) {
-		sdl_destroy(set, u32(i + 1))
-	}
-	forget(set, handle, destroy = true)
+	for o, i in set.objects do if made_with(o, handle) do sdl_destroy(set, u32(i + 1))
+	o := set.objects[handle - 1]
+	sdl_destroy_object(o.kind, o.pointer)
+	release(set, handle)
 }
 
 @(private = "file")
-forget :: proc(set: ^Sdl_Set, handle: u32, destroy: bool) {
-	o := &set.objects[handle - 1]
-	if destroy do sdl_destroy_object(o.kind, o.pointer)
-	o^ = {}
+made_with :: proc(o: Sdl_Object, handle: u32) -> bool {
+	return o.kind != .Free && (o.owners[0] == handle || o.owners[1] == handle)
+}
+
+// Frees the handle's slot; the object itself is destroyed already, or now belongs to another object.
+@(private = "file")
+release :: proc(set: ^Sdl_Set, handle: u32) {
+	set.objects[handle - 1] = {}
 	if handle != SDL_RENDERER do append(&set.free, handle)
 }
 
@@ -217,10 +222,8 @@ open_font_io :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val
 	handle, closeio := u32(args[0].of.i32), args[1].of.i32 != 0
 	owners := [2]u32{}
 	if closeio {
-		for o in call.set.objects do if o.kind != .Free && o.owners[0] == handle {
-			return wasm.trap("TTF_OpenFontIO: closeio on a stream another font still reads")
-		}
-		if stream != nil do forget(call.set, handle, destroy = false)
+		for o in call.set.objects do if made_with(o, handle) do return wasm.trap("TTF_OpenFontIO: closeio on a stream another font still reads")
+		if stream != nil do release(call.set, handle)
 	} else {
 		owners[0] = handle
 	}
