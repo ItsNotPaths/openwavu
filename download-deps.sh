@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dependencies into vendor/: zig (the C compiler for pack modules, pinned so ow build is reproducible), wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding,
-# SDL3 and SDL3_ttf built static (FreeType), and the UI font. Delete a vendor/ folder to refetch it.
+# SDL3 and SDL3_ttf built static (FreeType) with their headers for pack modules, and the UI font. Delete a vendor/ folder to refetch it.
 set -euo pipefail
 cd "$(dirname "$0")"
 ZIG=0.16.0
@@ -96,7 +96,7 @@ if [ ! -f vendor/sdl3/lib/libSDL3.a ]; then
 	echo "vendor/sdl3: $SDL"
 fi
 
-if [ ! -f vendor/sdl3_ttf/libSDL3_ttf.a ]; then
+if [ ! -f vendor/sdl3_ttf/include/SDL3_ttf/SDL_ttf.h ]; then
 	ttf_dir=$(mktemp -d)
 	fetch "https://github.com/libsdl-org/SDL_ttf/releases/download/release-$SDL_TTF/SDL3_ttf-$SDL_TTF.tar.gz" "$ttf_dir/ttf.tar.gz" "$SDL_TTF_SHA256"
 	fetch "https://github.com/freetype/freetype/archive/refs/tags/VER-$FREETYPE.tar.gz" "$ttf_dir/freetype.tar.gz" "$FREETYPE_SHA256"
@@ -107,8 +107,9 @@ if [ ! -f vendor/sdl3_ttf/libSDL3_ttf.a ]; then
 	cmake -S "$ttf_dir/src" -B "$ttf_dir/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_PREFIX_PATH="$PWD/vendor/sdl3" \
 		-DSDLTTF_VENDORED=ON -DSDLTTF_HARFBUZZ=OFF -DSDLTTF_PLUTOSVG=OFF -DSDLTTF_SAMPLES=OFF >/dev/null
 	cmake --build "$ttf_dir/build" -j >/dev/null
-	mkdir -p vendor/sdl3_ttf
-	cp "$ttf_dir/build/libSDL3_ttf.a" vendor/sdl3_ttf/
+	mkdir -p vendor/sdl3_ttf/include
+	cp "$ttf_dir/build/libSDL3_ttf.a" "$ttf_dir/src/LICENSE.txt" vendor/sdl3_ttf/
+	cp -r "$ttf_dir/src/include/SDL3_ttf" vendor/sdl3_ttf/include/
 	rm -rf "$ttf_dir"
 	echo "vendor/sdl3_ttf: $SDL_TTF, freetype $FREETYPE"
 fi
