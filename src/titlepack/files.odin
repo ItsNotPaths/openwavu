@@ -6,7 +6,6 @@ import "core:path/filepath"
 import "core:strings"
 
 // A pack's files: its tar mapped into memory, or a folder (the front preview).
-// (hole pack-view :tags titlepack :needs pack-base) only the pack's own files; its bases' files are not layered under them.
 Pack_Files :: struct {
 	data:  []byte,
 	files: map[string]Tar_Entry,

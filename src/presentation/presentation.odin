@@ -14,6 +14,7 @@ INIT_FUEL :: 200_000_000_000  // fonts, textures and dbs read at start
 FRAME_FUEL :: 2_000_000_000
 
 // What a pack's presentation modules share: its files, its SDL objects, the scene they send and the local pads.
+// (hole sdl-per-module :tags (game render) :sev polish) a match presenter's SDL objects live until the pack closes, not the match; each match adds its textures again.
 Pack :: struct {
 	content: ^content.Pack,
 	sdl:     imports.Sdl_Set,

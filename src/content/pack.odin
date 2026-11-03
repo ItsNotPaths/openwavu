@@ -90,7 +90,7 @@ View :: struct {
 	layers: []Pack,
 }
 
-// (hole content-view :tags (content titlepack) :needs patch-apply) no file view of a pack over its bases behind content_read, with each layer's db patches applied to the database below.
+// (hole content-view :tags (content titlepack) :needs (patch-apply pack-base)) no file view of a pack over its stock base behind content_read (two layers: the base, then the pack), with the pack's db patch applied to the base's database.
 open_view :: proc(tars: []string) -> (v: View, ok: bool) {
 	return {}, false
 }

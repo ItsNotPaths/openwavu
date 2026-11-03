@@ -13,7 +13,7 @@ session_create :: proc(host: string) -> (s: ^Session, ok: bool) {
 // (hole net-session :tags net :needs module-snapshot :sev blocker) no rollback session (our own loop, not GGPO): input exchange, prediction, resimulation, state checksums.
 session_step :: proc(s: ^Session, w: ^sim.World, local: sim.Input) {}
 
-// (hole lobby-join :tags net :needs (pack-base net-session server-lobby content-cache registry-verify titlepack-hash content-view loadout-blob)) joining a lobby does not fetch its title pack and its bases from the registry, apply the params the server passes down, or check the lobby hash.
+// (hole lobby-join :tags net :needs (pack-base net-session server-lobby content-cache registry-verify titlepack-hash content-view loadout-blob)) joining a lobby does not fetch its title pack from the registry (its base is a stock pack the player built), apply the params the server passes down, or check the lobby hash.
 join_lobby :: proc(s: ^Session, lobby: string) -> (ok: bool) {
 	return false
 }
