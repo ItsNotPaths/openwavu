@@ -8,8 +8,8 @@
 #include "sim/anim.h"
 #include "sqlite3.h"
 
-// (hole sdk-camera :tags (sdk tk5mod round-show) :sev gap) no general fight camera in the SDK (frames both fighters, keeps the side line, zoom and lag by params), and no TK5 params for it.
-// (hole move-cameras :tags (tk5mod round-show) :needs (camera-side-re coded-cameras cue-ring)) throw cameras are not played: tracks placed at the thrown fighter, side switches.
+// (hole sdk-camera :tags (sdk tk5mod round-show) :sev gap) the fight camera is the demo's follow camera, eased, in pack code: no SDK camera that frames both fighters by params (distance, zoom, lag), and the game's rules (0x772cc) are not ported.
+// (hole move-cameras :tags (tk5mod round-show) :needs (sim-side-switch coded-cameras)) throw cameras are not played (tracks placed at the thrown fighter); the db has no camera category per move (property 0x815f) to pick them from the view, as intro shots are.
 // (hole coded-cameras :tags (port round-show)) the hand-coded throw and hit cameras (ids below 0x67, 0x7b22c) are not ported.
 // (hole sdk-timeline :tags (sdk tk5mod round-show) :needs (sdk-camera intro-timelines cue-ring)) the shot player is pack code, not an SDK library, and plays only cameras: no effects, sounds or voices on the intro and win timelines.
 
@@ -118,6 +118,7 @@ typedef struct {
 
 static Anchor anchor = {.side = -1};
 
+// (hole shot-height-ease :tags (tk5mod round-show) :sev polish) a shot's anchor height is set once; the game eases it toward the fighter's height (0x7d4c4), so a jump or crouch in a pose does not move the camera.
 // A track point in the anchor's frame, in the world: turned by -facing about y, then moved to the anchor.
 static OwVec3 placed(const float local[3]) {
     float angle = -anchor.facing * TURN, cosine = cosf(angle), sine = sinf(angle);

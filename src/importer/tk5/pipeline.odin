@@ -84,7 +84,7 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	cameras := read_entry(im.archive, formats.GLOBAL_CAMERAS) or_else nil
 	write_camera_bank(&im, "cameras", cameras, .Plain)
 	if throw_cameras, read := formats.read_throw_cameras(game.eboot, game.build, context.temp_allocator); read do convert.write_throw_camera_rows(w, throw_cameras)
-	// (hole camera-side-re :tags (port round-show)) not found what makes some throws (2+4) leave the camera on the other side of the fighters (tk5decomp docs/camera.md 6).
+	// (hole side-switch-flags :tags (importer round-show) :needs coded-cameras) no side switch flag per throw_camera row: at import, place each row's shot against the anims of the throws that use its category and flag the rows whose shot ends with the fighters swapped on screen.
 	for id in 0 ..< formats.STAGE_COUNT {
 		import_stage(&im, id)
 		step(&im)

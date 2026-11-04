@@ -67,6 +67,7 @@ void t5_match_begin(uint64_t seed) {
 
 // The camera stays on its side of the line between the fighters, so a fighter changes screen side only by crossing
 // over. A fresh view (a round start) puts side 1 on the left.
+// (hole sim-side-switch :tags (tk5mod sim round-show) :needs side-switch-flags) a throw does not pick its camera row (by weight, with an RNG stream of its own so the stock rolls stay the game's) or show it in the view, and a flagged row does not switch the screen sides; only crossing over does.
 static void update_sides(T5MatchState *m, bool fresh) {
     T5Vec3 a = m->fighters[0].base_position, b = m->fighters[1].base_position;
     float dx = b.x - a.x, dz = b.z - a.z, length = sqrtf(dx * dx + dz * dz);
