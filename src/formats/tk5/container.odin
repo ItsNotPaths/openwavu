@@ -15,6 +15,7 @@ sections :: proc(data: []byte, allocator := context.allocator) -> (out: [][]byte
 }
 
 COMMON_ANIMS :: 28
+GLOBAL_CAMERAS :: 29  // the throw and hit camera tracks
 MOTBIN_FIRST :: 39  // motbin entry = MOTBIN_FIRST + 2 * char id
 GROUP_SIZE :: 7     // per costume: slot 0 anim container (first costume), slot 6 model. data.md §3
 GROUP_MODEL :: 6

@@ -401,7 +401,6 @@ check_list_ends :: proc(k: ^Keys, m: formats.Motbin) -> (err: string) {
 	return ""
 }
 
-@(private = "file")
 n :: proc(v: $T) -> db.Value {return i64(v)}
 
 // The name of a code in its name sheet; NULL when the sheet has none, so the row fails NOT NULL.

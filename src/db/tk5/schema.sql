@@ -641,3 +641,27 @@ CREATE TABLE gaze (
 	tilt      REAL NOT NULL,     -- radians, about the level axis across the line to the opponent's head
 	head_turn INTEGER NOT NULL   -- angle steps (65536 a turn) about the head's y axis
 );
+
+-- Throw cameras (EBOOT 0x3513f8): a throw's camera category (extra property 0x815f) picks one row by weight (libc rand).
+-- A camera is a clip of the global camera bank (anim owner cameras) or a hand-coded shot (ids below 0x67).
+-- left_* is used when the thrower is on the left of the screen, right_* on the right; the mirror bits count only on the right.
+CREATE TABLE throw_camera (
+	category        INTEGER NOT NULL,
+	pos             INTEGER NOT NULL,
+	weight          INTEGER NOT NULL,
+	tracks          TEXT NOT NULL DEFAULT 'cameras',
+	left_track      INTEGER,  -- NULL: a coded shot
+	left_coded      INTEGER,
+	right_track     INTEGER,
+	right_coded     INTEGER,
+	hold            INTEGER NOT NULL DEFAULT 0,  -- 0x04: keep the camera at least 15 frames
+	wide            INTEGER NOT NULL DEFAULT 0,  -- 0x08: coded shots: fov +5, a smaller turn
+	wall_check      INTEGER NOT NULL DEFAULT 0,  -- 0x20: both fighters away from a wall, else row 0
+	track_target    INTEGER NOT NULL DEFAULT 0,  -- 0x40: the target comes from the track
+	aim_at_fighters INTEGER NOT NULL DEFAULT 0,  -- 0x80 without track_target: the target follows the fighters
+	mirror_x        INTEGER NOT NULL DEFAULT 0,  -- 0x200, and 0x100 mirror_z: axes of the track as imported (the game's z and x)
+	mirror_z        INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (category, pos),
+	FOREIGN KEY (tracks, left_track) REFERENCES anim(character, idx),
+	FOREIGN KEY (tracks, right_track) REFERENCES anim(character, idx)
+);

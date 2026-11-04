@@ -81,6 +81,10 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	if err = import_characters(&im); err != "" do return err
 	common := read_entry(im.archive, formats.COMMON_ANIMS) or_else nil
 	write_bank(&im, "common", common)
+	cameras := read_entry(im.archive, formats.GLOBAL_CAMERAS) or_else nil
+	write_camera_bank(&im, "cameras", cameras, .Plain)
+	if throw_cameras, read := formats.read_throw_cameras(game.eboot, game.build, context.temp_allocator); read do convert.write_throw_camera_rows(w, throw_cameras)
+	// (hole camera-side-re :tags (port round-show)) not found what makes some throws (2+4) leave the camera on the other side of the fighters (tk5decomp docs/camera.md 6).
 	for id in 0 ..< formats.STAGE_COUNT {
 		import_stage(&im, id)
 		step(&im)
@@ -120,6 +124,7 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 	if err = convert.write_moveset_rows(w, c.id, owner, char_index, m); err != "" do return err
 	if m.bank_offsets[0] < len(data) do write_bank(im, convert.embedded_owner(c.id), data[m.bank_offsets[0]:])
 	if m.bank_offsets[formats.BANK_HANDS] < len(data) do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), data[m.bank_offsets[formats.BANK_HANDS]:])
+	if m.bank_offsets[formats.BANK_CAMERAS] < len(data) do write_camera_bank(im, fmt.tprintf("%s/cameras", convert.embedded_owner(c.id)), data[m.bank_offsets[formats.BANK_CAMERAS]:], .Scaled)
 	skeleton, has_skeleton := character_skeleton(im, c)
 	if !has_skeleton do return fmt.tprintf("%s: skeleton did not read", c.id)
 	convert.write_skeleton_rows(w, c.id, skeleton)
@@ -142,10 +147,9 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 		container := read_entry(im.archive, c.container) or_else nil
 		sections, _ := formats.sections(container, context.temp_allocator)
 		// (hole face-anims :tags (importer fighter-detail)) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
-		// (hole intro-re :tags (importer round-show)) intros, win poses and outros are not located: motbin moves or separate data, and where their camera tracks live. Leads: move properties 0x8001..0x8008 (camera, dropped by the sim), the type-1 anim sections 1..5 (tk5decomp docs/data.md), the flashback angles, the fight camera 0x75724 (for sdk-camera params only).
-		// (hole camera-anims :tags (importer round-show) :needs intro-re) camera tracks are not imported (.anim layout tk5cam: position, target, roll, fov).
 		if len(sections) > 0 do write_bank(im, owner, sections[0])
 		if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
+		if len(sections) > formats.BANK_CAMERAS do write_camera_bank(im, fmt.tprintf("%s/cameras", owner), sections[formats.BANK_CAMERAS], .Scaled)
 	}
 	return ""
 }
@@ -287,6 +291,21 @@ write_hand_bank :: proc(im: ^Import, owner: string, data: []byte) {
 	}
 }
 
+// Every track of a camera bank as anims/<owner>/<idx>.anim. Clip i is property 0x8153's clip (fighter banks) or camera id - 0x67 (global).
+// 0x8153 names the fighter's own bank, even when the move's anim is in common (King, Roger, Armor King).
+write_camera_bank :: proc(im: ^Import, owner: string, data: []byte, packing: convert.Camera_Packing) {
+	bank, ok := formats.read_camera_bank(data)
+	if !ok do return
+	dir := join(im.root, "anims", owner)
+	if !make_dir(dir) do return
+	for i in 0 ..< bank.count {
+		raw, decoded := formats.read_clip(bank, i, context.temp_allocator)
+		if !decoded do continue
+		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
+		if frames, written := convert.write_camera_anim(join(im.root, file), raw, bank.channels, packing); written do db.insert(&im.w, "anim", owner, i64(i), i64(frames), file)
+	}
+}
+
 import_stage :: proc(im: ^Import, index: int) {
 	defer free_all(context.temp_allocator)
 	data, has := read_entry(im.archive, formats.STAGE_FIRST + 3 * index)
@@ -320,6 +339,7 @@ import_stage :: proc(im: ^Import, index: int) {
 			append(&matrices, transform)
 		}
 	}
+	// (hole stage-show-cameras :tags (importer round-show) :sev polish) the stage show tracks (T55 entries 210..247, one looped clip per stage) are not imported.
 	// (hole stage-break-pieces :tags importer :sev polish) section 4 (flying pieces of breakable props) is not exported.
 	file := fmt.tprintf("stages/%s.glb", id)
 	texture_files := write_textures(im, id, textures)

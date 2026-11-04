@@ -18,6 +18,7 @@ Anim_Channel_Kind :: enum u8 {
 	Position             = 1,  // xyz
 	Quaternion           = 2,  // xyzw
 	Spherical_Axis_Angle = 3,  // axis pitch, axis yaw, angle (radians)
+	Scalar               = 4,  // one value; the layout says what it is
 }
 
 Anim_Channel :: struct {
