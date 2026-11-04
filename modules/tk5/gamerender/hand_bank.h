@@ -32,12 +32,12 @@ typedef struct {
 // The two banks of a character: the pose library (clip 0, frame i = pose i) and the gesture clips.
 typedef struct { T5HandBank poses, gestures; } T5HandBanks;
 
-static inline bool t5_hand_joint_is_rotation(int32_t joint) { return (void)joint, true; }
+static inline T5KeyKind t5_hand_joint_kind(int32_t joint) { return (void)joint, T5_KEY_AXIS_ANGLE; }
 
 // The clip points into `file`; 0 on success.
 static inline int t5_hand_clip_parse(T5HandClip *clip, T5Bytes file) {
     const float *keys;
-    uint16_t frames = t5_anim_file(file, "tk5hand", FINGER_JOINTS, t5_hand_joint_is_rotation, &keys);
+    uint16_t frames = t5_anim_file(file, "tk5hand", FINGER_JOINTS, t5_hand_joint_kind, &keys);
     *clip = frames ? (T5HandClip){frames, (const T5HandKeys *)keys} : (T5HandClip){0};
     return frames ? 0 : -1;
 }

@@ -29,5 +29,9 @@ void t5_view_poses(T5View *view, const T5World *w) {
         out->rig = f->rig;
         memcpy(out->parent_a, w->data[f->data]->skeleton.parent_a, sizeof out->parent_a);
         out->hands = view_hands(w, f);
+        out->move = f->move;
+        out->move_frame = f->frame;
+        out->facing = f->facing;
+        out->position = f->position;
     }
 }

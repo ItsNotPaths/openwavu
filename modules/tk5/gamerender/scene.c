@@ -93,6 +93,7 @@ bool t5_scene_init(const T5View *view) {
         load_hands(db, side, &view->fighters[side].loadout);
     }
     stage_asset = load_stage(db, view->stage);
+    t5_camera_init(db, view);
     sqlite3_close(db);
     return true;
 }
@@ -124,7 +125,6 @@ static void pose_fighter(OwTransform bones[POSED_BONES], const T5Rig *rig) {
 
 static const OwTransform PLACE_AT_ORIGIN = {.rotation = {0, 0, 0, 1}, .scale = {1, 1, 1}};
 
-// (hole mod-scene-intro :tags (tk5mod round-show)) intros, round end and match end poses show both fighters; the demo shows only the fighter whose pose it is.
 void t5_scene_send(const T5View *view, float seconds) {
     t5_visual_step(&visual, view, seconds);
     uint32_t count = 0;
@@ -140,7 +140,7 @@ void t5_scene_send(const T5View *view, float seconds) {
                 .transform = PLACE_AT_ORIGIN,
                 .bone_count = POSED_BONES,
                 .bone_offset = (uint32_t)(offsetof(typeof(block), bones) + side * sizeof block.bones[side]),
-                .flags = view->snap ? OW_NODE_NO_BLEND : 0,
+                .flags = (view->snap ? OW_NODE_NO_BLEND : 0) | (view->focus >= 0 && view->focus != side ? OW_NODE_HIDDEN : 0),
                 .class = OW_CLASS_GAMEPLAY,
             };
             memcpy(node->id, parts[side][at].id, sizeof node->id);
@@ -148,7 +148,7 @@ void t5_scene_send(const T5View *view, float seconds) {
     }
     OwScene *scene = &block.scene;
     OW_SCENE_SIZES(scene);
-    scene->camera = t5_fight_camera(view);
+    scene->camera = t5_camera(view);
     scene->ambient = (OwColor){0.45f, 0.45f, 0.5f, 1};
     block.light = (OwLight){.kind = OW_LIGHT_DIRECTIONAL, .color = {1, 0.97f, 0.9f, 0.8f}, .direction = {0.3f, -1, 0.4f}};
     scene->light_count = 1;

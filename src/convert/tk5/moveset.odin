@@ -131,6 +131,7 @@ write_moveset_rows :: proc(w: ^db.Writer, char, anim_owner: string, moveset: int
 		db.insert(w, "extra_prop", ..values[:])
 	}
 	write_tracking(w, char, sheets, &t)
+	write_move_camera_rows(w, char, anim_owner, k.moves, m)
 	write_props(w, &k, .Start_Prop, m)
 	write_props(w, &k, .End_Prop, m)
 	for v, i in m.voiceclips {

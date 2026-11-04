@@ -67,6 +67,6 @@ stock_sim_plays_a_match :: proc(t: ^testing.T) {
 	log.infof("the match ended after %d frames, winner side %d", frames, end.a)
 	view, view_err := sim.view(w)
 	testing.expect_value(t, view_err, "")
-	T5_VIEW_VERSION :: 2  // modules/tk5/view.h, its first field
+	T5_VIEW_VERSION :: 3  // modules/tk5/view.h, its first field
 	testing.expect(t, len(view) >= 4 && (^u32le)(raw_data(view))^ == T5_VIEW_VERSION, "the view starts with its version")
 }

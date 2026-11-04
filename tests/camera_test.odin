@@ -28,7 +28,7 @@ camera_frame :: proc(t: ^testing.T, data: []byte, clip, frame: int, packing: tk5
 	defer os.remove(CAMERA_FILE)
 	file, _ := os.read_entire_file(CAMERA_FILE, context.temp_allocator)
 	a, parsed := convert.read_anim(file, context.temp_allocator)
-	if !testing.expect(t, parsed && a.layout == "tk5cam" && frame < a.frames) do return
+	if !testing.expect(t, parsed && a.layout == "camera" && frame < a.frames) do return
 	v := a.values[frame * 9:]
 	return {{v[0], v[1], v[2]}, {v[3], v[4], v[5]}, v[6]}, true
 }
@@ -36,7 +36,7 @@ camera_frame :: proc(t: ^testing.T, data: []byte, clip, frame: int, packing: tk5
 @(private = "file")
 expect_camera :: proc(t: ^testing.T, got, want: Camera_Check, name: string) {
 	near :: proc(a, b: [3]f32) -> bool {return abs(a.x - b.x) < 1 && abs(a.y - b.y) < 1 && abs(a.z - b.z) < 1}
-	testing.expectf(t, near(got.eye, want.eye) && near(got.target, want.target) && math.abs(got.fov - want.fov) < 0.01, "%s: got %v, want %v", name, got, want)
+	testing.expectf(t, near(got.eye, want.eye) && near(got.target, want.target) && math.abs(got.fov - want.fov) < 0.0002, "%s: got %v, want %v", name, got, want)
 }
 
 // The camera tracks give the shots the game shows (values from tk5decomp docs/camera.md 2.1 and 2.2, read from the game).
@@ -56,14 +56,14 @@ camera_tracks_match_the_game :: proc(t: ^testing.T) {
 	sections, split := formats.sections(container, context.temp_allocator)
 	if !testing.expect(t, has && split && len(sections) > formats.BANK_CAMERAS) do return
 	if got, read := camera_frame(t, sections[formats.BANK_CAMERAS], 0, 0, .Scaled); read {
-		expect_camera(t, got, {{-124, 1011, 1310}, {-135, 1675, -551}, 39.59}, "paul intro")
+		expect_camera(t, got, {{-124, 1011, 1310}, {-135, 1675, -551}, 39.59 * math.RAD_PER_DEG}, "paul intro")
 	}
 
 	// The first throw camera, turned to the fighter tracks' frame: the game's (347, 1642, -5517) becomes (5517, 1642, 347).
 	global, has_global := tk5.read_entry(archive, formats.GLOBAL_CAMERAS)
 	if !testing.expect(t, has_global) do return
 	if got, read := camera_frame(t, global, 0, 0, .Plain); read {
-		expect_camera(t, got, {{5517, 1642, 347}, {200, 1200, 200}, 38}, "throw camera 0")
+		expect_camera(t, got, {{5517, 1642, 347}, {200, 1200, 200}, 38 * math.RAD_PER_DEG}, "throw camera 0")
 	}
 }
 

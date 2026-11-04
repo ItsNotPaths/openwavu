@@ -30,7 +30,8 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM character"), 36)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part WHERE slot = 'body'"), 85)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 17556)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 18339)  // 783 of them camera tracks
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM move_camera"), 342)  // every intro and win pose
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage"), 37)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 1773)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select/*'"), 240)  // unlit menu entries

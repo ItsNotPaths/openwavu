@@ -8,7 +8,7 @@
 #include "sim/skel.h"
 #include "sim/world.h"
 
-enum { T5_VIEW_VERSION = 2 };
+enum { T5_VIEW_VERSION = 3 };
 
 typedef struct {  // the fighter fields the presenter's hand poses read
     T5PoseProp right_pose, left_pose;  // the hand channel properties
@@ -31,6 +31,10 @@ typedef struct {
     T5Rig rig;                   // mm; root translation = base position; B worlds are the slots a model's bones follow
     int8_t parent_a[T5_BONES_A]; // the skeleton's A parents, to rebuild posed bones
     T5ViewHands hands;
+    T5Ref move;                  // set = the side whose move set it is: a thrown fighter plays its thrower's moves
+    int16_t move_frame;          // 1-based
+    int16_t facing;              // 65536 a turn
+    T5Vec3 position;             // mm, on the floor: where camera shots are placed
 } T5ViewFighter;
 
 typedef struct {
@@ -45,9 +49,10 @@ typedef struct {
     T5ViewFighter fighters[T5_FIGHTER_COUNT];
     float view_normal[2];  // xz direction from the fighters to the camera; screen sides follow it
     bool snap;             // a scene cut: the fighters jump, so the display must not blend into this frame
+    int8_t focus;          // the side an intro or win pose is about, -1: none
 } T5View;
 
-// The frame and each fighter's rig, A parents and hand block, from the world.
+// The frame and each fighter's rig, A parents, hand block, move and facing, from the world.
 void t5_view_poses(T5View *view, const T5World *w);
 
 #endif

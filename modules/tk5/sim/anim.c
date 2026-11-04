@@ -9,13 +9,13 @@
 // --- .anim file (docs/formats.md): "OWAN", u32 version, char[8] layout, u32 frames, u32 fps, f32 metres per unit,
 // u32 channels, per channel {u8 kind, u8 components, i16 bone}, then f32 keys[frames][channels][components]
 
-enum { ANIM_VERSION = 2, HEADER_BYTES = 32, CHANNEL_BYTES = 4, KIND_POSITION = 1, KIND_AXIS_ANGLE = 3, KEY_COMPONENTS = 3 };
+enum { ANIM_VERSION = 2, HEADER_BYTES = 32, CHANNEL_BYTES = 4, KEY_COMPONENTS = 3 };
 
 static uint32_t read32(const uint8_t *bytes) {  // little endian
     return (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8 | (uint32_t)bytes[2] << 16 | (uint32_t)bytes[3] << 24;
 }
 
-uint16_t t5_anim_file(T5Bytes file, const char *layout, int32_t channels, bool (*is_rotation)(int32_t), const float **keys) {
+uint16_t t5_anim_file(T5Bytes file, const char *layout, int32_t channels, T5KeyKind (*kind_of)(int32_t), const float **keys) {
     const size_t start = HEADER_BYTES + (size_t)channels * CHANNEL_BYTES, frame_bytes = (size_t)channels * KEY_COMPONENTS * sizeof(float);
     if (file.size < start || memcmp(file.data, "OWAN", 4) != 0 || read32(file.data + 4) != ANIM_VERSION) return 0;
     if (strncmp((const char *)file.data + 8, layout, 8) != 0 || read32(file.data + 28) != (uint32_t)channels) return 0;
@@ -23,8 +23,7 @@ uint16_t t5_anim_file(T5Bytes file, const char *layout, int32_t channels, bool (
     if (frames > UINT16_MAX || (file.size - start) / frame_bytes < frames) return 0;
     const uint8_t *channel = file.data + HEADER_BYTES;
     for (int32_t index = 0; index < channels; index++, channel += CHANNEL_BYTES) {
-        uint8_t kind = is_rotation(index) ? KIND_AXIS_ANGLE : KIND_POSITION;
-        if (channel[0] != kind || channel[1] != KEY_COMPONENTS) return 0;
+        if (channel[0] != kind_of(index) || channel[1] != KEY_COMPONENTS) return 0;
     }
     *keys = (const float *)(file.data + start);
     return (uint16_t)frames;
@@ -32,7 +31,7 @@ uint16_t t5_anim_file(T5Bytes file, const char *layout, int32_t channels, bool (
 
 int t5_anim_parse(T5Anim *anim, T5Bytes file) {
     const float *keys;
-    uint16_t frames = t5_anim_file(file, "tk5", T5_CHANNELS, t5_channel_is_rotation, &keys);  // the layout the samplers read
+    uint16_t frames = t5_anim_file(file, "tk5", T5_CHANNELS, t5_channel_kind, &keys);  // the layout the samplers read
     *anim = frames ? (T5Anim){frames, (const T5AnimKeys *)keys} : (T5Anim){0};
     return frames ? 0 : -1;
 }

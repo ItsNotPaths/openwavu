@@ -34,9 +34,13 @@ typedef struct {
 bool t5_anim_same(const T5Anim *first, const T5Anim *second);
 
 int t5_anim_parse(T5Anim *anim, T5Bytes file);  // checks the tk5 layout; the anim points into `file`; 0 on success
-// A .anim file of this layout (at most 8 chars) and channel count, 3 components per key, rotations where is_rotation says.
+// The kind of a .anim channel (src/convert/anim.odin).
+typedef enum : uint8_t { T5_KEY_POSITION = 1, T5_KEY_AXIS_ANGLE = 3, T5_KEY_VALUES = 4 } T5KeyKind;
+static inline T5KeyKind t5_channel_kind(int32_t channel) { return t5_channel_is_rotation(channel) ? T5_KEY_AXIS_ANGLE : T5_KEY_POSITION; }
+
+// A .anim file of this layout (at most 8 chars) and channel count, 3 components per key, each channel of kind_of's kind.
 // Returns the frame count, *keys pointing into `file`; 0 when the file is not such an anim or has no frames.
-uint16_t t5_anim_file(T5Bytes file, const char *layout, int32_t channels, bool (*is_rotation)(int32_t), const float **keys);
+uint16_t t5_anim_file(T5Bytes file, const char *layout, int32_t channels, T5KeyKind (*kind_of)(int32_t), const float **keys);
 // A key (axis pitch, axis yaw, angle) as a turn: axis = row 2 of RotY(yaw) then RotX(pitch) on the matrix stack.
 void t5_anim_key_turn(T5Vec4 *turn, const T5Vec4 *key);
 // out[channel] = (x, y, z) keys of channels 0..count-1 at `frame`, clamped to the anim. No anim: zeros. w is not written.

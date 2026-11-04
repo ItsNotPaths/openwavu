@@ -1,8 +1,10 @@
-// TK5 camera tracks as .anim (layout tk5cam), one key per frame (tk5decomp docs/camera.md 2):
-//   eye xyz, target xyz (mm, in the anchor's frame: world = anchor + yaw(-facing) * local), fov (degrees),
-//   roll (radians), smoothing (1 = follow last frame's camera fully, 0 = cut).
+// TK5 camera tracks as .anim (layout camera), one key per frame (tk5decomp docs/camera.md 2):
+//   eye xyz, target xyz (mm, in the anchor's frame: world = anchor + yaw(-facing) * local),
+//   lens: vertical fov (radians), roll (radians), smoothing (1 = follow last frame's camera fully, 0 = cut).
 package tk5_convert
 
+import "core:fmt"
+import "core:math"
 import "../../convert"
 import "../../db"
 import formats "../../formats/tk5"
@@ -12,7 +14,7 @@ Camera_Packing :: enum {
 	Plain,   // the global bank: no header frames, no roll, placed a quarter turn off
 }
 
-CAMERA_CHANNELS := [?]convert.Anim_Channel{{.Position, 3, -1}, {.Position, 3, -1}, {.Scalar, 1, -1}, {.Scalar, 1, -1}, {.Scalar, 1, -1}}
+CAMERA_CHANNELS := [?]convert.Anim_Channel{{.Position, 3, -1}, {.Position, 3, -1}, {.Values, 3, -1}}
 
 @(private = "file")
 CAMERA_VALUES :: 9
@@ -43,7 +45,7 @@ write_camera_anim :: proc(path: string, raw: []i16, channels: int, packing: Came
 		}
 	}
 	ok = convert.write_anim(path, {
-		layout        = "tk5cam",
+		layout        = "camera",
 		frames        = frames,
 		fps           = FPS,
 		position_unit = 0.001,
@@ -65,7 +67,7 @@ scaled_frame :: proc(out: []f32, frame, divisors, offsets: []i16) -> (ok: bool) 
 	}
 	fov := i32(frame[6])
 	if fov < 0 do fov += WRAP
-	out[6] = f32(fov) * 0.01
+	out[6] = f32(fov) * 0.01 * math.RAD_PER_DEG
 	out[7] = f32(frame[12]) * 1e-4
 	out[8] = 1 - f32(frame[9]) * SMOOTHING
 	return true
@@ -78,7 +80,7 @@ plain_frame :: proc(out: []f32, frame: []i16) {
 		x, y, z := f32(frame[3 * point]), f32(frame[3 * point + 1]), f32(frame[3 * point + 2])
 		out[3 * point], out[3 * point + 1], out[3 * point + 2] = -z * PLAIN_POSITION, y * PLAIN_POSITION, x * PLAIN_POSITION
 	}
-	out[6] = f32(frame[6]) * PLAIN_FOV
+	out[6] = f32(frame[6]) * PLAIN_FOV * math.RAD_PER_DEG
 	out[7] = 0
 	out[8] = 1 - f32(frame[9]) * SMOOTHING
 }
@@ -97,5 +99,27 @@ write_throw_camera_rows :: proc(w: ^db.Writer, records: []formats.Throw_Camera) 
 		right_track, right_coded := camera(r.right)
 		db.insert(w, "throw_camera", n(r.category), n(pos), n(r.weight), "cameras", left_track, left_coded, right_track, right_coded,
 			bit(r.flags, 0x04), bit(r.flags, 0x08), bit(r.flags, 0x20), bit(r.flags, 0x40), bit(r.flags, 0x80), bit(r.flags, 0x200), bit(r.flags, 0x100))
+	}
+}
+
+@(private = "file")
+PROP_MOVE_CAMERA :: 0x8153
+@(private = "file")
+CONTAINER_BANK :: 0x4000
+@(private = "file")
+FRAME_CODE :: 0x7fff
+
+// A move_camera row per move with property 0x8153 (the intro and win poses): its clip of the fighter's own bank.
+write_move_camera_rows :: proc(w: ^db.Writer, char, anim_owner: string, move_keys: []string, m: formats.Motbin) {
+	for mv, i in m.moves {
+		if mv.extra_props < 0 || int(mv.extra_props) >= len(m.extra_props) do continue
+		for x in m.extra_props[mv.extra_props:] {
+			if x.unk_00 == 0 do break
+			if x.unk_02 != PROP_MOVE_CAMERA do continue
+			value := x.unk_04 >> 16
+			owner := value & CONTAINER_BANK != 0 ? anim_owner : embedded_owner(char)
+			db.insert(w, "move_camera", move_keys[i], fmt.tprintf("%s/cameras", owner), n(value &~ CONTAINER_BANK), n(x.unk_00 & FRAME_CODE))
+			break
+		}
 	}
 }

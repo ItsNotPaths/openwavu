@@ -665,3 +665,13 @@ CREATE TABLE throw_camera (
 	FOREIGN KEY (tracks, left_track) REFERENCES anim(character, idx),
 	FOREIGN KEY (tracks, right_track) REFERENCES anim(character, idx)
 );
+
+-- Camera shots of moves (the intro and win poses: property 0x8153). From move frame `frame` on, the track plays one key a
+-- frame, placed at the fighter that plays the move.
+CREATE TABLE move_camera (
+	move   TEXT PRIMARY KEY REFERENCES move(key),
+	tracks TEXT NOT NULL,
+	track  INTEGER NOT NULL,
+	frame  INTEGER NOT NULL,  -- the move frame (1-based) of the track's first key
+	FOREIGN KEY (tracks, track) REFERENCES anim(character, idx)
+);

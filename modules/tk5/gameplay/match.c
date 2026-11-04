@@ -123,6 +123,26 @@ static void view_fighter(T5ViewFighter *out, uint32_t side) {
     out->on_right = f->input.camera_side == T5_SIDE_RIGHT;
 }
 
+static int8_t round_winner(const T5World *w) {
+    if (w->round.result & T5_RESULT_DRAW) return -1;
+    for (int8_t side = 0; side < T5_FIGHTER_COUNT; side++)
+        if (t5_match.fighters[side].last_round == T5_ROUND_WON) return side;
+    return -1;
+}
+
+// Intros are about their own fighter; the flashback and the win poses about the winner.
+static int8_t focus_of(const T5World *w) {
+    switch (w->round.phase) {
+    case T5_PHASE_INTRO_1:
+    case T5_PHASE_INTRO_2: return (int8_t)t5_round_focus(w, t5_phase_row(w).setup);
+    case T5_PHASE_MATCH_END:
+    case T5_PHASE_OVER: return (int8_t)side_of(w->round.winner);
+    case T5_PHASE_FLASHBACK:
+    case T5_PHASE_ROUND_END: return round_winner(w);
+    default: return -1;
+    }
+}
+
 // Built when asked, from the state, so it is right after a restore too.
 OW_EXPORT(ow_sim_view) const void *ow_sim_view(void) {
     const T5World *w = &t5_match.world;
@@ -135,6 +155,7 @@ OW_EXPORT(ow_sim_view) const void *ow_sim_view(void) {
         .wins_needed = w->rules.wins_needed,
         .view_normal = {t5_match.view_normal[0], t5_match.view_normal[1]},
         .snap = w->blend_snap_left > 0,
+        .focus = focus_of(w),
     };
     memcpy(view.stage, t5_match_data.stage_id, sizeof view.stage);
     t5_view_poses(&view, w);
