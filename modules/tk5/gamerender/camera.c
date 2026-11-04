@@ -18,6 +18,7 @@ static const float FOCUS_HEIGHT = 0.9f;  // metres
 static const float RAISE = 0.5f;         // the camera sits this much above the focus
 static const float FOV = 0.698132f;      // 40 degrees, vertical
 static const float TURN = 6.2831853f / 65536.0f;  // radians per facing unit
+static const float FOLLOW_RATE = 8.0f;  // per second: how fast the fight camera closes on where it should be
 
 enum { SHOTS_MAX = 32, CAMERA_CHANNELS = 3 };  // per side; channels: eye, target, lens (fov, roll, smoothing)
 
@@ -71,6 +72,29 @@ static OwCamera fight_camera(const T5View *view) {
     return (OwCamera){.position = position, .target = focus, .fov = FOV};
 }
 
+static struct {
+    bool live;  // false: the next fight camera cuts in
+    OwCamera camera;
+} follow;
+
+static OwVec3 eased(OwVec3 from, OwVec3 to, float weight) {
+    return (OwVec3){from.x + (to.x - from.x) * weight, from.y + (to.y - from.y) * weight, from.z + (to.z - from.z) * weight};
+}
+
+// The fight camera eased toward `goal` over `seconds`, the same at any display rate.
+static OwCamera followed(OwCamera goal, float seconds) {
+    if (!follow.live) {
+        follow.live = true;
+        return follow.camera = goal;
+    }
+    float weight = 1.0f - expf(-FOLLOW_RATE * seconds);
+    OwCamera *camera = &follow.camera;
+    camera->position = eased(camera->position, goal.position, weight);
+    camera->target = eased(camera->target, goal.target, weight);
+    camera->fov += (goal.fov - camera->fov) * weight;
+    return *camera;
+}
+
 // The key of the fighter's shot at its move frame; NULL when its move has no shot or the shot is over.
 static const CameraKey *shot_key(const T5ViewFighter *fighter, int32_t *elapsed) {
     int set = fighter->move.set;
@@ -105,8 +129,9 @@ static OwVec3 placed(const float local[3]) {
     };
 }
 
-// The newest shot of the two fighters (the game's later shot replaces the earlier), else the fight camera.
-OwCamera t5_camera(const T5View *view) {
+// The newest shot of the two fighters (the game's later shot replaces the earlier), else the fight camera. Shots and
+// scene cuts are not eased.
+OwCamera t5_camera(const T5View *view, float seconds) {
     const CameraKey *key = NULL;
     int shot_side = -1;
     int32_t newest = INT32_MAX;
@@ -115,7 +140,11 @@ OwCamera t5_camera(const T5View *view) {
         const CameraKey *found = shot_key(&view->fighters[side], &elapsed);
         if (found && elapsed < newest) key = found, shot_side = side, newest = elapsed;
     }
-    if (!key) return fight_camera(view);
+    if (!key) {
+        if (view->snap) follow.live = false;
+        return followed(fight_camera(view), seconds);
+    }
+    follow.live = false;
     const T5ViewFighter *fighter = &view->fighters[shot_side];
     uint32_t start_frame = view->frame - (uint32_t)newest;
     if (anchor.side != shot_side || anchor.move != fighter->move.index || anchor.start_frame != start_frame)

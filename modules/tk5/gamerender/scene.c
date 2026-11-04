@@ -148,7 +148,7 @@ void t5_scene_send(const T5View *view, float seconds) {
     }
     OwScene *scene = &block.scene;
     OW_SCENE_SIZES(scene);
-    scene->camera = t5_camera(view);
+    scene->camera = t5_camera(view, seconds);
     scene->ambient = (OwColor){0.45f, 0.45f, 0.5f, 1};
     block.light = (OwLight){.kind = OW_LIGHT_DIRECTIONAL, .color = {1, 0.97f, 0.9f, 0.8f}, .direction = {0.3f, -1, 0.4f}};
     scene->light_count = 1;
