@@ -306,7 +306,8 @@ fighter_fade :: proc(scene: ^Scene, lighting: ^Lighting) {
 }
 
 // The normal, toward the camera, of the plane that holds the camera's up and the line best fitting the middles seen
-// along it (their principal axis); straight at the camera when they do not spread.
+// along it (their principal axis). The plane turns back to face the camera as that line turns toward the view or the
+// middles close in, so it never jumps between frames.
 @(private = "file")
 fighters_facing :: proc(camera: Camera, middles: [][3]f32) -> [3]f32 {
 	forward := linalg.normalize(camera.target - camera.position)
@@ -321,11 +322,11 @@ fighters_facing :: proc(camera: Camera, middles: [][3]f32) -> [3]f32 {
 		offset := [2]f32{linalg.dot(middle, right), linalg.dot(middle, away)} - centre
 		spread += {offset.x * offset.x, offset.y * offset.y, offset.x * offset.y}
 	}
-	if spread.x + spread.y < 0.0001 do return -away
-	angle := 0.5 * math.atan2(2 * spread.z, spread.x - spread.y)
-	axis := right * math.cos(angle) + away * math.sin(angle)
-	normal := linalg.normalize(linalg.cross(axis, up))
-	return linalg.dot(normal, away) > 0 ? -normal : normal
+	FULL_SPREAD :: 0.25  // square metres: closer middles turn the plane part way
+	angle := 0.5 * math.atan2(2 * spread.z, spread.x - spread.y)  // of the line, from right toward away
+	tilt := abs(angle) < math.PI / 4 ? angle : math.sign(angle) * (math.PI / 2 - abs(angle))
+	tilt *= min(1, (spread.x + spread.y) / FULL_SPREAD)
+	return right * math.sin(tilt) - away * math.cos(tilt)
 }
 
 @(private = "file")
