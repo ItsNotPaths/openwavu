@@ -273,7 +273,7 @@ scene_lighting :: proc(scene: ^Scene) -> (lighting: Lighting) {
 // Scenery fades on the whole screen above the fighters' feet, in front of a plane flat to the camera as far as the
 // fighters allow: it holds the camera's up and the line that best fits their middles seen along it, and sits
 // BODY_REACH in front of the one nearest the camera; gone DEPTH_RIM in front of it. A fighter is the middle of a
-// gameplay node's joints (its transform without bones); a fighter's part nodes share them.
+// shown gameplay node's joints (its transform without bones); a fighter's part nodes share them.
 @(private = "file")
 fighter_fade :: proc(scene: ^Scene, lighting: ^Lighting) {
 	FLOOR_ABOVE_FEET :: 0.15  // metres; stock floors are flat within 0.1
@@ -282,7 +282,7 @@ fighter_fade :: proc(scene: ^Scene, lighting: ^Lighting) {
 	middles := make([dynamic][3]f32, context.temp_allocator)
 	feet := max(f32)
 	for node in scene.nodes {
-		if node.class != .Gameplay do continue
+		if node.class != .Gameplay || .Hidden in node.flags do continue
 		place := transform_matrix(node.transform)
 		middle := node.transform.position
 		feet = min(feet, middle.y)
