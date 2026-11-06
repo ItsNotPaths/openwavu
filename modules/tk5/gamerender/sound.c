@@ -10,7 +10,7 @@
 #include "sim/properties.h"
 #include "sqlite3.h"
 
-// (hole mod-sound :tags (tk5mod audio effects) :sev gap) not played: the stage records of voice selectors 9 and 10 (0x90fc4, 0x910c8), the crowd of 0x815c/0x815d, properties 0x80dd, 0x80de and 0x80e0, the stage sounds of hit effects (EFP sound_row goes through effect generators, not dumped), "you win"/"you lose", and looped records.
+// (hole mod-sound :tags (tk5mod audio effects) :sev gap) not played: the stage records of voice selectors 9 and 10 (0x90fc4, 0x910c8; also sent by 0xa1eb0 on move_end, touchdown and a foot or the hips reaching the floor), the crowd of 0x815c/0x815d, properties 0x80dd, 0x80de and 0x80e0, the stage sounds of hit effects (EFP sound_row goes through effect generators, not dumped), "you win"/"you lose", and looped records.
 
 enum {
     SOUNDS_MAX = 512,
@@ -217,8 +217,9 @@ static void fighter_voice(int side, uint16_t value) {
     }
 }
 
-// (hole voice-face :tags (tk5mod audio) :sev polish) a voice of a clip or a property does not move the face: 0xa0d5c starts the face of the voice row (face clip 0x2fb4c or face value 0x2fafc); selector 3 takes it from kind 6.
-// A move's voice clip (sim/voice_clip.c): 2 and 3 entry n of the move voices, 6 a common record, 8 and 11 a special sound.
+// (hole voice-face :tags (tk5mod audio) :sev polish) a voice of a clip, a property or a random voice does not move the face: 0xa0d5c starts the face of the voice row (face clip 0x2fb4c or face value 0x2fafc); selector 3 takes it from kind 6.
+// A move's voice clip (sim/voice_clip.c): 2 and 3 entry n of the move voices, 6 a common record, 8 and 11 a special sound;
+// after the clips, 9 and 10 as in a property.
 static void clip_voice(int side, uint16_t value) {
     int selector = value >> 12, number = value & 0xfff;
     const int *counts = speakers[side].kind_counts;
@@ -231,8 +232,16 @@ static void clip_voice(int side, uint16_t value) {
     }
     case 6: play(BANK_COMMON, number, &effects); break;
     case 8: case 11: play_special(side, number); break;
+    case 9: case 10: fighter_voice(side, value); break;
     default: break;
     }
+}
+
+// kind << 12 | roll: row roll % count of the kind (0xa1b44).
+static void random_voice(int side, uint16_t value) {
+    const Speaker *speaker = &speakers[side];
+    int kind = value >> 12, count = speaker->kind_counts[kind];
+    if (count > 0) play_voice(side, speaker->kind_records[kind][(value & 0xfff) % count]);
 }
 
 // voice character << 8 | record, from the stream bank of the fighter with that voice character.
@@ -246,6 +255,7 @@ static void sound_cue(const T5Cue *cue) {
     int side = side_of(cue->owner);
     switch (cue->id) {
     case T5_VOICE_CLIP: if (side >= 0) clip_voice(side, cue->value); break;
+    case T5_VOICE_RANDOM: if (side >= 0) random_voice(side, cue->value); break;
     case VOICE_COMMON: if (cue->value >> 12 != 0) play(BANK_COMMON, cue->value & 0xfff, &effects); break;
     case VOICE_SELF: case VOICE_TARGET: if (side >= 0) fighter_voice(side, cue->value); break;
     case STREAM_VOICE: stream_voice(cue->value); break;
@@ -254,6 +264,7 @@ static void sound_cue(const T5Cue *cue) {
 }
 
 static void announce(const T5Cue *cue) {
+    wins_in = -1;  // a newer line, such as the next round's call after a skipped win pose, drops a waiting "wins"
     switch ((T5Line)cue->id) {
     case T5_LINE_ROUND: play(BANK_ROUND_CALLS, ROUND_CALL_FIRST + cue->value, &announcer); break;
     case T5_LINE_FINAL_ROUND: play(BANK_ROUND_CALLS, FINAL_ROUND, &announcer); break;
