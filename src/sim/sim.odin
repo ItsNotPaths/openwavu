@@ -91,9 +91,13 @@ restore :: proc(w: ^World, snapshot: []byte) {
 	copy(state(w), snapshot)
 }
 
-// The hash both players compare: equal states give equal hashes.
+// The hash the players compare, of the state now or of a snapshot: equal states give equal hashes.
 state_hash :: proc(w: ^World) -> u64 {
-	return xxhash.XXH3_64(state(w))
+	return snapshot_hash(state(w))
+}
+
+snapshot_hash :: proc(snapshot: []byte) -> u64 {
+	return xxhash.XXH3_64(snapshot)
 }
 
 // The sim view of the last tick, from ow_sim_view: bytes in the module's memory, valid until its next call.
