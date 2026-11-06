@@ -118,6 +118,9 @@ typedef struct {
     uint8_t pad[2];
 } T5MoveHits;
 
+// A voice clip of a move: selector << 12 | number (docs/data.md 8.4). A list holds up to T5_VOICECLIPS.
+enum : uint16_t { T5_VOICECLIP_END = 0xffff, T5_VOICECLIPS = 3 };
+
 // Move record (name and anim name dropped). Table refs are indexes, -1 = none.
 typedef struct {
     uint32_t anim;  // which animation the move plays
@@ -132,8 +135,7 @@ typedef struct {
     uint16_t length;                     // anim length in frames
     uint16_t window_start, window_end;   // slide/push window
     uint16_t hold_frame;  // a move with one ends and holds there instead (flight lands on it); 0 = none
-    // (hole voice-clip-cues :tags (tk5mod audio)) a move's voice clips (move +0x2c, played by 0xa1eb0 at move start) are not loaded or sent as cues, nor the random voices after them (kinds 0..4, libc rand).
-    int32_t voiceclips;  // voice clip of the move, -1 = none
+    int32_t voiceclips;  // first voice clip of the move (T5Motbin.voiceclips), -1 = none
     int32_t extra_props;                 // per-frame properties
     int32_t start_props;                 // conditional properties at move start
     int32_t end_prop;                    // conditional property when the move changes (end_properties)
@@ -286,6 +288,8 @@ typedef struct {
     int32_t start_property_count;
     T5ConditionalProperty *end_properties;    // T5Move.end_prop indexes it
     int32_t end_property_count;
+    uint16_t *voiceclips;              // T5Move.voiceclips indexes it; T5_VOICECLIP_END ends a list
+    int32_t voiceclip_count;
     T5HitCondition *hit_conditions;
     int32_t hit_condition_count;
     T5SideBand *side_bands;            // 8 records

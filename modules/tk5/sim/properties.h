@@ -28,5 +28,7 @@ bool t5_sound_once(T5Fighter *f, int16_t id);  // a fighter plays each sound id 
 void t5_sound_ids_clear(T5Fighter *f);
 // Props tick of the fighters (unless fighters_blocked); logic also clears sounds.
 void t5_props_pass(T5World *w, bool fighters_blocked, T5PropPass pass);
+// The voice clips of both fighters' moves as cues (voice_clip.c).
+void t5_voice_clips_pass(T5World *w);
 
 #endif

@@ -175,7 +175,7 @@ is_end :: proc(m: formats.Motbin, list: List, i: int) -> bool {
 	return false
 }
 
-// Lists whose end row the db leaves out; the loader adds it back (voiceclips are not loaded).
+// Lists whose end row the db leaves out; the loader adds it back.
 LOADER_ENDS :: bit_set[List]{.Requirement, .Extra_Prop, .Start_Prop, .End_Prop, .Voiceclip, .Move_Pool}
 
 // 0x4000: the character's container bank 0; else 0x8000: common bank; else embedded bank 0.

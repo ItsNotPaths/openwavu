@@ -23,6 +23,7 @@ typedef enum : uint8_t {
                    // one, the same in every character, since moves compare the opponent's identity
     KIND_ANIM,     // two columns, anim_owner and anim_idx, stored as the index in the fighter's anim list
     KIND_BITS,     // value << shift, ORed into a 32-bit word: a 0/1 column, or a name sheet's code in a part of the word
+    KIND_BYTES,    // a word the game stores big endian, as its `size` bytes in the game's order
 } Kind;
 
 typedef struct {
@@ -79,6 +80,7 @@ static const Field move_fields[] = {
     FIELD(T5Move, window_start),
     FIELD(T5Move, window_end),
     FIELD(T5Move, hold_frame),
+    FIELD(T5Move, voiceclips, .none = -1),
     FIELD(T5Move, extra_props, .none = -1),
     FIELD(T5Move, start_props, .none = -1),
     FIELD(T5Move, end_prop, .none = -1),
@@ -91,6 +93,7 @@ static const Field move_fields[] = {
     BIT(T5Move, flags, "forces_sword_trail", 19), BIT(T5Move, flags, "grounded_reaction", 21), BIT(T5Move, flags, "keeps_took_damage", 23),
     BIT(T5Move, flags, "string_move", 24), BIT(T5Move, flags, "practice_dummy_recovery", 26), BIT(T5Move, flags, "reaction_continues", 28),
     BIT(T5Move, flags, "blends_in_active", 30),
+    {"hit_category", AT(T5Move, hitbox), .kind = KIND_BYTES},
     FIELD(T5Move, first_active),
     FIELD(T5Move, last_active),
     FIELD(T5Move, push_shape),
@@ -138,6 +141,7 @@ static const Field pushback_fields[] = {
 };
 
 static const Field pushback_curve_fields[] = {VALUE(uint16_t, "value")};
+static const Field voiceclip_fields[] = {VALUE(uint16_t, "value")};
 
 static const Field property_fields[] = {FIELD(T5Property, when), FIELD(T5Property, id), PARAM(T5Property, value)};
 
@@ -247,6 +251,7 @@ static const T5Requirement REQUIREMENT_END = {.id = T5_REQUIREMENT_COUNT};
 static const T5Property PROPERTY_END;
 static const T5ConditionalProperty CONDITIONAL_PROPERTY_END;
 static const uint16_t POOL_END;
+static const uint16_t VOICECLIP_END = T5_VOICECLIP_END;
 
 #define TABLE(name, rows, type, items, count, fields, end) \
     {name, rows, sizeof(type), offsetof(T5Motbin, items), offsetof(T5Motbin, count), fields, sizeof fields / sizeof fields[0], end}
@@ -264,6 +269,7 @@ static const Table tables[] = {  // moves first: the first thing taken from the 
           &CONDITIONAL_PROPERTY_END),
     TABLE("end_prop", ROWS_LISTS, T5ConditionalProperty, end_properties, end_property_count, conditional_property_fields,
           &CONDITIONAL_PROPERTY_END),
+    TABLE("voiceclip", ROWS_LISTS, uint16_t, voiceclips, voiceclip_count, voiceclip_fields, &VOICECLIP_END),
     TABLE("hit_condition", ROWS_LISTS, T5HitCondition, hit_conditions, hit_condition_count, hit_condition_fields, NULL),
     TABLE("side_band", ROWS_SLOTS, T5SideBand, side_bands, side_band_count, side_band_fields, NULL),
     TABLE("reaction", ROWS_KEYED, T5Reaction, reactions, reaction_count, reaction_fields, NULL),
@@ -765,6 +771,8 @@ static const char *copy_row(sqlite3_stmt *row, const Table *table, const Keys *t
                 memcpy(&word, at, sizeof word);
                 word |= (uint32_t)value << field->shift;
                 memcpy(at, &word, sizeof word);
+            } else if (field->kind == KIND_BYTES) {
+                for (size_t byte = 0; byte < field->size; byte++) at[byte] = (uint8_t)(value >> 8 * (field->size - 1 - byte));
             } else memcpy(at, &value, field->size);  // little endian: the low bytes
         }
     }

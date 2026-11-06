@@ -40,6 +40,7 @@ typedef struct {
     // after the passes: round rules (the entries above keep their positions)
     T5RoundInit round_init;  // round init, called as a phase begins (t5_round_begin)
     T5Pass reset_models;   // of both fighters, then the model, blend and push start of a round init
+    T5Pass voice_clips;    // runs after decide: the voice clip cues
 } T5Hooks;
 
 extern const T5Hooks t5_default_hooks;

@@ -81,7 +81,7 @@ CREATE TABLE move (
 	window_start   INTEGER NOT NULL,
 	window_end     INTEGER NOT NULL,
 	hold_frame     INTEGER NOT NULL,
-	voiceclips     TEXT REFERENCES voiceclip_list(key),  -- (not loaded)
+	voiceclips     TEXT REFERENCES voiceclip_list(key),
 	extra_props    TEXT REFERENCES extra_prop_list(key),
 	start_props    TEXT REFERENCES start_prop_list(key),
 	end_prop       TEXT REFERENCES end_prop_list(key),
@@ -111,7 +111,7 @@ CREATE TABLE move (
 	practice_dummy_recovery INTEGER NOT NULL DEFAULT 0 CHECK (practice_dummy_recovery IN (0, 1)),
 	reaction_continues INTEGER NOT NULL DEFAULT 0 CHECK (reaction_continues IN (0, 1)),
 	blends_in_active INTEGER NOT NULL DEFAULT 0 CHECK (blends_in_active IN (0, 1)),
-	hit_category   INTEGER NOT NULL,  -- +0x40, the game's 4 hitbox bytes (not loaded: hit_pair_* and hits_* hold what they mean)
+	hit_category   INTEGER NOT NULL,  -- +0x40, the game's 4 hitbox bytes (hit_pair_* and hits_* hold what they mean)
 	first_active   INTEGER NOT NULL,
 	last_active    INTEGER NOT NULL,
 	push_shape     INTEGER NOT NULL,
@@ -406,10 +406,11 @@ CREATE TABLE end_prop (
 	PRIMARY KEY (list, pos)
 );
 
-CREATE TABLE voiceclip_list (  -- (not loaded)
+CREATE TABLE voiceclip_list (
 	key       TEXT PRIMARY KEY,
 	character TEXT NOT NULL REFERENCES motbin(character)
 );
+CREATE INDEX voiceclip_list_character ON voiceclip_list(character);
 
 CREATE TABLE voiceclip (
 	list      TEXT NOT NULL REFERENCES voiceclip_list(key),

@@ -1,5 +1,6 @@
 // The battle frame, normal fight branch. Pause, the flashback scene branch, the practice record/playback
-// and the not-sim calls (camera, effects, models, HUD, voice) are left out. Passes without a port are empty until ported.
+// and the not-sim calls (camera, effects, models, HUD) are left out; voice clips leave as cues. Passes without a port
+// are empty until ported.
 #include "sim/frame.h"
 
 #include "sim/collision.h"
@@ -45,6 +46,7 @@ void t5_battle_frame(T5World *w) {
     hooks->damage(w);
     if (t5_phase_reads_pads(w)) hooks->input(w);  // input pass runs only in phases that read pads
     hooks->decide(w);
+    hooks->voice_clips(w);
     w->force = 0;  // the forced full update lasts one frame
 }
 
@@ -89,6 +91,7 @@ const T5Hooks t5_default_hooks = {
     .decide = t5_decide_pass,
     .round_init = t5_round_init,
     .reset_models = t5_round_reset_models,
+    .voice_clips = t5_voice_clips_pass,
 };
 
 T5Hooks t5_hooks = t5_default_hooks;

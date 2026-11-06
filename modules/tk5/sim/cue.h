@@ -34,6 +34,10 @@ typedef enum : uint16_t {
     T5_LINE_DRAW,
 } T5Line;
 
+// The id of a voice cue from a move's voice clips (voice_clip.c); a property's voice cue has the property id. Its value: the
+// clip, with selectors 1 and 7 turned into 6 and the common record of the hit sound.
+enum : uint16_t { T5_VOICE_CLIP = 0 };
+
 // The id of a music cue.
 typedef enum : uint16_t { T5_MUSIC_START, T5_MUSIC_FADE } T5MusicCue;
 
@@ -47,6 +51,7 @@ typedef enum : uint8_t {
     T5_FROM_GROUP_CANCEL,  // the instant properties of a group cancel
     T5_FROM_HIT,           // a hit record; entry: the record
     T5_FROM_ROUND,         // the round flow; entry: the phase
+    T5_FROM_VOICE_CLIP,    // a move's voice clips; entry: the clip in T5Motbin.voiceclips
 } T5PropSource;
 
 // Names one firing: the same state gives the same key, so a resimulated frame repeats it. entry: the place of the property

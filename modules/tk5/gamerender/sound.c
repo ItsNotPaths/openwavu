@@ -196,6 +196,10 @@ static void play_voice(int side, int record) {
     if (record >= 0) play(BANK_VOICES_1 + side, record, &voices[side]);
 }
 
+static void play_special(int side, int number) {
+    if (number < SPECIALS_MAX) play_voice(side, speakers[side].specials[number]);
+}
+
 // 0x815a / 0x815b: by selector, a common record, a move voice, a special sound or (9) the common record 20.
 static void fighter_voice(int side, uint16_t value) {
     int selector = value >> 12, number = value & 0xfff;
@@ -207,8 +211,26 @@ static void fighter_voice(int side, uint16_t value) {
         if (number <= 998 && count > 0) play_voice(side, speaker->kind_records[kind][number % count]);
         break;
     }
-    case 8: if (number < SPECIALS_MAX) play_voice(side, speaker->specials[number]); break;
+    case 8: play_special(side, number); break;
     case 9: if (number != 1) play(BANK_COMMON, SELECTOR_9_RECORD, &effects); break;
+    default: break;
+    }
+}
+
+// (hole voice-face :tags (tk5mod audio) :sev polish) a voice of a clip or a property does not move the face: 0xa0d5c starts the face of the voice row (face clip 0x2fb4c or face value 0x2fafc); selector 3 takes it from kind 6.
+// A move's voice clip (sim/voice_clip.c): 2 and 3 entry n of the move voices, 6 a common record, 8 and 11 a special sound.
+static void clip_voice(int side, uint16_t value) {
+    int selector = value >> 12, number = value & 0xfff;
+    const int *counts = speakers[side].kind_counts;
+    switch (selector) {
+    case 2: case 3: {
+        int counted = MOVE_VOICE_KIND_FIRST + selector - 2;  // 3 counts kind 6 but plays kind 5, as the game does
+        if (number < counts[counted] && number < counts[MOVE_VOICE_KIND_FIRST])
+            play_voice(side, speakers[side].kind_records[MOVE_VOICE_KIND_FIRST][number]);
+        break;
+    }
+    case 6: play(BANK_COMMON, number, &effects); break;
+    case 8: case 11: play_special(side, number); break;
     default: break;
     }
 }
@@ -223,6 +245,7 @@ static void stream_voice(uint16_t value) {
 static void sound_cue(const T5Cue *cue) {
     int side = side_of(cue->owner);
     switch (cue->id) {
+    case T5_VOICE_CLIP: if (side >= 0) clip_voice(side, cue->value); break;
     case VOICE_COMMON: if (cue->value >> 12 != 0) play(BANK_COMMON, cue->value & 0xfff, &effects); break;
     case VOICE_SELF: case VOICE_TARGET: if (side >= 0) fighter_voice(side, cue->value); break;
     case STREAM_VOICE: stream_voice(cue->value); break;

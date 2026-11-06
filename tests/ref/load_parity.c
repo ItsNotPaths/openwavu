@@ -77,7 +77,6 @@ static void drop_unread(T5Motbin *motbin) {
         T5Move *move = &motbin->moves[index];
         move->voiceclips = 0, move->padding = 0;
         move->vuln &= ~DEAD_STATE_BITS, move->hit_level &= ~DEAD_HIT_LEVEL_BITS, move->flags &= ~DEAD_FLAG_BITS;
-        memset(move->hitbox, 0, sizeof move->hitbox);
     }
     for (int32_t index = 0; index < motbin->hit_condition_count; index++) motbin->hit_conditions[index].padding = 0;
     for (int32_t index = 0; index < motbin->pushback_count; index++) motbin->pushbacks[index].padding = 0;
