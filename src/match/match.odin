@@ -88,6 +88,7 @@ tick :: proc(m: ^Match, pads: [2]sim.Input) -> (err: string) {
 	return sim.step(m.world, pads)
 }
 
+// (hole match-online :tags (net game) :needs (net-enet net-start-time)) match.frame steps offline only: no net.Session ticks it, and the sim's events count on every frame, not only on confirmed ones.
 @(private = "file")
 match_end :: proc(w: ^sim.World) -> (winner: i32, ended: bool) {
 	events := w.inputs.events[:]
