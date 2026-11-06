@@ -2,10 +2,12 @@
 package render
 
 import "core:c"
+import "core:mem/virtual"
 import "core:strings"
 import stbi "vendor:stb/image"
 import sdl "vendor:sdl3"
 import "../dds"
+import "../fx"
 import "../titlepack"
 
 Assets :: struct {
@@ -13,6 +15,8 @@ Assets :: struct {
 	paths:    [dynamic]string,              // an asset id is index + 1
 	ids:      map[string]u32,
 	models:   map[u32]^Model,               // nil: does not load
+	effects:  map[u32]^fx.Effect,              // nil: does not load; they live in effect_arena
+	effect_arena: virtual.Arena,
 	textures: map[string]^sdl.GPUTexture,   // by pack path, shared by the models; nil: does not load
 }
 
@@ -23,6 +27,7 @@ assets_create :: proc(files: titlepack.Pack_Files) -> Assets {
 		paths = make([dynamic]string),
 		ids = make(map[string]u32),
 		models = make(map[u32]^Model),
+		effects = make(map[u32]^fx.Effect),
 		textures = make(map[string]^sdl.GPUTexture),
 	}
 }
@@ -38,6 +43,8 @@ assets_destroy :: proc(assets: ^Assets, gpu: ^Gpu) {
 	delete(assets.paths)
 	delete(assets.ids)
 	delete(assets.models)
+	delete(assets.effects)
+	virtual.arena_destroy(&assets.effect_arena)
 	delete(assets.textures)
 }
 
@@ -60,6 +67,30 @@ asset_model :: proc(assets: ^Assets, gpu: ^Gpu, id: u32) -> ^Model {
 	if data, found := titlepack.read_file(assets.files, path); found do model, _ = model_load(gpu, assets, path, data)
 	assets.models[id] = model
 	return model
+}
+
+// The effect def (.fx) of an asset id and its frames' textures, loaded on first use; nil when the id is unknown or the
+// file is no effect of a version this host reads.
+asset_effect :: proc(assets: ^Assets, gpu: ^Gpu, id: u32) -> ^fx.Effect {
+	if effect, tried := assets.effects[id]; tried do return effect
+	if id == 0 || int(id) > len(assets.paths) do return nil
+	effect: ^fx.Effect
+	if data, found := titlepack.read_file(assets.files, assets.paths[id - 1]); found do effect = effect_read(&assets.effect_arena, data)
+	assets.effects[id] = effect
+	if effect == nil do return nil
+	if upload, ok := upload_begin(gpu); ok {
+		for element in effect.elements do for frame in element.frames do asset_texture(gpu, upload, assets, frame)
+		upload_end(upload)
+	}
+	return effect
+}
+
+@(private = "file")
+effect_read :: proc(arena: ^virtual.Arena, data: []byte) -> ^fx.Effect {
+	allocator := virtual.arena_allocator(arena)
+	effect, ok := fx.read(data, allocator)
+	if !ok do return nil
+	return new_clone(effect, allocator)
 }
 
 // A DDS, PNG or JPEG file as a texture, loaded once per path; nil when it does not load.

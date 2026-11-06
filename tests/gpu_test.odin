@@ -42,7 +42,7 @@ test_gpu_destroy :: proc(g: ^render.Gpu) {
 // The draws drawn at size by size; pixels row by row from the top, in the temp allocator.
 test_draw :: proc(t: ^testing.T, g: ^render.Gpu, scene: ^render.Scene, draws: []render.Draw, size: u32) -> (pixels: [][4]u8, ok: bool) {
 	command := sdl.AcquireGPUCommandBuffer(g.device)
-	if !testing.expect(t, render.draw_3d(g, command, {size, size}, scene, draws)) {
+	if !testing.expect(t, render.draw_3d(g, command, {size, size}, scene, draws, {})) {
 		_ = sdl.CancelGPUCommandBuffer(command)
 		return
 	}
