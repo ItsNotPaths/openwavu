@@ -22,7 +22,7 @@ typedef struct {
 #define T5_SET_DEFAULT_PUSHBACK 2
 
 // Reaction list of a hit condition (the .t5m RLST table; the fields that
-// are read here). The file holds set 0: t5_reaction_list gives the pushbacks the slot they are asked for.
+// are read here). The file holds set 0: the fighter that takes a reaction gives its pushbacks the attacker's set.
 typedef struct T5Reaction {
     T5Ref pushback[7];  // by T5ReactionSlot
     uint16_t angle[6];  // by T5ReactionSlot (the counter angle has no reader)

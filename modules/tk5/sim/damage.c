@@ -143,7 +143,9 @@ static void take_reaction_list(T5World *w, T5Fighter *defender, T5Fighter *attac
         t5_hit_condition(w, attacker, defender, t5_set(w, attacker->move.set), t5_move_at(w, attacker->move));
     if (w->reactions.list == NULL) return;  // no reaction table: keep the old reaction
     const T5Reaction *reaction = w->reactions.list(w->reactions.context, attacker->move.set, condition->reaction);
-    if (reaction != NULL) defender->reaction = *reaction;  // defender plays the reaction of that hit condition
+    if (reaction == NULL) return;
+    defender->reaction = *reaction;  // defender plays the reaction of that hit condition
+    for (int slot = 0; slot < 7; slot++) defender->reaction.pushback[slot].set = (uint8_t)attacker->move.set;  // its pushbacks are in that set
 }
 
 // --- damage
