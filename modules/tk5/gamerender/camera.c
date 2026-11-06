@@ -11,7 +11,7 @@
 // (hole sdk-camera :tags (sdk tk5mod round-show) :sev gap) the fight camera is the demo's follow camera, eased, in pack code: no SDK camera that frames both fighters by params (distance, zoom, lag), and the game's rules (0x772cc) are not ported.
 // (hole move-cameras :tags (tk5mod round-show) :needs (sim-side-switch coded-cameras)) throw cameras are not played (tracks placed at the thrown fighter); the db has no camera category per move (property 0x815f) to pick them from the view, as intro shots are.
 // (hole coded-cameras :tags (port round-show)) the hand-coded throw and hit cameras (ids below 0x67, 0x7b22c) are not ported.
-// (hole sdk-timeline :tags (sdk tk5mod round-show) :needs (sdk-camera intro-timelines cue-ring)) the shot player is pack code, not an SDK library, and plays only cameras: no effects, sounds or voices on the intro and win timelines.
+// (hole sdk-timeline :tags (sdk tk5mod round-show) :needs (sdk-camera intro-timelines)) the shot player is pack code, not an SDK library, and plays only cameras: no effects, sounds or voices on the intro and win timelines.
 
 static const float DISTANCE = 3.6f;      // metres from the midpoint, along the view normal
 static const float FOCUS_HEIGHT = 0.9f;  // metres

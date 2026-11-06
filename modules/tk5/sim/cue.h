@@ -1,5 +1,6 @@
-// Presentation out of the sim (openwavu ws.md, two tiers): one-shot cues of move properties and the pose properties of a
-// move. The presenter plays both; neither feeds back into the sim.
+// Presentation out of the sim (openwavu ws.md, two tiers): one-shot cues of move properties and hits, and the pose
+// properties of a move. The presenter plays both; neither feeds back into the sim. Cues stay in a ring in the sim state,
+// so a rollback fixes them; the view sends the last T5_CUE_FRAMES frames' cues.
 #ifndef T5_CUE_H
 #define T5_CUE_H
 
@@ -7,9 +8,17 @@
 
 #include "sim/motbin.h"
 #include "sim/phase.h"
+#include "sim/vec.h"
 
 // T5_CUE_NONE: no cue, the sim handles the property.
-typedef enum : uint8_t { T5_CUE_NONE, T5_CUE_FX, T5_CUE_SOUND, T5_CUE_VOICE, T5_CUE_CAMERA } T5CueKind;
+typedef enum : uint8_t { T5_CUE_NONE, T5_CUE_FX, T5_CUE_SOUND, T5_CUE_VOICE, T5_CUE_CAMERA, T5_CUE_HIT } T5CueKind;
+
+// The id of a hit cue: the sparks the game draws for it. Its value is the damage.
+typedef enum : uint16_t {
+    T5_SPARK_CLEAN,  // a clean hit, or a KO
+    T5_SPARK_GUARD,
+    T5_SPARK_TOUCH,  // a hit that makes no reaction
+} T5Spark;
 
 // The list of a move a property fires from.
 typedef enum : uint8_t {
@@ -19,6 +28,7 @@ typedef enum : uint8_t {
     T5_FROM_END,           // the end property
     T5_FROM_CANCEL,        // the instant properties of a cancel
     T5_FROM_GROUP_CANCEL,  // the instant properties of a group cancel
+    T5_FROM_HIT,           // a hit record; entry: the record
 } T5PropSource;
 
 // Names one firing: the same state gives the same key, so a resimulated frame repeats it. entry: the place of the property
@@ -30,20 +40,34 @@ typedef struct {
     int32_t entry;
 } T5CueKey;
 
-// id and value are the property's. An effect's anchor is the low byte of the value: a joint below 108, else a special point.
+// id and value are the property's. An effect's anchor is a joint below 108, else a special point. It is the whole value, but for
+// 0x801b, 0x801d, 0x802b, 0x802c and 0x803a: there it is the high byte, and the low byte is a record id, a row or a size.
 typedef struct {
     T5CueKind kind;
     uint16_t id, value;
     T5Who owner;  // whose voice bank, body or slot it plays on: the firing fighter, its target, or T5_NOBODY (common bank, screen)
     T5CueKey key;
+    T5Vec3 position;   // mm, world: an effect's anchor, a hit's point; else zero
+    T5Vec3 direction;  // a hit's: the way the hitbox travelled; else zero
 } T5Cue;
 
-// A null cue sends nothing.
-// (hole cue-ring :tags (tk5mod sim round-show effects)) cues go to a callback; no ring of the last N frames' cues (frame, counter, cue) in the sim state for the view.
+enum { T5_CUE_FRAMES = 60 };  // the view sends the cues of this many frames: what the presenter can rebuild
+enum { T5_CUE_RING = 128 };   // cues kept
+
 typedef struct {
-    void (*cue)(void *context, T5Cue cue);  // called once per cue sent
-    void *context;
-} T5CueHooks;
+    uint32_t frame;   // the world frame it was sent on
+    uint32_t number;  // counts every cue sent: the same in a resimulated frame, so its effect looks the same
+    T5Cue cue;
+} T5CueEntry;
+
+typedef struct {
+    T5CueEntry entries[T5_CUE_RING];  // cue number n at n % T5_CUE_RING
+    uint32_t sent;
+} T5CueRing;
+
+void t5_cue_add(T5CueRing *ring, uint32_t frame, T5Cue cue);
+// Forgets the cues, for a round start that counts the frames from 0 again; the numbers go on.
+void t5_cue_clear(T5CueRing *ring);
 
 // The last pose property of a layer (a hand shape, a face); it lasts until the next one or a round reset. Zero: none.
 typedef struct {

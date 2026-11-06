@@ -43,6 +43,13 @@ int32_t t5_object_index(const T5World *w, const T5Fighter *f) {
     return -1;  // not an object
 }
 
+T5Who t5_side_of(const T5World *w, const T5Fighter *f) {
+    int32_t index = t5_object_index(w, f);
+    if (index == 0) return T5_SIDE_1;  // first fighter
+    if (index == 1) return T5_SIDE_2;  // second fighter
+    return T5_NOBODY;
+}
+
 int32_t t5_floor_disabled(const T5World *w) { return w->floor_disabled; }
 
 static float base_distance(const T5Fighter *first, const T5Fighter *second) {  // flat distance between two base positions

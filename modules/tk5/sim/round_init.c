@@ -51,6 +51,7 @@ static void reset_fighters(T5World *w, T5RoundSetup setup) {
 void t5_round_init(T5World *w, T5RoundSetup setup) {
     w->rng.x = w->round_seed;  // the match rng restarts from the round seed
     w->frame = 0;
+    t5_cue_clear(&w->cues);  // their frames would come round again
     w->scene_turn = 0;
     if (setup.counts_round) w->round.round++;  // a counted round adds one to the round number
     if (setup.new_round) start_round(w);  // new round: clock, result and input start again

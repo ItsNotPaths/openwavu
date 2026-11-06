@@ -72,7 +72,7 @@ typedef struct T5World {
     T5InputSources input_sources;
     uint16_t pushback_template[14];  // writable data: the juggle launch reads [3]
     T5ReactionHooks reactions;
-    T5CueHooks cues;            // the one-shot presentation of properties (cue.h)
+    T5CueRing cues;             // the one-shot presentation of properties and hits (cue.h)
     uint32_t skip_apply_moves;  // the next apply-moves pass only clears it
     uint32_t no_damage;         // (mode 10): health stops changing
     uint32_t guard_chips;       // nonzero = every guarded hit chips
@@ -104,6 +104,7 @@ void t5_each_extra(T5World *w, void (*visit)(T5World *w, T5Fighter *f));
 // -1 is none. Two positions can hold the same object; compare objects, not indexes.
 T5Fighter *t5_object(const T5World *w, int32_t index);
 int32_t t5_object_index(const T5World *w, const T5Fighter *f);  // first position of f, -1 if absent
+T5Who t5_side_of(const T5World *w, const T5Fighter *f);  // a fighter's side; T5_NOBODY for an extra
 
 int32_t t5_floor_disabled(const T5World *w);
 

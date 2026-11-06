@@ -11,7 +11,7 @@
 #include "sim/state.h"
 #include "sim/units.h"
 
-// The sparks and the statistics are not sim and are left out.
+// The statistics are not sim and are left out; the sparks leave as hit cues.
 
 static int16_t abs16(int16_t value) {
     if (value < 0) return (int16_t)-value;  // negative: flip the sign
@@ -254,6 +254,24 @@ static void score_ko(const T5World *w, T5Fighter *defender, T5Fighter *attacker,
     }
 }
 
+// The sparks of each live hit, as the game picks them once the KO is known.
+static void hit_cues(T5World *w, const T5Fighter *defender) {
+    for (int record_index = 0; record_index < T5_HIT_RECORDS; record_index++) {
+        const T5HitRecord *record = &defender->records[record_index];
+        uint32_t flags = record->flags;
+        if (!has(flags, T5_HIT_LIVE)) continue;
+        T5Spark spark;
+        if (has(flags, T5_HIT_GUARDED)) spark = T5_SPARK_GUARD;
+        else if ((has(flags, T5_HIT_CLEAN) || defender->ko != 0) && !has(flags, T5_HIT_NO_SPARK)) spark = T5_SPARK_CLEAN;
+        else if (has(flags, T5_HIT_NO_REACTION)) spark = T5_SPARK_TOUCH;
+        else continue;
+        const T5Fighter *attacker = t5_object(w, record->attacker);
+        T5CueKey key = {t5_side_of(w, defender), T5_FROM_HIT, attacker->move, record_index};
+        t5_cue_add(&w->cues, w->frame, (T5Cue){T5_CUE_HIT, spark, (uint16_t)abs16(record->final_damage),
+            t5_side_of(w, attacker), key, record->point, record->direction});
+    }
+}
+
 // Objects (extras) keep their health.
 void t5_damage_resolve(T5World *w, T5Fighter *defender) {
     T5Fighter *opponent = t5_object(w, defender->opponent);  // the opponent: source of throw self damage
@@ -275,6 +293,7 @@ void t5_damage_resolve(T5World *w, T5Fighter *defender) {
     if (defender->health < 0) defender->health = 0;  // health never goes below 0
     if (defender->health > defender->max_health) defender->health = defender->max_health;  // health never goes above the maximum
     score_ko(w, defender, attacker, before);  // check for a KO
+    hit_cues(w, defender);
 }
 
 static void clear_frame(T5Fighter *f) {

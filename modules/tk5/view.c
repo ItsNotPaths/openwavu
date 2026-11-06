@@ -21,8 +21,20 @@ static T5ViewHands view_hands(const T5World *w, const T5Fighter *f) {
     };
 }
 
+static void view_cues(T5View *view, const T5World *w) {
+    const T5CueRing *ring = &w->cues;
+    view->cue_count = 0;
+    uint32_t first = ring->sent > T5_CUE_RING ? ring->sent - T5_CUE_RING : 0;
+    for (uint32_t number = first; number < ring->sent; number++) {
+        const T5CueEntry *entry = &ring->entries[number % T5_CUE_RING];
+        if (entry->number != number || entry->frame > w->frame || w->frame - entry->frame >= T5_CUE_FRAMES) continue;
+        view->cues[view->cue_count++] = *entry;
+    }
+}
+
 void t5_view_poses(T5View *view, const T5World *w) {
     view->frame = w->frame;
+    view_cues(view, w);
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
         const T5Fighter *f = w->fighters[side];
         T5ViewFighter *out = &view->fighters[side];

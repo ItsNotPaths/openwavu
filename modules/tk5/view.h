@@ -8,7 +8,7 @@
 #include "sim/skel.h"
 #include "sim/world.h"
 
-enum { T5_VIEW_VERSION = 3 };
+enum { T5_VIEW_VERSION = 4 };
 
 typedef struct {  // the fighter fields the presenter's hand poses read
     T5PoseProp right_pose, left_pose;  // the hand channel properties
@@ -50,9 +50,11 @@ typedef struct {
     float view_normal[2];  // xz direction from the fighters to the camera; screen sides follow it
     bool snap;             // a scene cut: the fighters jump, so the display must not blend into this frame
     int8_t focus;          // the side an intro or win pose is about, -1: none
+    uint32_t cue_count;
+    T5CueEntry cues[T5_CUE_RING];  // the cues of the last T5_CUE_FRAMES frames, oldest first
 } T5View;
 
-// The frame and each fighter's rig, A parents, hand block, move and facing, from the world.
+// The frame, each fighter's rig, A parents, hand block, move and facing, and the recent cues, from the world.
 void t5_view_poses(T5View *view, const T5World *w);
 
 #endif

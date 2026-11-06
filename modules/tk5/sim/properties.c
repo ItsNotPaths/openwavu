@@ -9,6 +9,7 @@
 #include "sim/facing.h"
 #include "sim/fighter.h"
 #include "sim/hand_poses.h"
+#include "sim/hit.h"
 #include "sim/math.h"
 #include "sim/projectile.h"
 #include "sim/requirements.h"
@@ -582,25 +583,38 @@ static CueRow cue_row(uint16_t id, T5PropPass pass) {
     return (CueRow){.kind = T5_CUE_NONE};
 }
 
-static void send_cue(const T5World *w, T5Cue cue) {
-    if (w->cues.cue != nullptr) w->cues.cue(w->cues.context, cue);  // no cue hook, nothing sent
-}
+static void send_cue(T5World *w, T5Cue cue) { t5_cue_add(&w->cues, w->frame, cue); }
 
-static T5Who side_of(const T5World *w, const T5Fighter *f) {
-    int32_t index = t5_object_index(w, f);
-    if (index == 0) return T5_SIDE_1;  // first fighter
-    if (index == 1) return T5_SIDE_2;  // second fighter
-    return T5_NOBODY;
+// Effect anchors 0x6e..0x73 name these special points.
+static const int8_t ANCHOR_SPECIAL[] = {SPECIAL_L_FOOT_LOW, SPECIAL_L_FOOT_HIGH, SPECIAL_R_FOOT_HIGH, SPECIAL_HEAD_AHEAD,
+    SPECIAL_CHEST_AHEAD, SPECIAL_CHEST_BEHIND};
+enum { ANCHOR_SPECIAL_FIRST = 0x6e };
+
+// Where an effect property plays: a bone of skeleton B or a special point of the fighter, or of its target for the two
+// ids that name the target. The ids with a record in the low byte keep the anchor in the high byte.
+// (hole effect-anchor-slots :tags (tk5mod effects) :sev polish) anchors 0x6c, 0x6d and 0x74..0x79 name the game's special slots 6..9, which properties 0x80ad..0x80b0 set; the sim has no such slots, so they play at the fighter's base position.
+static T5Vec3 effect_anchor(const T5World *w, const T5Fighter *f, uint16_t id, uint16_t value) {
+    uint16_t offset = (uint16_t)(id - T5_PROPERTY_BASE);
+    bool on_target = offset == 0x1d || offset == 0x2c;
+    bool high_byte = on_target || offset == 0x1b || offset == 0x2b || offset == 0x3a;
+    uint16_t anchor = high_byte ? (uint16_t)(value >> 8) : value;
+    const T5Fighter *on = on_target ? t5_object(w, f->target) : f;
+    if (on == nullptr) on = f;
+    if (anchor < T5_BONES_B) return vec3_of(*(const T5Vec4 *)on->rig.bones_b[anchor].world.m[3]);
+    int32_t special = anchor - ANCHOR_SPECIAL_FIRST;
+    if (special >= 0 && special < (int32_t)(sizeof ANCHOR_SPECIAL / sizeof *ANCHOR_SPECIAL))
+        return vec3_of(on->special.point[ANCHOR_SPECIAL[special]]);
+    return on->position;
 }
 
 static T5Who owner_of(const T5World *w, const T5Fighter *f, enum CueOwner owner) {
-    if (owner == ON_TARGET) return side_of(w, t5_object(w, f->target));  // the cue belongs to the target's side
+    if (owner == ON_TARGET) return t5_side_of(w, t5_object(w, f->target));  // the cue belongs to the target's side
     if (owner == ON_NOBODY) return T5_NOBODY;  // the cue belongs to nobody
-    return side_of(w, f);  // default: the fighter's own side
+    return t5_side_of(w, f);  // default: the fighter's own side
 }
 
 static T5CueKey firing(const T5World *w, const T5Fighter *f, T5PropSource source, int32_t entry) {
-    return (T5CueKey){side_of(w, f), source, f->move, entry};  // names which list entry fired, for the presenter
+    return (T5CueKey){t5_side_of(w, f), source, f->move, entry};  // names which list entry fired, for the presenter
 }
 
 void t5_property(T5World *w, uint16_t id, uint16_t value, T5Fighter *f, T5PropPass pass, T5CueKey key) {
@@ -608,8 +622,9 @@ void t5_property(T5World *w, uint16_t id, uint16_t value, T5Fighter *f, T5PropPa
     CueRow cue = cue_row(id, pass);
     if (cue.kind == T5_CUE_VOICE && !t5_sound_once(f, (int16_t)value)) return;  // a voice that already played is skipped
     if (cue.kind != T5_CUE_NONE) {
+        T5Vec3 position = cue.kind == T5_CUE_FX ? effect_anchor(w, f, id, value) : (T5Vec3){};
         send_cue(w, (T5Cue){cue.kind, id, value,  // presentation only: tell the presenter, change nothing in the sim
-            owner_of(w, f, cue.owner), key});
+            owner_of(w, f, cue.owner), key, position, {}});
         return;
     }
     if (pass != T5_PASS_LOGIC ||  // the effects pass stops here; a pose property is done by pose_prop
