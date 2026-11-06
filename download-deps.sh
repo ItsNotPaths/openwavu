@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dependencies into vendor/: zig (the C compiler for pack modules, pinned so ow build is reproducible), wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding, cgltf, tomlc17, jsmn,
+# Dependencies into vendor/: zig (the C compiler for pack modules, pinned so ow build is reproducible), wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding, cgltf, tomlc17, jsmn, dr_flac,
 # SDL3 and SDL3_ttf built static (FreeType) with their headers for pack modules, ffmpeg's audio codecs for the importer, and the UI font. Delete a vendor/ folder to refetch it.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -15,6 +15,8 @@ SDL_TTF_SHA256=63547d58d0185c833213885b635a2c0548201cc8f301e6587c0be1a67e1e045d
 FREETYPE=2-13-3
 FREETYPE_SHA256=bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103
 JSMN=v1.1.0
+DR_FLAC=806ee9ada8ca9827b22f76827f739c290f37ba48 # 0.13.4
+DR_FLAC_SHA256=b8078eeb5d523502eb7964508cd7ec8450bc79d383bec90aa17fd9e2fefd9c24
 JSMN_SHA256=1ed6154dedf009212a08a397e9c4ed50a0ce31d5a8301bb294e137ae3188c13b
 TOMLC17=R261003
 TOMLC17_SHA256=48876f14bd7a123f95f16074dd0d5681f75c397c1bce61f1a52f42201f90eacc
@@ -142,6 +144,12 @@ if [ ! -f vendor/jsmn/jsmn.h ]; then
 	fetch "https://raw.githubusercontent.com/zserge/jsmn/$JSMN/jsmn.h" vendor/jsmn/jsmn.h "$JSMN_SHA256"
 	curl -fsSL --retry 3 "https://raw.githubusercontent.com/zserge/jsmn/$JSMN/LICENSE" -o vendor/jsmn/LICENSE
 	echo "vendor/jsmn: $JSMN"
+fi
+
+if [ ! -f vendor/dr_flac/dr_flac.h ]; then
+	mkdir -p vendor/dr_flac
+	fetch "https://raw.githubusercontent.com/mackron/dr_libs/$DR_FLAC/dr_flac.h" vendor/dr_flac/dr_flac.h "$DR_FLAC_SHA256"
+	echo "vendor/dr_flac: $DR_FLAC"
 fi
 
 if [ ! -f vendor/tomlc17/tomlc17.c ]; then

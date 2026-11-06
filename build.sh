@@ -60,6 +60,12 @@ if [ ! -f build/sdk/libow_db.a ] || [ vendor/sqlite/sqlite3.c -nt build/sdk/libo
 	rm -f build/sdk/libow_db.a
 	vendor/zig/zig ar rcs build/sdk/libow_db.a build/sdk/sqlite3.o build/sdk/ow_db.o
 fi
+# The SDK's sound helper, with dr_flac; its SDL calls become the pack's imports.
+if [ ! -f build/sdk/libow_sound.a ] || [ -n "$(find sdk/src/ow_sound.c sdk/include/ow_sound.h vendor/dr_flac -newer build/sdk/libow_sound.a -print -quit)" ]; then
+	vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -Isdk/include -Ivendor/sdl3/include -c sdk/src/ow_sound.c -o build/sdk/ow_sound.o
+	rm -f build/sdk/libow_sound.a
+	vendor/zig/zig ar rcs build/sdk/libow_sound.a build/sdk/ow_sound.o
+fi
 # The stock TK5 modules, WASI reactors. The sim imports only from openwavu; presentation modules also call SDL, whose
 # functions become imports (env) through --import-symbols. The TK5 core needs exact floats and wrapping ints.
 # (hole module-build :tags (wasm tk5mod) :needs ow-cli) build.sh builds the stock modules with zig itself; ow build should make them with the same pinned flags, reproducibly.
@@ -70,17 +76,15 @@ tk5_module() {
 	out="build/modules/$1"
 	link="$2"
 	shift 2
-	if [ ! -f "$out" ] || [ -n "$(find modules/tk5 sdk build/sdk/libow_db.a -newer "$out" -print -quit)" ]; then
+	if [ ! -f "$out" ] || [ -n "$(find modules/tk5 sdk build/sdk -newer "$out" -print -quit)" ]; then
 		vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -fwrapv -ffp-contract=off -fno-fast-math -mexec-model=reactor \
 			-Imodules/tk5 -Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $link \
-			-o "$out" "$@" build/sdk/libow_db.a
+			-o "$out" "$@" build/sdk/libow_db.a build/sdk/libow_sound.a
 	fi
 }
 tk5_module gameplay.wasm "" "${tk5_core[@]}" modules/tk5/{view,pack_file}.c modules/tk5/gameplay/*.c
 tk5_module app.wasm -Wl,--import-symbols modules/tk5/app/*.c
-# The stub parts of gamerender/ are not in it yet.
-tk5_module gamerender.wasm -Wl,--import-symbols "${tk5_core[@]}" modules/tk5/pack_file.c \
-	modules/tk5/gamerender/{presenter,scene,camera,hud,visual,hands,hand_bank,effects}.c
+tk5_module gamerender.wasm -Wl,--import-symbols "${tk5_core[@]}" modules/tk5/pack_file.c modules/tk5/gamerender/*.c
 # The host's 3D shaders, SPIR-V; src/render embeds them.
 mkdir -p build/shaders
 for shader in src/render/shaders/*.vert src/render/shaders/*.frag; do
