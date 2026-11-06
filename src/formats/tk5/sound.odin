@@ -22,11 +22,13 @@ Sound_Codec :: enum u32 {
 	ATRAC3_PLUS = 3,
 }
 
-// loop_start, loop_length: PS ADPCM bytes, ATRAC3plus samples.
+// loop_start, loop_length: PS ADPCM bytes, ATRAC3plus samples. Records may share data (the same sample at another
+// pitch, pan or volume): data_offset tells them apart.
 Sound_Record :: struct {
 	index:                   int,
 	codec:                   Sound_Codec,
 	data:                    []byte,
+	data_offset:             int,
 	looped:                  bool,
 	loop_start, loop_length: int,
 	volume:                  f32,  // dB
@@ -49,6 +51,7 @@ read_sound_pack :: proc(pack: []byte, allocator := context.allocator) -> (record
 			index       = int(be_u32(pack, at + 0x08)),
 			codec       = Sound_Codec(be_u32(pack, at + 0x0c)),
 			data        = pack[start:][:size],
+			data_offset = start,
 			loop_start  = int(be_u32(pack, at + 0x20)),
 			loop_length = int(be_u32(pack, at + 0x24)),
 			looped      = be_u32(pack, at + 0x28) == 1,

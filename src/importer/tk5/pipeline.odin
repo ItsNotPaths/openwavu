@@ -386,7 +386,8 @@ import_sounds :: proc(im: ^Import) {
 	}
 }
 
-// Every record of a sound pack as sounds/<bank>/<idx>.flac. A pack already written under another bank shares its files.
+// Every sample of a sound pack as sounds/<bank>/<idx>.flac, named by its first record; records on one sample share it.
+// A pack already written under another bank shares its files.
 write_sound_bank :: proc(im: ^Import, bank: string, entry: int) {
 	pack, has := read_entry(im.archive, entry)
 	if !has do return
@@ -400,10 +401,15 @@ write_sound_bank :: proc(im: ^Import, bank: string, entry: int) {
 		first = strings.clone(bank)
 		im.sound_packs[digest] = first
 	}
+	files := make(map[int]string, context.temp_allocator)  // data offset -> file
 	for record in records {
-		file := fmt.tprintf("sounds/%s/%d.flac", first, record.index)
-		written := shared ? os.exists(join(im.root, file)) : write_sound(im, file, record)
-		if !written do continue
+		file, sampled := files[record.data_offset]
+		if !sampled {
+			file = fmt.tprintf("sounds/%s/%d.flac", first, record.index)
+			written := shared ? os.exists(join(im.root, file)) : write_sound(im, file, record)
+			if !written do continue
+			files[record.data_offset] = file
+		}
 		loop_start, loop_length := sound_loop(record)
 		db.insert(&im.w, "sound", bank, i64(record.index), file, f64(record.volume), i64(record.pitch), f64(record.pan), loop_start, loop_length)
 	}

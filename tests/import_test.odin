@@ -36,6 +36,7 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM sound WHERE bank = 'common'"), 79)  // hits, announcer, system
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM sound WHERE bank = 'round_calls'"), 21)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM sound WHERE bank = 'names'"), 37)
+	testing.expect_value(t, count(handle, "SELECT count(DISTINCT file) FROM sound WHERE bank = 'menu'"), 16)  // 22 records on 16 samples
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM costume_part WHERE part NOT GLOB '*_lod' AND part || '/voices' NOT IN (SELECT bank FROM sound)"), 0)  // every costume speaks
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM music"), 44)  // track 18's entry is empty
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage WHERE music IS NULL"), 1)  // ground_zero fades out
