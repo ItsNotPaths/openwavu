@@ -66,7 +66,7 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 		testing.expect(t, png_err == nil && image.width > 0 && image.height > 0, file)
 	}
 	testing.expect_value(t, db.step(images), db.DONE)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM texture"), 9616)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM texture"), 10938)
 	textures: ^db.Stmt
 	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT file FROM texture", -1, &textures, nil), db.OK) do return
 	defer db.finalize(textures)

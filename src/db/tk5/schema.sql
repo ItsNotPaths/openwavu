@@ -675,3 +675,22 @@ CREATE TABLE move_camera (
 	frame  INTEGER NOT NULL,  -- the move frame (1-based) of the track's first key
 	FOREIGN KEY (tracks, track) REFERENCES anim(character, idx)
 );
+
+-- A fighter's own effects: record n of the character's EFP as an effect def (tk5decomp docs/effects.md section 4).
+-- Characters that share a model container share the files.
+CREATE TABLE character_effect (
+	character TEXT NOT NULL REFERENCES character(id),
+	record    INTEGER NOT NULL,
+	file      TEXT NOT NULL,  -- effects/<owner>/<record>.fx
+	PRIMARY KEY (character, record)
+);
+
+-- The character hit table: a heavy clean hit plays row 0, properties 0x8019..0x801d play a row of their own.
+CREATE TABLE character_effect_row (
+	character TEXT NOT NULL REFERENCES character(id),
+	row       INTEGER NOT NULL,  -- 0..15
+	records   INTEGER NOT NULL,  -- bit n: record n plays
+	sound_row INTEGER NOT NULL,  -- -1: none
+	light     INTEGER NOT NULL,  -- 1: record 0's colour also lights the hit point for a moment
+	PRIMARY KEY (character, row)
+);

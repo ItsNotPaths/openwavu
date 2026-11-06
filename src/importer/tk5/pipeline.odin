@@ -66,7 +66,7 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 		for key in im.textures do delete(key)
 		delete(im.textures)
 	}
-	for dir in ([]string{"anims", "parts", "stages", "textures", "ui"}) {
+	for dir in ([]string{"anims", "effects", "parts", "stages", "textures", "ui"}) {
 		if !make_dir(join(im.root, dir)) do return fmt.tprintf("cannot create %s", join(im.root, dir))
 	}
 	im.w, err = db.create(join(im.root, "tk5.db"), TK5_SCHEMA)
@@ -89,6 +89,7 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 		import_stage(&im, id)
 		step(&im)
 	}
+	import_shared_effects(&im)
 	import_sounds(&im)
 	import_images(&im)
 	step(&im)
@@ -151,6 +152,7 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 		if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
 		if len(sections) > formats.BANK_CAMERAS do write_camera_bank(im, fmt.tprintf("%s/cameras", owner), sections[formats.BANK_CAMERAS], .Scaled)
 	}
+	import_character_effects(im, c, owner)
 	return ""
 }
 

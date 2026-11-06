@@ -10,7 +10,7 @@ import "core:slice"
 import "../../gltf"
 import formats "../../formats/tk5"
 
-// (hole efp-import :tags (importer effects) :needs fx-spec) TK5 effect data (EFP, character slot +2, stage effects) is not converted to effect defs.
+// (hole stage-effects :tags (importer effects)) stage EFP records (section 8, spawned by stage objects 900 + k) are not converted: they are 3D debris objects (0xaf404), not sprites.
 
 Surface :: struct {
 	layers:      bit_set[0 ..< 7; u32],  // 0: the floor under the fighters, 1..6: the lists the special queries name
