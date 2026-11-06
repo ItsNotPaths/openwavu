@@ -4,7 +4,6 @@
 package imports
 
 // (hole sdl-gpu-imports :tags (wasm render sdk)) no SDL_GPU functions: their create infos hold pointers, so each needs a deep copy.
-// (hole sdl-audio-imports :tags (wasm sdk audio effects)) no SDL audio stream functions, so packs can not play sound.
 
 import "base:runtime"
 import "core:bytes"
@@ -21,6 +20,7 @@ Sdl_Kind :: enum u8 {
 	Font,
 	Text_Engine,
 	Text,
+	Audio_Stream,
 }
 
 // A pack sees a handle as one u32; 0 is NULL. A destroyed object's handle never names a later object in its slot.
@@ -73,6 +73,7 @@ define_sdl :: proc(l: wasm.Linker, set: ^Sdl_Set) -> (err: string) {
 		{"SDL_UpdateTexture", {wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, update_texture},
 		{"SDL_IOFromConstMem", {wasm.I32, wasm.I32}, {wasm.I32}, io_from_const_mem},
 		{"TTF_OpenFontIO", {wasm.I32, wasm.I32, wasm.F32}, {wasm.I32}, open_font_io},
+		{"SDL_OpenAudioDeviceStream", {wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, open_audio_device_stream},
 	}
 	for list in ([][]Sdl_Define{hand[:], sdl_glue()}) {
 		for d in list do if err = wasm.define_func(l, d.name, d.params, d.results, d.callback, set, "env"); err != "" do return
@@ -234,5 +235,20 @@ open_font_io :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val
 		owners[0] = handle
 	}
 	results[0] = wasm.i32_val(i32(sdl_new(call.set, .Font, ttf.OpenFontIO(stream, closeio, args[2].of.f32), owners)))
+	return nil
+}
+
+// Only the default playback device, and no callback: the pack feeds the stream itself. Each stream gets its own
+// logical device; destroying the stream closes it.
+@(private = "file")
+open_audio_device_stream :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_OpenAudioDeviceStream")
+	if sdl.AudioDeviceID(u32(args[0].of.i32)) != sdl.AUDIO_DEVICE_DEFAULT_PLAYBACK do fail(&call, 1, "is not SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK")
+	spec := (^sdl.AudioSpec)(sdl_bytes(&call, 2, args[1], size_of(sdl.AudioSpec)))
+	if args[2].of.i32 != 0 do fail(&call, 3, "is a callback")
+	if call.error != "" do return wasm.trap(call.error)
+	stream := sdl.OpenAudioDeviceStream(sdl.AUDIO_DEVICE_DEFAULT_PLAYBACK, spec, nil, nil)
+	results[0] = wasm.i32_val(i32(sdl_new(call.set, .Audio_Stream, stream, {})))
 	return nil
 }

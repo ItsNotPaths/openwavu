@@ -54,6 +54,14 @@ sdl_glue :: proc() -> []Sdl_Define {
 		{"TTF_SetTextWrapWidth", {wasm.I32, wasm.I32}, {wasm.I32}, import_TTF_SetTextWrapWidth},
 		{"TTF_GetTextSize", {wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, import_TTF_GetTextSize},
 		{"TTF_DrawRendererText", {wasm.I32, wasm.F32, wasm.F32}, {wasm.I32}, import_TTF_DrawRendererText},
+		{"SDL_DestroyAudioStream", {wasm.I32}, {}, import_SDL_DestroyAudioStream},
+		{"SDL_ResumeAudioStreamDevice", {wasm.I32}, {wasm.I32}, import_SDL_ResumeAudioStreamDevice},
+		{"SDL_PauseAudioStreamDevice", {wasm.I32}, {wasm.I32}, import_SDL_PauseAudioStreamDevice},
+		{"SDL_PutAudioStreamData", {wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_PutAudioStreamData},
+		{"SDL_ClearAudioStream", {wasm.I32}, {wasm.I32}, import_SDL_ClearAudioStream},
+		{"SDL_GetAudioStreamQueued", {wasm.I32}, {wasm.I32}, import_SDL_GetAudioStreamQueued},
+		{"SDL_SetAudioStreamGain", {wasm.I32, wasm.F32}, {wasm.I32}, import_SDL_SetAudioStreamGain},
+		{"SDL_SetAudioStreamFrequencyRatio", {wasm.I32, wasm.F32}, {wasm.I32}, import_SDL_SetAudioStreamFrequencyRatio},
 	}
 	return defines[:]
 }
@@ -66,6 +74,7 @@ sdl_destroy_object :: proc(kind: Sdl_Kind, pointer: rawptr) {
 	case .Font: TTF_CloseFont(pointer)
 	case .Text_Engine: TTF_DestroyRendererTextEngine(pointer)
 	case .Text: TTF_DestroyText(pointer)
+	case .Audio_Stream: SDL_DestroyAudioStream(pointer)
 	}
 }
 
@@ -620,6 +629,90 @@ import_TTF_DrawRendererText :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, ar
 }
 
 @(private = "file")
+import_SDL_DestroyAudioStream :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_DestroyAudioStream")
+	_ = sdl_handle(&call, 1, args[0], .Audio_Stream)
+	if call.error != "" do return wasm.trap(call.error)
+	sdl_destroy(call.set, u32(args[0].of.i32))
+	return nil
+}
+
+@(private = "file")
+import_SDL_ResumeAudioStreamDevice :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_ResumeAudioStreamDevice")
+	p1 := sdl_handle(&call, 1, args[0], .Audio_Stream)
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(i32(SDL_ResumeAudioStreamDevice(p1)))
+	return nil
+}
+
+@(private = "file")
+import_SDL_PauseAudioStreamDevice :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_PauseAudioStreamDevice")
+	p1 := sdl_handle(&call, 1, args[0], .Audio_Stream)
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(i32(SDL_PauseAudioStreamDevice(p1)))
+	return nil
+}
+
+@(private = "file")
+import_SDL_PutAudioStreamData :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_PutAudioStreamData")
+	p1 := sdl_handle(&call, 1, args[0], .Audio_Stream)
+	p2 := sdl_bytes(&call, 2, args[1], u64(u32(args[2].of.i32)) * 1)
+	p3 := args[2].of.i32
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(i32(SDL_PutAudioStreamData(p1, p2, p3)))
+	return nil
+}
+
+@(private = "file")
+import_SDL_ClearAudioStream :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_ClearAudioStream")
+	p1 := sdl_handle(&call, 1, args[0], .Audio_Stream)
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(i32(SDL_ClearAudioStream(p1)))
+	return nil
+}
+
+@(private = "file")
+import_SDL_GetAudioStreamQueued :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_GetAudioStreamQueued")
+	p1 := sdl_handle(&call, 1, args[0], .Audio_Stream)
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(SDL_GetAudioStreamQueued(p1))
+	return nil
+}
+
+@(private = "file")
+import_SDL_SetAudioStreamGain :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_SetAudioStreamGain")
+	p1 := sdl_handle(&call, 1, args[0], .Audio_Stream)
+	p2 := args[1].of.f32
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(i32(SDL_SetAudioStreamGain(p1, p2)))
+	return nil
+}
+
+@(private = "file")
+import_SDL_SetAudioStreamFrequencyRatio :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_SetAudioStreamFrequencyRatio")
+	p1 := sdl_handle(&call, 1, args[0], .Audio_Stream)
+	p2 := args[1].of.f32
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(i32(SDL_SetAudioStreamFrequencyRatio(p1, p2)))
+	return nil
+}
+
+@(private = "file")
 SDL_SetRenderDrawColor :: proc(p1: rawptr, p2: u8, p3: u8, p4: u8, p5: u8) -> bool {
 	return (proc "c" (rawptr, u8, u8, u8, u8) -> bool)(rawptr(sdl.SetRenderDrawColor))(p1, p2, p3, p4, p5)
 }
@@ -842,4 +935,44 @@ TTF_GetTextSize :: proc(p1: rawptr, p2: rawptr, p3: rawptr) -> bool {
 @(private = "file")
 TTF_DrawRendererText :: proc(p1: rawptr, p2: f32, p3: f32) -> bool {
 	return (proc "c" (rawptr, f32, f32) -> bool)(rawptr(ttf.DrawRendererText))(p1, p2, p3)
+}
+
+@(private = "file")
+SDL_DestroyAudioStream :: proc(p1: rawptr) {
+	(proc "c" (rawptr))(rawptr(sdl.DestroyAudioStream))(p1)
+}
+
+@(private = "file")
+SDL_ResumeAudioStreamDevice :: proc(p1: rawptr) -> bool {
+	return (proc "c" (rawptr) -> bool)(rawptr(sdl.ResumeAudioStreamDevice))(p1)
+}
+
+@(private = "file")
+SDL_PauseAudioStreamDevice :: proc(p1: rawptr) -> bool {
+	return (proc "c" (rawptr) -> bool)(rawptr(sdl.PauseAudioStreamDevice))(p1)
+}
+
+@(private = "file")
+SDL_PutAudioStreamData :: proc(p1: rawptr, p2: rawptr, p3: i32) -> bool {
+	return (proc "c" (rawptr, rawptr, i32) -> bool)(rawptr(sdl.PutAudioStreamData))(p1, p2, p3)
+}
+
+@(private = "file")
+SDL_ClearAudioStream :: proc(p1: rawptr) -> bool {
+	return (proc "c" (rawptr) -> bool)(rawptr(sdl.ClearAudioStream))(p1)
+}
+
+@(private = "file")
+SDL_GetAudioStreamQueued :: proc(p1: rawptr) -> i32 {
+	return (proc "c" (rawptr) -> i32)(rawptr(sdl.GetAudioStreamQueued))(p1)
+}
+
+@(private = "file")
+SDL_SetAudioStreamGain :: proc(p1: rawptr, p2: f32) -> bool {
+	return (proc "c" (rawptr, f32) -> bool)(rawptr(sdl.SetAudioStreamGain))(p1, p2)
+}
+
+@(private = "file")
+SDL_SetAudioStreamFrequencyRatio :: proc(p1: rawptr, p2: f32) -> bool {
+	return (proc "c" (rawptr, f32) -> bool)(rawptr(sdl.SetAudioStreamFrequencyRatio))(p1, p2)
 }

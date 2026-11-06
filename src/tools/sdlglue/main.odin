@@ -64,6 +64,7 @@ handle_kind :: proc(c: string) -> (kind: string, ok: bool) {
 	case "TTF_Font*": return "Font", true
 	case "TTF_TextEngine*": return "Text_Engine", true
 	case "TTF_Text*": return "Text", true
+	case "SDL_AudioStream*": return "Audio_Stream", true
 	}
 	return
 }
@@ -71,7 +72,7 @@ handle_kind :: proc(c: string) -> (kind: string, ok: bool) {
 // Bytes per item behind a pointer type; these structs have no pointers inside, so wasm32 and the host lay them out alike.
 item_size :: proc(c: string) -> (size: int, ok: bool) {
 	switch c {
-	case "char*": return 1, true
+	case "char*", "void*": return 1, true
 	case "int*", "float*", "SDL_Color*": return 4, true
 	case "SDL_FPoint*": return 8, true
 	case "SDL_FRect*", "SDL_Rect*", "SDL_FColor*": return 16, true

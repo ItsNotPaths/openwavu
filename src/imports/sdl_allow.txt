@@ -61,3 +61,14 @@ TTF_SetTextColorFloat
 TTF_SetTextWrapWidth
 TTF_GetTextSize
 TTF_DrawRendererText
+
+// Sound: one stream per channel on the default playback device, fed by the pack
+SDL_OpenAudioDeviceStream hand
+SDL_DestroyAudioStream destroy
+SDL_ResumeAudioStreamDevice
+SDL_PauseAudioStreamDevice
+SDL_PutAudioStreamData 2=3
+SDL_ClearAudioStream
+SDL_GetAudioStreamQueued
+SDL_SetAudioStreamGain
+SDL_SetAudioStreamFrequencyRatio

@@ -23,6 +23,7 @@ main :: proc() {
 		os.exit(1)
 	}
 	defer render.destroy(&r)
+	if !sdl.InitSubSystem({.AUDIO}) do fmt.eprintln("openwavu: no sound:", sdl.GetError())  // packs' streams then fail to open
 	u: ui.Ui
 	if !ui.init(&u, r.renderer_2d, render.size(&r)) {
 		fmt.eprintln("openwavu:", sdl.GetError())
