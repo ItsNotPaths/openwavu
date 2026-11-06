@@ -44,6 +44,9 @@ typedef struct {
     float leg_reach;     // leg length from the hip to the sole, less the base lift: the room the drop bias can use
 } T5LimbHeights;
 
+// The words of T5LimbState.below: a bit per limb (T5LimbId). Rose: near the floor now, not last frame; fell: the other way.
+enum { BELOW_NOW, BELOW_LAST, BELOW_ROSE, BELOW_FELL };
+
 // Limb state of one skeleton of one fighter.
 typedef struct T5LimbState {
     T5Limb limb[T5_LIMB_COUNT];  // one per limb (see T5LimbId)

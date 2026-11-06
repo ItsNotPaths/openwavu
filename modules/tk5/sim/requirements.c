@@ -628,7 +628,6 @@ static bool joint_low(Ask ask) {
 
 // argument: the feet. The words of the limb state of the side of f (limb.h `below`).
 enum : uint8_t { R_FOOT = 1 << LIMB_R_FOOT, L_FOOT = 1 << LIMB_L_FOOT, FEET = R_FOOT | L_FOOT };
-enum { BELOW_NOW = 0, BELOW_ROSE = 2 };
 static bool feet_rose(Ask ask) {  // a foot in the row's set rose above the floor, by the limb state
     return (ask.w->fighters[ask.f->side_index]->limbs.below[BELOW_ROSE] & ask.argument) != 0;
 }
