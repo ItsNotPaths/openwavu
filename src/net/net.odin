@@ -10,7 +10,7 @@ session_create :: proc(host: string) -> (s: ^Session, ok: bool) {
 	return nil, false
 }
 
-// (hole net-session :tags net :needs module-snapshot :sev blocker) no rollback session (our own loop, not GGPO, Odin's vendor:ENet): input exchange with resends, prediction, resimulation, time sync, state hashes, packet token.
+// (hole net-session :tags net :sev blocker) no rollback session (our own loop, not GGPO, Odin's vendor:ENet): input exchange with resends, prediction, resimulation, time sync, state hashes, packet token.
 session_step :: proc(s: ^Session, w: ^sim.World, local: sim.Input) {}
 
 // (hole lobby-join :tags net :needs (pack-base net-session server-lobby content-cache registry-verify titlepack-hash content-view loadout-blob identity-key)) joining a lobby does not sign the server's challenge, fetch its title pack from the network (its base is a stock pack the player built), apply the params the server passes down, or check the lobby hash.

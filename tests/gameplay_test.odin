@@ -30,24 +30,56 @@ stage_params :: proc() -> map[string]string {
 	return params
 }
 
-// Two bots play an offline match to its end in the stock sim module, on the stock pack. Needs an import.
+// The stock pack and the compiled stock sim module, for sim.create. Needs an import and build.sh.
+Stock_Sim :: struct {
+	pack:   content.Pack,
+	engine: wasm.Engine,
+	module: wasm.Module,
+}
+
+stock_sim_open :: proc(t: ^testing.T) -> (stock: ^Stock_Sim, ok: bool) {
+	if !os.exists(STOCK_PACK) do return nil, false
+	code, read_err := os.read_entire_file(GAMEPLAY, context.temp_allocator)
+	if !testing.expect(t, read_err == nil, "build.sh builds " + GAMEPLAY) do return nil, false
+	stock = new(Stock_Sim)
+	opened: bool
+	if stock.pack, opened = content.open_pack(STOCK_PACK); !testing.expect(t, opened) {
+		free(stock)
+		return nil, false
+	}
+	stock.engine = wasm.engine_create()
+	compile_err: string
+	if stock.module, compile_err = wasm.compile(stock.engine, code); !testing.expect_value(t, compile_err, "") {
+		stock_sim_close(stock)
+		return nil, false
+	}
+	return stock, true
+}
+
+stock_sim_close :: proc(stock: ^Stock_Sim) {
+	if stock.module != {} do wasm.module_destroy(stock.module)
+	wasm.engine_destroy(stock.engine)
+	content.close_pack(&stock.pack)
+	free(stock)
+}
+
+// Paul vs Kazuya on Dragon's Nest, seed 7.
+stock_world :: proc(t: ^testing.T, stock: ^Stock_Sim) -> (w: ^sim.World, ok: bool) {
+	err: string
+	w, err = sim.create(stock.engine, stock.module, &stock.pack, stage_params(), {loadout_bytes("paul"), loadout_bytes("kazuya")}, 7)
+	return w, testing.expect_value(t, err, "")
+}
+
+// Two bots play an offline match to its end in the stock sim module, on the stock pack.
 @(test)
 stock_sim_plays_a_match :: proc(t: ^testing.T) {
-	if !os.exists(STOCK_PACK) do return
-	pack, opened := content.open_pack(STOCK_PACK)
-	if !testing.expect(t, opened) do return
-	defer content.close_pack(&pack)
-	code, read_err := os.read_entire_file(GAMEPLAY, context.temp_allocator)
-	if !testing.expect(t, read_err == nil, "build.sh builds " + GAMEPLAY) do return
-
-	engine := wasm.engine_create()
-	defer wasm.engine_destroy(engine)
-	module, compile_err := wasm.compile(engine, code)
-	if !testing.expect_value(t, compile_err, "") do return
-	defer wasm.module_destroy(module)
-	w, err := sim.create(engine, module, &pack, stage_params(), {loadout_bytes("paul"), loadout_bytes("kazuya")}, 7)
-	if !testing.expect_value(t, err, "") do return
+	stock, opened := stock_sim_open(t)
+	if !opened do return
+	defer stock_sim_close(stock)
+	w, created := stock_world(t, stock)
+	if !created do return
 	defer sim.destroy(w)
+	err: string
 
 	MATCH_FRAMES_MAX :: 40_000  // five full rounds with their intros and win poses
 	frames := 0

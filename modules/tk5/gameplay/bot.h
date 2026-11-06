@@ -5,6 +5,6 @@
 #include <stdint.h>
 
 // Picks each side's attacks from its loaded moves; after the fighters are loaded.
-void t5_bots_begin(uint64_t seed);
+const char *t5_bots_begin(uint64_t seed);  // NULL or the failure
 
 #endif

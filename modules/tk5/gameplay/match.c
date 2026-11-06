@@ -112,8 +112,11 @@ OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1) {
     if (w->round.phase == T5_PHASE_OVER) ow_event(OW_EVENT_MATCH_END, side_of(w->round.winner), 0);
 }
 
-OW_EXPORT(ow_sim_state) void *ow_sim_state(void) { return &t5_match; }
-OW_EXPORT(ow_sim_state_size) uint32_t ow_sim_state_size(void) { return sizeof t5_match; }
+// The state is the statics, from the start to the end of the data. The stack before them is empty between ticks; the
+// heap after them holds load data, written only at init, and the bots.
+extern uint8_t __global_base[], __data_end[];  // set by the linker
+OW_EXPORT(ow_sim_state) void *ow_sim_state(void) { return __global_base; }
+OW_EXPORT(ow_sim_state_size) uint32_t ow_sim_state_size(void) { return (uint32_t)(__data_end - __global_base); }
 
 static void view_fighter(T5ViewFighter *out, uint32_t side) {
     const T5Fighter *f = &t5_match.fighters[side];

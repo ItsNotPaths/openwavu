@@ -1,7 +1,8 @@
-// The sim host: runs a title pack's sim module, one instance per match. The module owns its memory; a snapshot is that
-// memory plus its globals. Bit exact to the game with the stock TK5 sim.
+// The sim host: runs a title pack's sim module, one instance per match. The module owns its memory; a snapshot is the
+// state range it exports. Bit exact to the game with the stock TK5 sim.
 package sim
 
+import "core:hash/xxhash"
 import "core:slice"
 import "../content"
 import "../imports"
@@ -15,6 +16,7 @@ World :: struct {
 	module: ^imports.Module,
 	memory: wasm.Memory,
 	inputs: imports.Sim_Inputs,
+	state_at, state_size: u32,  // from ow_sim_state and ow_sim_state_size, read once after init
 }
 
 MEMORY_CAP :: 512 << 20
@@ -42,6 +44,11 @@ start :: proc(w: ^World, engine: wasm.Engine, module: wasm.Module, pack: ^conten
 	if err = imports.module_start(w.module, module, "ow_sim_init", INIT_FUEL); err != "" do return
 	has_memory: bool
 	if w.memory, has_memory = wasm.export_memory(w.module.store, w.module.instance, "memory"); !has_memory do return "the sim module exports no memory"
+	at, size := []wasm.Val{{}}, []wasm.Val{{}}
+	if err = imports.module_call(w.module, "ow_sim_state", nil, at, STEP_FUEL); err != "" do return
+	if err = imports.module_call(w.module, "ow_sim_state_size", nil, size, STEP_FUEL); err != "" do return
+	w.state_at, w.state_size = u32(at[0].of.i32), u32(size[0].of.i32)
+	if _, inside := wasm.span(wasm.bytes(w.module.store, w.memory), w.state_at, w.state_size); !inside do return "the sim state is outside the module's memory"
 	return
 }
 
@@ -65,14 +72,28 @@ bot_pad :: proc(w: ^World, side: int) -> (input: Input, err: string) {
 	return {u32(result[0].of.i32)}, err
 }
 
-// (hole module-snapshot :tags (sim net) :needs (snapshot-range) :sev blocker) no save/restore of the module's memory below __heap_base plus its globals.
-// (hole heap-frozen-check :tags sim :needs (snapshot-range)) nothing checks that the heap above __heap_base is unchanged after a tick; a write there would escape the snapshot.
-save :: proc(w: ^World, buf: []byte) -> (size: int) {
-	return 0
+// The module's state: its bytes now, valid until memory grows.
+@(private = "file")
+state :: proc(w: ^World) -> []byte {
+	return wasm.bytes(w.module.store, w.memory)[w.state_at:][:w.state_size]
 }
 
-restore :: proc(w: ^World, buf: []byte) -> (ok: bool) {
-	return false
+snapshot_size :: proc(w: ^World) -> int {
+	return int(w.state_size)
+}
+
+// Copies the state into snapshot, snapshot_size bytes.
+save :: proc(w: ^World, snapshot: []byte) {
+	copy(snapshot, state(w))
+}
+
+restore :: proc(w: ^World, snapshot: []byte) {
+	copy(state(w), snapshot)
+}
+
+// The hash both players compare: equal states give equal hashes.
+state_hash :: proc(w: ^World) -> u64 {
+	return xxhash.XXH3_64(state(w))
 }
 
 // The sim view of the last tick, from ow_sim_view: bytes in the module's memory, valid until its next call.

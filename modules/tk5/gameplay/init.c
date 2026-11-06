@@ -12,7 +12,6 @@ static const char DB_PATH[] = "tk5.db";
 
 T5MatchData t5_match_data;
 
-// (hole snapshot-range :tags (tk5mod sim) :needs reaction-set-tag) the snapshot should be 0..__heap_base (statics, stack) plus the globals, with the heap filled at init only; build.sh does not export __heap_base.
 // (hole mod-rounds :tags tk5mod :needs param-section) round flow is not from params: rounds to win, round time, round reset.
 
 static const char *load_side(sqlite3 *db, uint32_t side) {
@@ -53,13 +52,15 @@ static const char *load(void) {
 }
 
 OW_EXPORT(ow_sim_init) int32_t ow_sim_init(void) {
+    uint64_t seed = ow_match_seed();
     const char *failed = load();
+    if (!failed) {
+        t5_match_begin(seed);
+        failed = t5_bots_begin(seed);
+    }
     if (failed) {
         ow_log((OwStr){(uint32_t)strlen(failed), failed});
         return -1;
     }
-    uint64_t seed = ow_match_seed();
-    t5_match_begin(seed);
-    t5_bots_begin(seed);
     return 0;
 }

@@ -1,6 +1,7 @@
 // Stock TK5 bot: a pad source, like a player pressing buttons. It sees what a player sees on screen, plans a few frames
 // of keys, and picks attacks made by one press from the standing idle's cancel list. Its state is outside the snapshot.
 #include <math.h>
+#include <stdlib.h>
 
 #include "gameplay/bot.h"
 #include "gameplay/match.h"
@@ -77,7 +78,7 @@ typedef struct {
     int32_t react_in;  // frames until the block decision, 0: none pending
 } Bot;
 
-static Bot bots[T5_FIGHTER_COUNT];
+static Bot *bots;  // on the heap: the bot is outside the snapshot, and only the machine that runs it has it
 
 enum { CHANCE_STEPS = 10000 };
 
@@ -120,7 +121,9 @@ static void scan(Bot *bot, const T5Motbin *motbin, const T5Cancel *entry) {
     }
 }
 
-void t5_bots_begin(uint64_t seed) {
+const char *t5_bots_begin(uint64_t seed) {
+    bots = calloc(T5_FIGHTER_COUNT, sizeof *bots);
+    if (!bots) return "out of memory for the bots";
     for (uint32_t side = 0; side < T5_FIGHTER_COUNT; side++) {
         Bot *bot = &bots[side];
         const T5Motbin *motbin = &t5_match_data.sides[side].data.moves;
@@ -128,6 +131,7 @@ void t5_bots_begin(uint64_t seed) {
         const T5Move *idle = &motbin->moves[move_index(motbin, T5_ALIAS_IDLE_STAND)];
         scan(bot, motbin, &motbin->cancels[idle->cancels]);
     }
+    return NULL;
 }
 
 // --- plans: a few frames of keys, then a new decision

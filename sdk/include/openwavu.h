@@ -81,7 +81,9 @@ enum {
 	OW_PAD_START = 1 << 8,
 };
 
-// Sim exports. Inside rollback: the host snapshots [ow_sim_state, + ow_sim_state_size) plus globals.
+// Sim exports. Inside rollback: the host snapshots [ow_sim_state, + ow_sim_state_size). Outside it, ow_sim_step may
+// only write what no later step reads (the stack), and mutable globals end each step as they began (C: the stack
+// pointer). The bot (ow_bot_pad) keeps its state outside the range.
 
 OW_EXPORT(ow_sim_init) int32_t ow_sim_init(void);  // 0 = ok; reads params, loadouts and content
 OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1);  // OW_PAD_* words
