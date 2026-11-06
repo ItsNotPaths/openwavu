@@ -195,6 +195,7 @@ void t5_force_move(const T5World *w, T5Fighter *f, T5Fighter *target, uint16_t i
 // into it name overrides against it. The game writes the move record in the loaded move data.
 static void overwrite_move(const T5World *w, T5Fighter *f, uint16_t value) {
     T5Ref move_ref = t5_move_lookup(w, f, value);
+    // (hole move-overwrite :tags (tk5mod sim)) writes the loaded moves on the heap, outside the snapshot; needs a small overrides table in the sim state.
     T5Move *target_move =  // edits the loaded move data, so it lasts for the match
         &t5_set_mutable(w, move_ref.set)->moves[move_ref.index];
     uint32_t anim = target_move->anim;

@@ -12,7 +12,7 @@ static const char DB_PATH[] = "tk5.db";
 
 T5MatchData t5_match_data;
 
-// (hole snapshot-range :tags (tk5mod sim)) mutable state and read-only data (anims, motbin tables) share one range; the module does not export the range to snapshot.
+// (hole snapshot-range :tags (tk5mod sim) :needs (move-overwrite reaction-set-tag)) the snapshot should be 0..__heap_base (statics, stack) plus the globals, with the heap filled at init only; build.sh does not export __heap_base.
 // (hole mod-rounds :tags tk5mod :needs param-section) round flow is not from params: rounds to win, round time, round reset.
 
 static const char *load_side(sqlite3 *db, uint32_t side) {

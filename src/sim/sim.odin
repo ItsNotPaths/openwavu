@@ -65,7 +65,8 @@ bot_pad :: proc(w: ^World, side: int) -> (input: Input, err: string) {
 	return {u32(result[0].of.i32)}, err
 }
 
-// (hole module-snapshot :tags (sim net) :needs (snapshot-range) :sev blocker) no save/restore of the gameplay module's exported mutable range plus its globals.
+// (hole module-snapshot :tags (sim net) :needs (snapshot-range) :sev blocker) no save/restore of the module's memory below __heap_base plus its globals.
+// (hole heap-frozen-check :tags sim :needs (snapshot-range)) nothing checks that the heap above __heap_base is unchanged after a tick; a write there would escape the snapshot.
 save :: proc(w: ^World, buf: []byte) -> (size: int) {
 	return 0
 }

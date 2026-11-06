@@ -17,6 +17,7 @@ void t5_fighter_clear_refs(T5Fighter *f) {
     f->hit_record = -1;  // -1 means no hit record
 }
 
+// (hole reaction-set-tag :tags (tk5mod sim) :sev polish) tags the pushback sets on every lookup, a heap write after init; tag them once at load.
 const T5Reaction *t5_reaction_list(void *world, uint32_t set, uint32_t index) {
     T5Motbin *motbin = t5_set_mutable(world, set);
     if (index >= (uint32_t)motbin->reaction_count) return NULL;  // NULL when index is out of range

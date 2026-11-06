@@ -17,6 +17,7 @@ T5Bytes t5_read_pack_file(void *context, const char *path) {
     return (T5Bytes){data, (size_t)size};
 }
 
+// (hole arena-reserve :tags tk5mod :sev polish) the arena comes from calloc; reserve its pages once with memory.grow instead.
 const char *t5_new_arena(T5Arena *arena, size_t bytes) {
     *arena = (T5Arena){calloc(1, bytes + 1), bytes, 0};  // + 1: calloc of 0 may give NULL
     return arena->base ? NULL : "out of memory";
