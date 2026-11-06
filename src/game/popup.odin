@@ -6,7 +6,7 @@ import "../ui"
 
 // The screen-bottom popup: openwavu's own, the top bar's counterpart. Packs only open its fixed modes.
 // (hole settings-save :tags game :sev polish) settings live only until openwavu closes.
-// (hole store-versions :tags (game net) :needs store-list) install shows only the installed version; no older versions from the master server.
+// (hole store-versions :tags (game net) :needs store-list) install shows only the installed version; no older versions from the network's /versions.
 Popup :: struct {
 	mode: Popup_Mode,
 	open: bool,
@@ -49,6 +49,8 @@ popup :: proc(l: ^Launcher, u: ^ui.Ui) -> (remove: bool) {
 	return
 }
 
+// (hole network-setting :tags (game net) :needs registry-verify) no network address (default openwavu.gg), no warning on a switch, no identity export or import.
+// (hole submit-line :tags (game net) :needs (identity-key https-client)) no submit line: typed text is not signed and sent to the network's /note.
 @(private = "file")
 settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 	ui.label("Settings", ui.HEAD_SIZE, engraved = true, face = .Display)

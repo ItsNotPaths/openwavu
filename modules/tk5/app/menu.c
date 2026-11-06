@@ -9,7 +9,7 @@
 #include "loadout.h"
 #include "openwavu.h"
 
-// (hole mod-menus :tags tk5mod :needs menu-layouts :sev gap) the menus are SDL debug text, placed by us: no TK5 look; later server and lobby lists, customization.
+// (hole mod-menus :tags tk5mod :needs menu-layouts :sev gap) the menus are SDL debug text, placed by us: no TK5 look; later lobby lists, customization.
 // (hole select-renders :tags (tk5mod game) :sev polish) character select shows names, not the ui/select_renders/<id>_left and _right images; a pack has no PNG decode (SDL_LoadPNG_IO returns a surface, which the SDL glue has no handle kind for).
 
 enum { SCALE = GRID_SCALE, LINE = GRID_LINE, TOP = 24, GRID_TOP = TOP + 3 * LINE };

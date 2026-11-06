@@ -1,6 +1,6 @@
 // Title pack: one tar (docs/packs.md). At the root: pack.toml (the first entry), the wasm modules and the db or
-// db patch; everything else in folders the modules name. Params narrow in layers: core defaults, pack, server,
-// lobby. Each layer sets values and exposes a subset.
+// db patch; everything else in folders the modules name. Params narrow in layers: core defaults, pack,
+// network, lobby. Each layer sets values and exposes a subset.
 package titlepack
 
 import "core:c"
@@ -128,7 +128,7 @@ read_params :: proc(module: []byte, allocator := context.allocator) -> (params: 
 	return nil, false
 }
 
-// (hole param-layers :tags titlepack :needs param-section) params are not narrowed pack -> server -> lobby; a layer could change what the one above locked.
+// (hole param-layers :tags titlepack :needs param-section) params are not narrowed pack -> network -> lobby; a layer could change what the one above locked.
 resolve_params :: proc(declared: []Param, layers: []map[string]Param_Set) -> (final: map[string]f64, ok: bool) {
 	return nil, false
 }

@@ -102,7 +102,7 @@ installed_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 	}
 }
 
-// (hole store-list :tags (game net) :needs registry-verify) the store column lists nothing; no pack listing from the master server.
+// (hole store-list :tags (game net) :needs (registry-verify https-client)) the store column lists nothing; no pack listing from the network's /store.
 store_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 	if clay.UI()(side_column()) {
 		column_head(u, "STORE", clay.ID("SearchStore"), &l.search_store)
