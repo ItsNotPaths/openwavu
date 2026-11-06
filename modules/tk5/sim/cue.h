@@ -11,7 +11,7 @@
 #include "sim/vec.h"
 
 // T5_CUE_NONE: no cue, the sim handles the property.
-typedef enum : uint8_t { T5_CUE_NONE, T5_CUE_FX, T5_CUE_SOUND, T5_CUE_VOICE, T5_CUE_CAMERA, T5_CUE_HIT } T5CueKind;
+typedef enum : uint8_t { T5_CUE_NONE, T5_CUE_FX, T5_CUE_SOUND, T5_CUE_VOICE, T5_CUE_CAMERA, T5_CUE_HIT, T5_CUE_ANNOUNCE, T5_CUE_MUSIC } T5CueKind;
 
 // The id of a hit cue: the sparks the game draws for it. Its value is the damage.
 typedef enum : uint16_t {
@@ -19,6 +19,23 @@ typedef enum : uint16_t {
     T5_SPARK_GUARD,
     T5_SPARK_TOUCH,  // a hit that makes no reaction
 } T5Spark;
+
+// The id of an announcer cue. Its value: the round, for T5_LINE_ROUND. Its owner: the winner, for T5_LINE_WINNER.
+typedef enum : uint16_t {
+    T5_LINE_ROUND,
+    T5_LINE_FINAL_ROUND,
+    T5_LINE_FIGHT,
+    T5_LINE_KO,
+    T5_LINE_TIME_UP,
+    T5_LINE_DOUBLE_KO,
+    T5_LINE_PERFECT,
+    T5_LINE_GREAT,   // a close win
+    T5_LINE_WINNER,  // the winner's name, then "wins"
+    T5_LINE_DRAW,
+} T5Line;
+
+// The id of a music cue.
+typedef enum : uint16_t { T5_MUSIC_START, T5_MUSIC_FADE } T5MusicCue;
 
 // The list of a move a property fires from.
 typedef enum : uint8_t {
@@ -29,6 +46,7 @@ typedef enum : uint8_t {
     T5_FROM_CANCEL,        // the instant properties of a cancel
     T5_FROM_GROUP_CANCEL,  // the instant properties of a group cancel
     T5_FROM_HIT,           // a hit record; entry: the record
+    T5_FROM_ROUND,         // the round flow; entry: the phase
 } T5PropSource;
 
 // Names one firing: the same state gives the same key, so a resimulated frame repeats it. entry: the place of the property

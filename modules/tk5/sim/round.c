@@ -297,6 +297,53 @@ static void release(T5World *w) {
     }
 }
 
+// --- the round flow's cues
+
+static void send(T5World *w, T5CueKind kind, uint16_t id, uint16_t value, T5Who owner) {
+    T5CueKey key = {.side = T5_NOBODY, .source = T5_FROM_ROUND, .entry = w->round.phase};
+    t5_cue_add(&w->cues, w->frame, (T5Cue){.kind = kind, .id = id, .value = value, .owner = owner, .key = key});
+}
+
+static void announce(T5World *w, T5Line line) { send(w, T5_CUE_ANNOUNCE, line, 0, T5_NOBODY); }
+
+// The line of a scored round, by the game's order (0x3b208).
+static T5Line result_line(uint32_t result) {
+    if (result & T5_RESULT_TIME_OVER) return T5_LINE_TIME_UP;
+    if (result & T5_RESULT_DOUBLE_KO) return T5_LINE_DOUBLE_KO;
+    if (result & T5_RESULT_PERFECT) return T5_LINE_PERFECT;
+    if (result & T5_RESULT_CLOSE_WIN) return T5_LINE_GREAT;
+    return T5_LINE_KO;
+}
+
+// The round's winner by name, or a draw.
+static void announce_winner(T5World *w) {
+    for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
+        if ((w->round.result & T5_RESULT_DRAW) == 0 && w->fighters[side]->last_round == T5_ROUND_WON) {
+            send(w, T5_CUE_ANNOUNCE, T5_LINE_WINNER, 0, side == 0 ? T5_SIDE_1 : T5_SIDE_2);
+            return;
+        }
+    }
+    announce(w, T5_LINE_DRAW);
+}
+
+// The lines and music of a phase as it begins; after its round init, which forgets the cues before it.
+static void phase_cues(T5World *w, T5Phase phase) {
+    switch (phase) {
+    case T5_PHASE_INTRO_1: send(w, T5_CUE_MUSIC, T5_MUSIC_START, 0, T5_NOBODY); break;
+    case T5_PHASE_READY:
+        if (w->round.round >= w->round.round_limit) announce(w, T5_LINE_FINAL_ROUND);
+        else send(w, T5_CUE_ANNOUNCE, T5_LINE_ROUND, (uint16_t)w->round.round, T5_NOBODY);
+        break;
+    case T5_PHASE_FIGHT: announce(w, T5_LINE_FIGHT); break;
+    case T5_PHASE_ROUND_END: announce_winner(w); break;
+    case T5_PHASE_MATCH_END:
+        announce_winner(w);
+        send(w, T5_CUE_MUSIC, T5_MUSIC_FADE, 0, T5_NOBODY);
+        break;
+    default: break;
+    }
+}
+
 // `frame`: 1 when the phase begins in this frame (its round init sees its first frame), 0 when it begins with the next.
 static void begin(T5World *w, T5Phase phase, int32_t frame) {
     T5PhaseRow row = w->flow->phase[phase];
@@ -307,6 +354,7 @@ static void begin(T5World *w, T5Phase phase, int32_t frame) {
     if (input.at_begin) t5_round_input_mode(w, input.mode);  // some phases set the input mode as they begin
     if (row.setup.runs) t5_hooks.round_init(w, row.setup);  // this phase sets the fighters up (round init)
     if (row.next == T5_PHASE_NONE) release(w);  // last phase: give the fighters back
+    phase_cues(w, phase);
 }
 
 void t5_round_begin(T5World *w, T5Phase phase) { begin(w, phase, 0); }  // begins with the next frame
@@ -332,7 +380,6 @@ static void score(T5World *w) {
     }
 }
 
-// (hole round-flow-cues :tags (tk5mod round-show audio)) the round flow sends no cues: announcer (round call, KO, perfect, time up, win/lose/draw by 0x3b3d0, played at end_frame 0x82, winner name, "Fight" = common 37; tk5decomp data.md 8.6), music start and fade (0x9ee48).
 void t5_round_flow(T5World *w) {
     if (w->flow == NULL || w->round.phase == T5_PHASE_NONE) return;  // no match running
     if (w->round.ended) begin(w, t5_next_phase(w->flow, w->round, match_over(w)), 1);  // last frame ended the phase: begin next
@@ -341,6 +388,9 @@ void t5_round_flow(T5World *w) {
     T5RoundStep step = t5_round_step(w->flow, w->rules, w->round, t5_round_view(w));  // what this frame does to the phase
     w->round = step.state;
     if (step.holds_input) t5_round_input_mode(w, input_rule(row).mode);  // set the held input mode again
-    if (step.scores) score(w);  // the fight just ended: score the round
+    if (step.scores) {  // the fight just ended: score the round and call it
+        score(w);
+        announce(w, result_line(w->round.result));
+    }
     if (step.begins != T5_PHASE_NONE) begin(w, step.begins, 1);  // the phase is over and the next begins in this frame
 }
