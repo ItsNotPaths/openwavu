@@ -75,7 +75,7 @@ tk5_module gameplay.wasm "" "${tk5_core[@]}" modules/tk5/{view,pack_file}.c modu
 tk5_module app.wasm -Wl,--import-symbols modules/tk5/app/*.c
 # The stub parts of gamerender/ are not in it yet.
 tk5_module gamerender.wasm -Wl,--import-symbols "${tk5_core[@]}" modules/tk5/pack_file.c \
-	modules/tk5/gamerender/{presenter,scene,camera,hud,visual,hands,hand_bank}.c
+	modules/tk5/gamerender/{presenter,scene,camera,hud,visual,hands,hand_bank,effects}.c
 # The host's 3D shaders, SPIR-V; src/render embeds them.
 mkdir -p build/shaders
 for shader in src/render/shaders/*.vert src/render/shaders/*.frag; do

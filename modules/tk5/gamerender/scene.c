@@ -19,6 +19,7 @@ enum {
     FIRST_FINGER_JOINT = FIRST_FINGER_BONE + 4,  // glb joints 55..84 are A bones 51..80
     POSED_BONES = FIRST_FINGER_JOINT + FINGER_BONES,  // joints 23..54 are left zero: they keep their rest pose
     NODES_MAX = T5_FIGHTER_COUNT * PARTS_MAX + 1,
+    FX_MAX = 128,
 };
 
 // glb joint -> skeleton B slot, joints 1..22; helpers keep their rest pose under their parent.
@@ -40,6 +41,7 @@ static struct {
     OwLight light;
     OwNode nodes[NODES_MAX];
     OwTransform bones[T5_FIGHTER_COUNT][POSED_BONES];
+    OwFx fx[FX_MAX];
 } block;
 
 static uint32_t asset_of(const unsigned char *path) {
@@ -94,6 +96,7 @@ bool t5_scene_init(const T5View *view) {
     }
     stage_asset = load_stage(db, view->stage);
     t5_camera_init(db, view);
+    t5_effects_init(db, view);
     sqlite3_close(db);
     return true;
 }
@@ -155,5 +158,7 @@ void t5_scene_send(const T5View *view, float seconds) {
     scene->light_offset = offsetof(typeof(block), light);
     scene->node_count = count;
     scene->node_offset = offsetof(typeof(block), nodes);
+    scene->fx_count = t5_effects(view, block.fx, FX_MAX);
+    scene->fx_offset = offsetof(typeof(block), fx);
     ow_scene_submit(scene, sizeof block);
 }
