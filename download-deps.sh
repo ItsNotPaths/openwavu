@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dependencies into vendor/: zig (the C compiler for pack modules, pinned so ow build is reproducible), wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding, cgltf, tomlc17, jsmn,
-# SDL3 and SDL3_ttf built static (FreeType) with their headers for pack modules, and the UI font. Delete a vendor/ folder to refetch it.
+# SDL3 and SDL3_ttf built static (FreeType) with their headers for pack modules, ffmpeg's audio codecs for the importer, and the UI font. Delete a vendor/ folder to refetch it.
 set -euo pipefail
 cd "$(dirname "$0")"
 ZIG=0.16.0
@@ -22,6 +22,8 @@ GLSLANG=16.5.0
 GLSLANG_SHA256=01af17195fbeb59e39e31e9506de35bb39dfd35807ea0c9a1a99d7d1183ddd45
 FONTS_COMMIT=8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5 # google/fonts
 MICHROMA_SHA256=b62301163788bc5b7f8fcac0b74b184e34e1827e577b499ecb724da065098f87
+FFMPEG=7.1.1
+FFMPEG_SHA256=733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1
 mkdir -p vendor
 
 # fetch <url> <file> <sha256>
@@ -159,6 +161,21 @@ if [ ! -f vendor/cgltf/cgltf.odin ]; then
 	cp "$odin_cgltf/cgltf.odin" "$odin_cgltf/LICENSE" vendor/cgltf/
 	cp "$odin_cgltf/src/cgltf.c" "$odin_cgltf/src/cgltf.h" "$odin_cgltf/src/cgltf_write.h" vendor/cgltf/src/
 	echo "vendor/cgltf: from $(odin version)"
+fi
+
+# The importer's audio: the game's codecs in, FLAC out (LGPL build, no asm so no nasm).
+if [ ! -f vendor/ffmpeg/lib/libavcodec.a ]; then
+	ffmpeg_dir=$(mktemp -d)
+	fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG.tar.xz" "$ffmpeg_dir/ffmpeg.tar.xz" "$FFMPEG_SHA256"
+	mkdir -p "$ffmpeg_dir/src" && tar xJf "$ffmpeg_dir/ffmpeg.tar.xz" -C "$ffmpeg_dir/src" --strip-components=1
+	prefix="$PWD/vendor/ffmpeg"
+	(cd "$ffmpeg_dir/src" && ./configure --prefix="$prefix" --disable-everything --disable-programs --disable-doc \
+		--disable-network --disable-autodetect --disable-avformat --disable-avdevice --disable-avfilter --disable-swscale \
+		--disable-swresample --disable-x86asm --disable-pthreads --enable-static --disable-shared \
+		--enable-decoder=atrac3p,adpcm_psx --enable-encoder=flac >/dev/null && make -j >/dev/null && make install >/dev/null)
+	cp "$ffmpeg_dir/src/COPYING.LGPLv2.1" vendor/ffmpeg/
+	rm -rf "$ffmpeg_dir"
+	echo "vendor/ffmpeg: $FFMPEG"
 fi
 
 if [ ! -f vendor/fonts/Michroma-Regular.ttf ]; then

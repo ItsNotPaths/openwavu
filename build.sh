@@ -46,6 +46,11 @@ if [ ! -f build/libow_input.a ] || [ sdk/include/ow_input.h -nt build/libow_inpu
 	cc -std=c23 -O2 -DOW_INPUT_IMPLEMENTATION -x c -c sdk/include/ow_input.h -o build/ow_input.o
 	ar rcs build/libow_input.a build/ow_input.o
 fi
+# The importer's ffmpeg glue; the Odin binding (src/audio) links it.
+if [ ! -f build/libow_audio.a ] || [ src/audio/ffmpeg.c -nt build/libow_audio.a ]; then
+	cc -std=c23 -O2 -Ivendor/ffmpeg/include -c src/audio/ffmpeg.c -o build/ow_audio.o
+	ar rcs build/libow_audio.a build/ow_audio.o
+fi
 # The SDK's SQLite for pack modules (sdk/src/ow_db.c has its VFS): SQLITE_OS_OTHER, so only openwavu imports.
 mkdir -p build/sdk
 if [ ! -f build/sdk/libow_db.a ] || [ vendor/sqlite/sqlite3.c -nt build/sdk/libow_db.a ] || [ sdk/src/ow_db.c -nt build/sdk/libow_db.a ]; then
