@@ -99,9 +99,10 @@ if [ -n "$(find src/imports/sdl_allow.txt src/tools/sdlglue vendor/sdl3/dynapi v
 	odin run src/tools/sdlglue -vet -strict-style
 fi
 odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict-style
-# vendor:sdl3 links "system:SDL3": the -L dirs make that the vendored static libs.
-sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf"
+# vendor:sdl3 and vendor:ENet link "system:SDL3" and "system:enet": the -L dirs make those the vendored static libs.
+sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf -Lvendor/enet"
 odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style "$sdl_libs"
+odin build src/server -out:build/openwavu-server "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
 if [ "$run_tests" = 1 ]; then

@@ -1,0 +1,66 @@
+package tests
+
+import "core:sync"
+import "core:testing"
+import "core:thread"
+import "core:time"
+import "../src/net"
+import "../src/net/relay"
+import "../src/server"
+import "../src/sim"
+
+RELAY_TEST_PORT :: 9289
+RELAY_HOST :: #config(RELAY_HOST, "")  // a deployed relay to test instead of one on this machine
+
+// Two machines paired by a relay server get one seed and a side each, and their sessions stay in step through it.
+@(test)
+sessions_agree_through_the_relay :: proc(t: ^testing.T) {
+	stock, opened := stock_sim_open(t)
+	if !opened do return
+	defer stock_sim_close(stock)
+	host, port := RELAY_HOST, u16(relay.PORT)
+	r: server.Relay
+	stop: bool
+	serving: ^thread.Thread
+	defer if serving != nil {
+		sync.atomic_store(&stop, true)
+		thread.join(serving)
+		thread.destroy(serving)
+		server.relay_close(&r)
+	}
+	if host == "" {
+		host, port = "127.0.0.1", RELAY_TEST_PORT
+		listening: bool
+		r, listening = server.relay_open(port)
+		if !testing.expect(t, listening, "the relay can not listen") do return
+		serving = thread.create_and_start_with_poly_data2(&r, &stop, server.relay_serve)
+	}
+
+	clients: [2]^net.Relay_Client
+	defer for client in clients do if client != nil do net.relay_disconnect(client)
+	for &client in clients {
+		connected: bool
+		client, connected = net.relay_connect(host, port)
+		if !testing.expect(t, connected, "a client did not connect") do return
+	}
+	machines := new(Two_Machines)
+	defer two_machines_destroy(machines)
+	machines.pause = time.Millisecond
+	seeds: [2]u64
+	for client in clients {
+		start, start_in_ns, started := net.relay_wait_start(client, 5000)
+		if !testing.expect(t, started, "a client was not paired") do return
+		testing.expect(t, start_in_ns <= u64(relay.START_DELAY_MS) * 1_000_000)
+		err: string
+		machines.worlds[start.side], err = sim.create(stock.engine, stock.module, &stock.pack, stage_params(), {loadout_bytes("paul"), loadout_bytes("kazuya")}, start.seed)
+		if !testing.expect_value(t, err, "") do return
+		machines.sessions[start.side] = net.session_create(machines.worlds[start.side], net.relay_transport(client), start.side, start.token, 0)
+		seeds[start.side] = start.seed
+	}
+	testing.expect_value(t, seeds[0], seeds[1])
+
+	FRAMES :: 600
+	if !testing.expect(t, two_machines_play(t, machines, FRAMES), "the sessions did not both finish") do return
+	testing.expect(t, sim.state_hash(machines.worlds[0]) == sim.state_hash(machines.worlds[1]), "the two machines' states differ")
+	for session in machines.sessions do testing.expect_value(t, session.outcome, net.Outcome.Playing)
+}

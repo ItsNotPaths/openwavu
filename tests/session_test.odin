@@ -3,6 +3,7 @@ package tests
 import "core:log"
 import "core:slice"
 import "core:testing"
+import "core:time"
 import "../src/net"
 import "../src/sim"
 
@@ -60,6 +61,7 @@ Two_Machines :: struct {
 	pipes:    [2]Pipe,  // pipes[side]: from that side to the other
 	links:    [2]Link,
 	tick:     int,
+	pause:    time.Duration,  // real time per tick, for transports that need it
 }
 
 two_machines_create :: proc(t: ^testing.T, stock: ^Stock_Sim, lag, jitter, loss_percent: int) -> (machines: ^Two_Machines, ok: bool) {
@@ -90,6 +92,7 @@ two_machines_play :: proc(t: ^testing.T, machines: ^Two_Machines, frames: int) -
 	TICKS_MAX :: 100_000
 	for ; machines.tick < TICKS_MAX; machines.tick += 1 {
 		now := u64(machines.tick) * TICK_NS
+		time.sleep(machines.pause)
 		for side in 0 ..< 2 {
 			session := machines.sessions[side]
 			err: string

@@ -51,7 +51,6 @@ Session :: struct {
 	outcome:        Outcome,
 }
 
-// (hole net-start-time :tags net :needs server-lobby) a session starts at frame 0 when created: no start time from the server, no ping measured to meet it.
 session_create :: proc(world: ^sim.World, transport: Transport, side: int, token: u32, now_ns: u64) -> ^Session {
 	s := new(Session)
 	s^ = {world = world, transport = transport, side = side, token = token, heard_ns = now_ns}

@@ -4,11 +4,21 @@
 package server
 
 import "core:fmt"
+import "core:os"
+import "../net/relay"
 
 // (hole server-lobby :tags server :needs (titlepack-hash param-layers) :sev blocker) no lobbies role: no lobby list per pack, match start, input relay, spectator feed or region check-in to the files host; no network.toml.
 // (hole server-authority :tags server :needs server-lobby) no authority mode: the server does not run the mode's sim on confirmed inputs, compare the clients' hashes with its own, or send a client its snapshot.
 main :: proc() {
-	fmt.eprintln("openwavu-server: not built")
+	r, ok := relay_open(relay.PORT)
+	if !ok {
+		fmt.eprintfln("openwavu-server: can not listen on udp %d", relay.PORT)
+		os.exit(1)
+	}
+	defer relay_close(&r)
+	fmt.eprintfln("openwavu-server: relay on udp %d", relay.PORT)
+	stop: bool
+	relay_serve(&r, &stop)
 }
 
 Rotation :: enum {
