@@ -132,6 +132,7 @@ typedef struct {
     uint16_t length;                     // anim length in frames
     uint16_t window_start, window_end;   // slide/push window
     uint16_t hold_frame;  // a move with one ends and holds there instead (flight lands on it); 0 = none
+    // (hole voice-clip-cues :tags (tk5mod audio)) a move's voice clips (move +0x2c, played by 0xa1eb0 at move start) are not loaded or sent as cues, nor the random voices after them (kinds 0..4, libc rand).
     int32_t voiceclips;  // voice clip of the move, -1 = none
     int32_t extra_props;                 // per-frame properties
     int32_t start_props;                 // conditional properties at move start

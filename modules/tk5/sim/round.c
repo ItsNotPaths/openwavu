@@ -332,7 +332,7 @@ static void score(T5World *w) {
     }
 }
 
-// (hole round-flow-cues :tags (tk5mod round-show audio)) the round flow sends no cues: announcer (round call, KO, perfect, time up, win/lose/draw by 0x3b3d0, played at end_frame 0x82, winner name; "ready"/"fight" records not found), music start and fade (0x9ee48).
+// (hole round-flow-cues :tags (tk5mod round-show audio)) the round flow sends no cues: announcer (round call, KO, perfect, time up, win/lose/draw by 0x3b3d0, played at end_frame 0x82, winner name, "Fight" = common 37; tk5decomp data.md 8.6), music start and fade (0x9ee48).
 void t5_round_flow(T5World *w) {
     if (w->flow == NULL || w->round.phase == T5_PHASE_NONE) return;  // no match running
     if (w->round.ended) begin(w, t5_next_phase(w->flow, w->round, match_over(w)), 1);  // last frame ended the phase: begin next
