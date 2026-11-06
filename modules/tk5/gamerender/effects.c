@@ -114,6 +114,7 @@ static void hit_effects(FxList *list, const T5CueEntry *entry, float age) {
     }
 }
 
+// (hole reaction-effect-owner :tags (tk5mod effects)) 0x8019/0x801c on a reaction move (jin/He_PopAte2n) play the reacting fighter's row 0, so Kazuya's crumple or launch envelops Jin in Jin's red; by effects.md the game does too (P slot), but it looks wrong: check whether the game's slot is the attacker's, or whether those reactions run in the attacker's set.
 static void property_effects(FxList *list, const T5CueEntry *entry, float age) {
     T5Vec3 none = {};
     T5Who self = entry->cue.key.side;
