@@ -12,6 +12,10 @@ Build :: struct {
 	music_table:             u64,     // vaddr: archive entry per music track
 	music_tracks:            int,
 	stage_table:             u64,     // vaddr: 16-byte stage records, +0xc the music track
+	costume_table:           u64,     // vaddr: COSTUME_RECORD_SIZE records, +4 the voice character
+	voice_names:             u64,     // vaddr: per voice character {own voice record, names record, frames before "wins", ?}
+	special_sounds:          u64,     // vaddr: SPECIAL_SOUNDS rows {id, (voice character, record) x2}
+	stage_sounds:            u64,     // vaddr: per stage {pointer, count} of its sound number -> record list
 }
 
 BUILDS :: [?]Build{
@@ -25,6 +29,10 @@ BUILDS :: [?]Build{
 		music_table             = 0x1005503c,
 		music_tracks            = 45,
 		stage_table             = 0x351090,
+		costume_table           = 0x350394,
+		voice_names             = 0x10006280,
+		special_sounds          = 0x10007198,
+		stage_sounds            = 0x351d90,
 	},
 }
 

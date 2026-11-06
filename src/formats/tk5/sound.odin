@@ -1,5 +1,5 @@
 // Sound packs (tk5decomp docs/data.md §8): records of PS ADPCM sounds, or one ATRAC3plus music track in a RIFF.
-// Big endian. The music tables are in the EBOOT.
+// Big endian. The music tables and the sound id tables of the sim's cues (§8.4) are in the EBOOT.
 package tk5_formats
 
 SOUND_PACK_MAGIC :: 0x00020100
@@ -16,6 +16,13 @@ GROUP_VOICES :: 5
 
 STAGE_RECORD_SIZE :: 16
 STAGE_RECORD_MUSIC :: 0xc
+
+VOICE_TABLE :: 9  // entry of the voice table (VTBL)
+COSTUME_FIRST :: 1528  // group of costume 0; costume n is GROUP_SIZE groups on
+COSTUME_RECORD_SIZE :: 0x24
+COSTUME_RECORD_VOICE :: 4
+VOICE_CHARACTERS :: 36
+SPECIAL_SOUNDS :: 17
 
 Sound_Codec :: enum u32 {
 	PS_ADPCM    = 2,
@@ -114,4 +121,49 @@ read_stage_music :: proc(eboot: []byte, build: Build, allocator := context.alloc
 		if track < 0 || track >= build.music_tracks do track = -1
 	}
 	return tracks, true
+}
+
+// A row of the voice table. A move's voice "row n of kind k" is the n-th row of its voice character with bit k in kinds.
+Voice_Row :: struct {
+	voice, index, record: int,  // index: the row's number in its voice character
+	face, kinds:          int,  // face: 0x4000 + clip, another face value, or 0xffff for none
+}
+
+VOICE_HEADER :: 0x10
+VOICE_ROW_SIZE :: 8
+VOICE_END :: 0xff  // in the voice byte
+
+read_voice_table :: proc(table: []byte, allocator := context.allocator) -> (rows: []Voice_Row, ok: bool) {
+	if len(table) < VOICE_HEADER || string(table[:4]) != "VTBL" do return
+	list := make([dynamic]Voice_Row, allocator)
+	for at := VOICE_HEADER; at + VOICE_ROW_SIZE <= len(table) && table[at + 1] != VOICE_END; at += VOICE_ROW_SIZE {
+		append(&list, Voice_Row{int(table[at + 1]), int(table[at]), int(be_i16(table, at + 2)), int(be_u16(table, at + 4)), int(be_u16(table, at + 6))})
+	}
+	return list[:], true
+}
+
+// count big endian words at vaddr, stride bytes apart.
+read_words :: proc(eboot: []byte, vaddr: u64, count: int, stride := 4, allocator := context.allocator) -> (words: []int, ok: bool) {
+	at := elf_offset(eboot, vaddr) or_return
+	if at + stride * (count - 1) + 4 > len(eboot) do return
+	words = make([]int, count, allocator)
+	for &word, k in words do word = int(be_i32(eboot, at + stride * k))
+	return words, true
+}
+
+// The voice character of the costume in this group.
+read_costume_voice :: proc(eboot: []byte, build: Build, group: int) -> (voice: int, ok: bool) {
+	costume := u64((group - COSTUME_FIRST) / GROUP_SIZE)
+	words := read_words(eboot, build.costume_table + COSTUME_RECORD_SIZE * costume + COSTUME_RECORD_VOICE, 1, allocator = context.temp_allocator) or_return
+	return words[0], true
+}
+
+// Each stage's record per stage sound number (from 1); -1: no sound.
+read_stage_sounds :: proc(eboot: []byte, build: Build, allocator := context.allocator) -> (lists: [][]int, ok: bool) {
+	lists = make([][]int, STAGE_COUNT, allocator)
+	for &list, stage in lists {
+		place := read_words(eboot, build.stage_sounds + u64(8 * stage), 2, allocator = context.temp_allocator) or_return
+		if place[1] > 0 do list = read_words(eboot, u64(u32(place[0])), place[1], allocator = allocator) or_return
+	}
+	return lists, true
 }

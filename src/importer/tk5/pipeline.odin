@@ -101,6 +101,7 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	}
 	import_shared_effects(&im)
 	import_sounds(&im)
+	import_sound_ids(&im)
 	import_images(&im)
 	step(&im)
 	thread.join(hasher)
@@ -157,6 +158,7 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 			write_sound_bank(im, fmt.tprintf("%s/stream_voices", part), group + formats.GROUP_STREAM_VOICES)
 		}
 		db.insert(w, "costume", c.id, costume)
+		if voice, read_voice := formats.read_costume_voice(im.game.eboot, im.game.build, first + k * formats.GROUP_SIZE); read_voice do db.insert(w, "costume_voice", c.id, costume, i64(voice))
 		for p in parts do db.insert(w, "costume_part", c.id, costume, p)
 	}
 	if owner == c.id {
@@ -373,7 +375,6 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 }
 
 // The shared banks and each stage's bank; the costumes' banks come with their character.
-// (hole voice-tables :tags (importer audio)) the voice table (entry 9, VTBL), each costume's voice character (0x350394 +4), the special sounds (0x10007198), the stage sound lists (0x351d90) and the winner names (0x10006280) are not in the db, so voice, stage and name cues find no record (tk5decomp data.md 8.4).
 import_sounds :: proc(im: ^Import) {
 	defer step(im)
 	for shared in SHARED_SOUND_BANKS {
@@ -383,6 +384,34 @@ import_sounds :: proc(im: ^Import) {
 	for index in 0 ..< formats.STAGE_COUNT {
 		write_sound_bank(im, stage_id(index), formats.SOUND_STAGE_FIRST + 3 * index)
 		free_all(context.temp_allocator)
+	}
+}
+
+// The tables that turn a sound cue's id into a record; each costume's voice character comes with its character.
+import_sound_ids :: proc(im: ^Import) {
+	w, eboot, build := &im.w, im.game.eboot, im.game.build
+	defer free_all(context.temp_allocator)
+	if table, has := read_entry(im.archive, formats.VOICE_TABLE); has {
+		rows, _ := formats.read_voice_table(table, context.temp_allocator)
+		for row in rows do db.insert(w, "voice", i64(row.voice), i64(row.index), i64(row.record), i64(row.face), i64(row.kinds))
+	}
+	if names, read := formats.read_words(eboot, build.voice_names, 4 * formats.VOICE_CHARACTERS, allocator = context.temp_allocator); read {
+		for voice in 0 ..< formats.VOICE_CHARACTERS {
+			name := names[4 * voice:]
+			db.insert(w, "voice_name", i64(voice), i64(name[0]), i64(name[1]), i64(name[2]))
+		}
+	}
+	if specials, read := formats.read_words(eboot, build.special_sounds, 5 * formats.SPECIAL_SOUNDS, allocator = context.temp_allocator); read {
+		for row in 0 ..< formats.SPECIAL_SOUNDS {
+			special := specials[5 * row:]
+			for pair in 0 ..< 2 do if voice := special[1 + 2 * pair]; voice >= 0 do db.insert(w, "special_sound", i64(special[0]), i64(voice), i64(special[2 + 2 * pair]))
+		}
+	}
+	if lists, read := formats.read_stage_sounds(eboot, build, context.temp_allocator); read {
+		for list, stage in lists {
+			if pack, has := read_entry(im.archive, formats.SOUND_STAGE_FIRST + 3 * stage); !has || len(pack) == 0 do continue  // a cut stage
+			for record, k in list do if record >= 0 do db.insert(w, "stage_sound", stage_id(stage), i64(k + 1), i64(record))
+		}
 	}
 }
 
