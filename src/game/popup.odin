@@ -19,6 +19,7 @@ Popup_Mode :: enum u8 {
 	Uninstall,
 }
 
+// (hole volume-settings :tags (game audio)) no volume settings (master, music, effects, voices); the music plays a little loud against the rest. The host could set each pack stream's gain by a channel kind the SDK names.
 Settings :: struct {
 	frame_cap: int,
 }
