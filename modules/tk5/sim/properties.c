@@ -191,18 +191,30 @@ void t5_force_move(const T5World *w, T5Fighter *f, T5Fighter *target, uint16_t i
     target->frame = 1;
 }
 
+// The slot's overwrite entry, made on its first overwrite; NULL when the table is full.
+static T5MoveOverwrite *overwrite_entry(const T5World *w, T5Ref move_ref) {
+    T5Fighter *owner = w->fighters[move_ref.set];
+    int32_t edited = t5_move_overwrite(owner, move_ref.index);
+    if (edited >= 0) return &owner->move_overwrites[edited];
+    if (owner->move_overwrite_count == T5_MOVE_OVERWRITE_COUNT) return NULL;
+    T5MoveOverwrite *entry = &owner->move_overwrites[owner->move_overwrite_count];
+    *entry = (T5MoveOverwrite){move_ref.index, *t5_move_at(w, move_ref)};  // the loaded move: read before the count grows
+    owner->move_overwrite_count++;
+    return entry;
+}
+
 // Move `value` takes the current move's data except its anim, and becomes the current move. Its tracking stays: cancels
-// into it name overrides against it. The game writes the move record in the loaded move data.
+// into it name overrides against it. The game writes the move record in the loaded move data; the port keeps the edit
+// in the overwrite table of the set's fighter, so it lasts for the round. A full table drops the edit.
 static void overwrite_move(const T5World *w, T5Fighter *f, uint16_t value) {
     T5Ref move_ref = t5_move_lookup(w, f, value);
-    // (hole move-overwrite :tags (tk5mod sim)) writes the loaded moves on the heap, outside the snapshot; needs a small overrides table in the sim state.
-    T5Move *target_move =  // edits the loaded move data, so it lasts for the match
-        &t5_set_mutable(w, move_ref.set)->moves[move_ref.index];
-    uint32_t anim = target_move->anim;
-    T5MoveTracking tracking = target_move->tracking;
-    *target_move = *t5_move_at(w, f->move);  // copy the whole current move over slot `value`
-    target_move->anim = anim;
-    target_move->tracking = tracking;
+    T5MoveOverwrite *entry = overwrite_entry(w, move_ref);
+    if (entry) {
+        T5Move current = *t5_move_at(w, f->move);  // copy the whole current move over slot `value`
+        current.anim = entry->move.anim;
+        current.tracking = entry->move.tracking;
+        entry->move = current;
+    }
     f->move = move_ref;
     f->anim_move = move_ref;  // the animation now plays from the moved slot
 }

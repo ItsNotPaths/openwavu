@@ -204,6 +204,7 @@ void t5_fighter_reset(T5World *w, T5Fighter *f, T5Fighter *opponent, T5RoundSetu
     f->moveset_scan = f->data;  // all movesets resolve in their own move data
     f->moveset_decided = f->data;
     f->moveset = f->data;
+    f->move_overwrite_count = 0;  // the round starts with the loaded moves
     f->option8 = NO_OPTION;  // no option picked by the cancel scan
     t5_input_round_start(&f->input);  // start the input state of the round
     f->cancel_lock = 0;

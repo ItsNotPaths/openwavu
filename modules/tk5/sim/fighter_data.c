@@ -8,14 +8,13 @@ static uint32_t anim_count(const T5FighterFiles *files) {
     return files->character.anim_count + files->common.anim_count + files->embedded.anim_count;
 }
 
-size_t t5_fighter_finish_storage(uint32_t anim_count, int32_t move_count) {
-    return t5_arena_round(anim_count * sizeof(T5Anim *)) +  // room for anim pointers
-           t5_arena_round((size_t)move_count * sizeof(T5Move));    // and the copy of the moves
+size_t t5_fighter_finish_storage(uint32_t anim_count) {
+    return t5_arena_round(anim_count * sizeof(T5Anim *));  // room for anim pointers
 }
 
 bool t5_fighter_storage(const T5FighterFiles *files, size_t *bytes) {
     if (!t5_motbin_storage(files->moves, bytes)) return false;  // bad moves
-    *bytes += t5_fighter_finish_storage(anim_count(files), t5_motbin_move_count(files->moves));
+    *bytes += t5_fighter_finish_storage(anim_count(files));
     return true;
 }
 
@@ -43,10 +42,6 @@ int t5_fighter_finish(T5FighterData *data, const T5FighterFiles *files, T5Arena 
         if (!anim || !anim->frame_count) return -1;
         data->moves.moves[index].length = anim->frame_count;
     }
-    size_t moves_bytes = (size_t)data->moves.move_count * sizeof(T5Move);
-    data->original_moves = t5_arena_take(arena, moves_bytes);
-    if (!data->original_moves) return -1;
-    memcpy(data->original_moves, data->moves.moves, moves_bytes);  // keep a copy of the moves as built
     return 0;
 }
 

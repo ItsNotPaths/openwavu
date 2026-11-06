@@ -985,11 +985,9 @@ const char *t5_load_anims(T5FighterFiles *files, sqlite3 *db, const char *charac
 const char *t5_load_fighter_storage(sqlite3 *db, const char *character, size_t *bytes) {
     size_t anims, motbin;
     uint32_t anim_count;
-    int32_t move_count;
     const char *failed = anims_storage(db, character, &anims, &anim_count);
     if (!failed) failed = t5_load_motbin_storage(db, character, &motbin);
-    if (!failed) failed = count_rows(db, character, &tables[0], &move_count);  // tables[0]: the moves
-    *bytes = failed ? 0 : anims + motbin + t5_fighter_finish_storage(anim_count, move_count);
+    *bytes = failed ? 0 : anims + motbin + t5_fighter_finish_storage(anim_count);
     return failed;
 }
 

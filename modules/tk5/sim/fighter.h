@@ -98,7 +98,6 @@ struct T5FighterData {
     uint32_t anim_count;  // how many anims there are
     T5Skeleton skeleton;  // the bone layout of the character
     T5Rig bind;
-    T5Move *original_moves;
 };
 
 // The cancel scan looking ahead past a move end (read by requirements 124..126).
@@ -126,6 +125,15 @@ enum T5PickKind : uint8_t {
     PICKED_MOVE_END,  // the move ran out: its end entry
 };
 
+enum { T5_MOVE_OVERWRITE_COUNT = 16 };  // slots one round can overwrite; a full table drops the edit
+
+// A slot of the fighter's move set that PROP_OVERWRITE_MOVE rewrote. The loaded moves stay read-only, so the edit
+// is in the snapshot.
+typedef struct {
+    int16_t index;
+    T5Move move;
+} T5MoveOverwrite;
+
 struct T5Fighter {
     // identity and references
     int32_t kind;                // 0 fighter, 15 extra (the mobs 1..14 and 16 of stock T5 are not in the sim)
@@ -139,6 +147,8 @@ struct T5Fighter {
     uint8_t moveset;             // the slot move ids resolve in (the thrower's during a throw)
     uint8_t moveset_scan;        // the slot the last cancel scan took its group cancels and input sequences from
     uint8_t moveset_decided;     // moveset as of the decide pass
+    T5MoveOverwrite move_overwrites[T5_MOVE_OVERWRITE_COUNT];  // edits of the set of this fighter's slot, for the round
+    uint32_t move_overwrite_count;
     int16_t opponent;            // object index
     int16_t target;              // look/target object
     int16_t hit_targets[T5_HIT_TARGETS];  // objects hit by this move; reqs 219..226 read [0]
@@ -459,8 +469,8 @@ typedef struct {
 // (hole sim-files-drop :tags (tk5mod port)) tk5decomp's gates still load fighters from .t5m and .t5b: switch them to t5_load_fighter behind the parity gate, then drop these parsers and the Python installers.
 bool t5_fighter_storage(const T5FighterFiles *files, size_t *bytes);  // arena bytes that t5_fighter_build takes
 int t5_fighter_build(T5FighterData *data, const T5FighterFiles *files, T5Arena *arena);  // 0 on success
-// The steps after data's moves and skeleton are read: the anim list, the rig, the move lengths, the copy of the moves.
-size_t t5_fighter_finish_storage(uint32_t anim_count, int32_t move_count);  // arena bytes t5_fighter_finish takes
+// The steps after data's moves and skeleton are read: the anim list, the rig, the move lengths.
+size_t t5_fighter_finish_storage(uint32_t anim_count);  // arena bytes t5_fighter_finish takes
 int t5_fighter_finish(T5FighterData *data, const T5FighterFiles *files, T5Arena *arena);  // 0 on success
 static inline const T5Anim *t5_fighter_anim(const T5FighterData *data, uint32_t index) {
     return index < data->anim_count ? data->anims[index] : NULL;  // an index past the bank gives no anim
@@ -481,8 +491,17 @@ static inline T5Ref t5_ref(uint32_t set, int32_t index) { return (T5Ref){(int16_
 static inline bool t5_ref_none(T5Ref ref) { return ref.index < 0; }
 static inline const T5Motbin *t5_set(const T5World *w, uint32_t set) { return &w->data[set]->moves; }
 static inline T5Motbin *t5_set_mutable(const T5World *w, uint32_t set) { return &w->data[set]->moves; }
+// Where the fighter's edit of slot `index` of its set is in move_overwrites, or -1.
+static inline int32_t t5_move_overwrite(const T5Fighter *f, int16_t index) {
+    for (uint32_t overwrite = 0; overwrite < f->move_overwrite_count; overwrite++)
+        if (f->move_overwrites[overwrite].index == index) return (int32_t)overwrite;
+    return -1;
+}
 static inline const T5Move *t5_move_at(const T5World *w, T5Ref ref) {
-    return ref.index < 0 ? NULL : &t5_set(w, ref.set)->moves[ref.index];  // no move for a missing ref
+    if (ref.index < 0) return NULL;  // no move for a missing ref
+    const T5Fighter *owner = w->fighters[ref.set];  // set k belongs to the fighter in slot k
+    int32_t edited = t5_move_overwrite(owner, ref.index);
+    return edited >= 0 ? &owner->move_overwrites[edited].move : &t5_set(w, ref.set)->moves[ref.index];
 }
 static inline const T5Pushback *t5_pushback_at(const T5World *w, T5Ref ref) {
     return ref.index < 0 ? NULL : &t5_set(w, ref.set)->pushbacks[ref.index];  // no pushback for a missing ref
