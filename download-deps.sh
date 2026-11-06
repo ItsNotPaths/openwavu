@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dependencies into vendor/: zig (the C compiler for pack modules, pinned so ow build is reproducible), wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding, cgltf, tomlc17, jsmn, dr_flac,
-# SDL3 and SDL3_ttf built static (FreeType) with their headers for pack modules, ffmpeg's audio codecs for the importer, and the UI font. Delete a vendor/ folder to refetch it.
+# SDL3 and SDL3_ttf built static (FreeType) with their headers for pack modules, ffmpeg's audio codecs for the importer, ENet, and the UI font. Delete a vendor/ folder to refetch it.
 set -euo pipefail
 cd "$(dirname "$0")"
 ZIG=0.16.0
@@ -20,6 +20,8 @@ DR_FLAC_SHA256=b8078eeb5d523502eb7964508cd7ec8450bc79d383bec90aa17fd9e2fefd9c24
 JSMN_SHA256=1ed6154dedf009212a08a397e9c4ed50a0ce31d5a8301bb294e137ae3188c13b
 TOMLC17=R261003
 TOMLC17_SHA256=48876f14bd7a123f95f16074dd0d5681f75c397c1bce61f1a52f42201f90eacc
+ENET=1.3.18
+ENET_SHA256=28603c895f9ed24a846478180ee72c7376b39b4bb1287b73877e5eae7d96b0dd
 GLSLANG=16.5.0
 GLSLANG_SHA256=01af17195fbeb59e39e31e9506de35bb39dfd35807ea0c9a1a99d7d1183ddd45
 FONTS_COMMIT=8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5 # google/fonts
@@ -160,6 +162,23 @@ if [ ! -f vendor/tomlc17/tomlc17.c ]; then
 	cp "$toml_dir/src/tomlc17.c" "$toml_dir/src/tomlc17.h" "$toml_dir/LICENSE" vendor/tomlc17/
 	rm -rf "$toml_dir"
 	echo "vendor/tomlc17: $TOMLC17"
+fi
+
+# UDP for online play, built static for vendor:ENet's "system:enet". glibc 2.36 so the server runs on Debian 12.
+if [ ! -f vendor/enet/libenet.a ]; then
+	enet_dir=$(mktemp -d)
+	fetch "https://github.com/lsalzman/enet/archive/refs/tags/v$ENET.tar.gz" "$enet_dir/enet.tar.gz" "$ENET_SHA256"
+	tar xzf "$enet_dir/enet.tar.gz" -C "$enet_dir" --strip-components=1
+	mkdir -p vendor/enet
+	for source in callbacks compress host list packet peer protocol unix; do
+		vendor/zig/zig cc --target=x86_64-linux-gnu.2.36 -O2 -I"$enet_dir/include" \
+			-DHAS_POLL -DHAS_FCNTL -DHAS_SOCKLEN_T -DHAS_MSGHDR_FLAGS -DHAS_GETADDRINFO -DHAS_GETNAMEINFO \
+			-DHAS_INET_PTON -DHAS_INET_NTOP -c "$enet_dir/$source.c" -o "$enet_dir/$source.o"
+	done
+	vendor/zig/zig ar rcs vendor/enet/libenet.a "$enet_dir"/*.o
+	cp "$enet_dir/LICENSE" vendor/enet/
+	rm -rf "$enet_dir"
+	echo "vendor/enet: $ENET"
 fi
 
 # glb reading: the cgltf binding and C source that ship with the installed Odin, so the two always match.
