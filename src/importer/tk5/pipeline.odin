@@ -8,6 +8,7 @@ import "core:slice"
 import "core:strings"
 import "core:sync"
 import "core:thread"
+import "../../audio"
 import "../../db"
 import convert "../../convert/tk5"
 import formats "../../formats/tk5"
@@ -33,6 +34,7 @@ Import :: struct {
 	w:        db.Writer,
 	progress: ^Progress,
 	textures: map[string]bool,  // <owner>/<hash> with a texture row
+	sound_packs: map[[32]byte]string,  // SHA-256 of a sound pack -> the bank its files were written under
 }
 
 // Steps of one import, counted with atomics so another thread can show them.
@@ -40,8 +42,13 @@ Progress :: struct {
 	done, total: int,
 }
 
-// One step per character, stage, 2D art entry and font, one for the select renders, one for the rest, one for the pack file.
-PROGRESS_STEPS :: len(formats.CHARACTERS) + formats.STAGE_COUNT + len(formats.ART_ENTRIES) + len(formats.FONTS) + 3
+// One step per character, stage, 2D art entry and font, one each for the music, the sounds, the select renders, the rest and the pack file.
+PROGRESS_STEPS :: len(formats.CHARACTERS) + formats.STAGE_COUNT + len(formats.ART_ENTRIES) + len(formats.FONTS) + 5
+
+// The banks every match shares, by archive entry.
+SHARED_SOUND_BANKS := [?]struct {bank: string, entry: int}{
+	{"menu", formats.SOUND_MENU}, {"round_calls", formats.SOUND_ROUND_CALLS}, {"common", formats.SOUND_COMMON}, {"names", formats.SOUND_NAMES},
+}
 
 // Archive -> the stock pack's files under root.
 run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string) {
@@ -65,8 +72,10 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	defer {
 		for key in im.textures do delete(key)
 		delete(im.textures)
+		for _, bank in im.sound_packs do delete(bank)
+		delete(im.sound_packs)
 	}
-	for dir in ([]string{"anims", "effects", "parts", "stages", "textures", "ui"}) {
+	for dir in ([]string{"anims", "effects", "music", "parts", "sounds", "stages", "textures", "ui"}) {
 		if !make_dir(join(im.root, dir)) do return fmt.tprintf("cannot create %s", join(im.root, dir))
 	}
 	im.w, err = db.create(join(im.root, "tk5.db"), TK5_SCHEMA)
@@ -85,8 +94,9 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	write_camera_bank(&im, "cameras", cameras, .Plain)
 	if throw_cameras, read := formats.read_throw_cameras(game.eboot, game.build, context.temp_allocator); read do convert.write_throw_camera_rows(w, throw_cameras)
 	// (hole side-switch-flags :tags (importer round-show) :needs coded-cameras) no side switch flag per throw_camera row: at import, place each row's shot against the anims of the throws that use its category and flag the rows whose shot ends with the fighters swapped on screen.
+	stage_tracks := import_music(&im)  // before the stages that name them
 	for id in 0 ..< formats.STAGE_COUNT {
-		import_stage(&im, id)
+		import_stage(&im, id, stage_tracks[id])
 		step(&im)
 	}
 	import_shared_effects(&im)
@@ -140,7 +150,12 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 		costume := fmt.tprintf("%d", k + 1)
 		part := fmt.tprintf("%s_%s", owner, costume)
 		parts := []string{part, fmt.tprintf("%s_lod", part)}
-		if owner == c.id && !import_parts(im, owner, parts, model) do continue
+		if owner == c.id {
+			if !import_parts(im, owner, parts, model) do continue
+			group := first + k * formats.GROUP_SIZE
+			write_sound_bank(im, fmt.tprintf("%s/voices", part), group + formats.GROUP_VOICES)
+			write_sound_bank(im, fmt.tprintf("%s/stream_voices", part), group + formats.GROUP_STREAM_VOICES)
+		}
 		db.insert(w, "costume", c.id, costume)
 		for p in parts do db.insert(w, "costume_part", c.id, costume, p)
 	}
@@ -308,14 +323,19 @@ write_camera_bank :: proc(im: ^Import, owner: string, data: []byte, packing: con
 	}
 }
 
-import_stage :: proc(im: ^Import, index: int) {
+stage_id :: proc(index: int) -> string {
+	id := formats.STAGE_NAMES[index]
+	return id != "" ? id : fmt.tprintf("stage_%02d", index)
+}
+
+// music_track: -1 for none.
+import_stage :: proc(im: ^Import, index: int, music_track: int) {
 	defer free_all(context.temp_allocator)
 	data, has := read_entry(im.archive, formats.STAGE_FIRST + 3 * index)
 	if !has do return
 	s, ok := formats.read_stage(data, context.temp_allocator)
 	if !ok do return
-	id := formats.STAGE_NAMES[index]
-	if id == "" do id = fmt.tprintf("stage_%02d", index)
+	id := stage_id(index)
 
 	textures := make(convert.Textures, context.temp_allocator)
 	list, _ := formats.read_ntp3(s.sections[1], context.temp_allocator)
@@ -348,11 +368,106 @@ import_stage :: proc(im: ^Import, index: int) {
 	if len(meshes) > 0 && !convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:]) do return
 	collision, surfaces := fmt.tprintf("stages/%s.collision.glb", id), fmt.tprintf("stages/%s.surfaces", id)
 	if !convert.write_stage_collision(join(im.root, collision), join(im.root, surfaces), s) do return
-	db.insert(&im.w, "stage", id, id, i64(index), file, collision, surfaces)
+	music: db.Value = music_track >= 0 ? fmt.tprintf("%d", music_track) : db.Null{}
+	db.insert(&im.w, "stage", id, id, i64(index), file, collision, surfaces, music)
 }
 
-// (hole sound-extract :tags (importer audio)) vag sound packs (entries 161..206, character slots +4/+5, stage packs) are not decoded to WAV (ffmpeg parts linked statically, ws.md).
-import_sounds :: proc(im: ^Import) {}
+// The shared banks and each stage's bank; the costumes' banks come with their character.
+// (hole voice-tables :tags (importer audio)) the voice table (entry 9, VTBL), each costume's voice character (0x350394 +4), the special sounds (0x10007198), the stage sound lists (0x351d90) and the winner names (0x10006280) are not in the db, so voice, stage and name cues find no record (tk5decomp data.md 8.4).
+import_sounds :: proc(im: ^Import) {
+	defer step(im)
+	for shared in SHARED_SOUND_BANKS {
+		write_sound_bank(im, shared.bank, shared.entry)
+		free_all(context.temp_allocator)
+	}
+	for index in 0 ..< formats.STAGE_COUNT {
+		write_sound_bank(im, stage_id(index), formats.SOUND_STAGE_FIRST + 3 * index)
+		free_all(context.temp_allocator)
+	}
+}
+
+// Every record of a sound pack as sounds/<bank>/<idx>.flac. A pack already written under another bank shares its files.
+write_sound_bank :: proc(im: ^Import, bank: string, entry: int) {
+	pack, has := read_entry(im.archive, entry)
+	if !has do return
+	records, read := formats.read_sound_pack(pack, context.temp_allocator)
+	if !read do return
+	digest: [32]byte
+	hash.hash_bytes_to_buffer(.SHA256, pack, digest[:])
+	first, shared := im.sound_packs[digest]
+	if !shared {
+		if !make_dir(join(im.root, "sounds", bank)) do return
+		first = strings.clone(bank)
+		im.sound_packs[digest] = first
+	}
+	for record in records {
+		file := fmt.tprintf("sounds/%s/%d.flac", first, record.index)
+		written := shared ? os.exists(join(im.root, file)) : write_sound(im, file, record)
+		if !written do continue
+		loop_start, loop_length := sound_loop(record)
+		db.insert(&im.w, "sound", bank, i64(record.index), file, f64(record.volume), i64(record.pitch), f64(record.pan), loop_start, loop_length)
+	}
+}
+
+// Every music track as music/<track>.flac; tracks on one entry share the first one's file. Returns each stage's track, -1 for none.
+import_music :: proc(im: ^Import) -> (stage_tracks: [formats.STAGE_COUNT]int) {
+	defer step(im)
+	slice.fill(stage_tracks[:], -1)
+	entries, read := formats.read_music_tracks(im.game.eboot, im.game.build)
+	if !read do return
+	defer delete(entries)
+	written := make(map[int]int)  // entry -> the track whose file it is
+	defer delete(written)
+	for entry, track in entries {
+		defer free_all(context.temp_allocator)
+		first, shared := written[entry]
+		pack := read_entry(im.archive, entry) or_continue
+		records := formats.read_sound_pack(pack, context.temp_allocator) or_continue
+		if len(records) != 1 do continue
+		if !shared {
+			first = track
+			if !write_sound(im, fmt.tprintf("music/%d.flac", track), records[0]) do continue
+			written[entry] = track
+		}
+		loop_start, loop_length := sound_loop(records[0])
+		db.insert(&im.w, "music", fmt.tprintf("%d", track), fmt.tprintf("music/%d.flac", first), loop_start, loop_length)
+	}
+	tracks, _ := formats.read_stage_music(im.game.eboot, im.game.build, context.temp_allocator)
+	for track, stage in tracks do if track >= 0 && entries[track] in written do stage_tracks[stage] = track
+	return
+}
+
+// A record as a FLAC file: PS ADPCM mono at its rate, ATRAC3plus as its RIFF says, without the delay.
+write_sound :: proc(im: ^Import, file: string, record: formats.Sound_Record) -> bool {
+	samples: []i16
+	channels, rate := 1, record.rate
+	switch record.codec {
+	case .PS_ADPCM:
+		samples = audio.decode(.PS_ADPCM, channels, rate, audio.PS_ADPCM_FRAME, record.data, context.temp_allocator) or_return
+	case .ATRAC3_PLUS:
+		riff := formats.read_riff(record.data) or_return
+		channels, rate = riff.channels, riff.rate
+		decoded := audio.decode(.ATRAC3_PLUS, channels, rate, riff.block_align, riff.data, context.temp_allocator) or_return
+		if (riff.skip + riff.frames) * channels > len(decoded) do return false
+		samples = decoded[riff.skip * channels:][:riff.frames * channels]
+	case: return false
+	}
+	flac := audio.flac(samples, channels, rate, context.temp_allocator) or_return
+	return os.write_entire_file(join(im.root, file), flac) == nil
+}
+
+// A record's loop in samples of its FLAC file; NULL for none.
+sound_loop :: proc(record: formats.Sound_Record) -> (start, length: db.Value) {
+	if !record.looped do return db.Null{}, db.Null{}
+	switch record.codec {
+	case .PS_ADPCM:
+		return i64(record.loop_start / audio.PS_ADPCM_FRAME * audio.PS_ADPCM_SAMPLES), i64(record.loop_length / audio.PS_ADPCM_FRAME * audio.PS_ADPCM_SAMPLES)
+	case .ATRAC3_PLUS:
+		riff, _ := formats.read_riff(record.data)
+		return i64(record.loop_start - riff.skip), i64(record.loop_length)
+	}
+	return db.Null{}, db.Null{}
+}
 
 // (hole tim2-textures :tags importer :sev polish) model section 17 (TIM2) is not decoded.
 // (hole menu-layouts :tags (importer tk5mod)) a screen's SWG layout is copied as is, not decoded; its third block is dropped.

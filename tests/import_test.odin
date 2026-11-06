@@ -33,6 +33,21 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 18339)  // 783 of them camera tracks
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM move_camera"), 342)  // every intro and win pose
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage"), 37)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM sound WHERE bank = 'common'"), 79)  // hits, announcer, system
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM sound WHERE bank = 'round_calls'"), 21)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM sound WHERE bank = 'names'"), 37)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM costume_part WHERE part NOT GLOB '*_lod' AND part || '/voices' NOT IN (SELECT bank FROM sound)"), 0)  // every costume speaks
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM music"), 44)  // track 18's entry is empty
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage WHERE music IS NULL"), 1)  // ground_zero fades out
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage WHERE music NOT IN (SELECT id FROM music)"), 0)
+	audio_files: ^db.Stmt
+	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT DISTINCT file FROM sound UNION SELECT file FROM music", -1, &audio_files, nil), db.OK) do return
+	defer db.finalize(audio_files)
+	for db.step(audio_files) == db.ROW {
+		file := string(db.column_text(audio_files, 0))
+		data, read_err := os.read_entire_file(fmt.tprintf("build/test_packs/tekken5dr/%s", file), context.temp_allocator)
+		if !testing.expect(t, read_err == nil && len(data) > 42 && string(data[:4]) == "fLaC", file) do break
+	}
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 1773)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select/*'"), 240)  // unlit menu entries
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_lit/*'"), 240)

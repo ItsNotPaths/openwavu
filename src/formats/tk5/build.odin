@@ -9,6 +9,9 @@ Build :: struct {
 	table_count:             int,
 	throw_camera_table:      u64,     // vaddr of the throw camera table
 	throw_camera_categories: int,
+	music_table:             u64,     // vaddr: archive entry per music track
+	music_tracks:            int,
+	stage_table:             u64,     // vaddr: 16-byte stage records, +0xc the music track
 }
 
 BUILDS :: [?]Build{
@@ -19,6 +22,9 @@ BUILDS :: [?]Build{
 		table_count             = 2297,
 		throw_camera_table      = 0x3513f8,
 		throw_camera_categories = 253,
+		music_table             = 0x1005503c,
+		music_tracks            = 45,
+		stage_table             = 0x351090,
 	},
 }
 

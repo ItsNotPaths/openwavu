@@ -68,21 +68,28 @@ CREATE TABLE stage (
 	game_index INTEGER,
 	file       TEXT NOT NULL,
 	collision  TEXT NOT NULL,
-	surfaces   TEXT NOT NULL
+	surfaces   TEXT NOT NULL,
+	music      TEXT REFERENCES music(id)  -- NULL: none
 );
 
--- Not extracted yet.
-
+-- FLAC files. A bank is one of the game's sound packs; idx: the game's record number. Loops in samples, NULL: none.
 CREATE TABLE sound (
-	id   TEXT PRIMARY KEY,
-	bank TEXT,
-	file TEXT NOT NULL
+	bank        TEXT NOT NULL,  -- common, menu, round_calls, names, a stage, <costume part>/voices or /stream_voices
+	idx         INTEGER NOT NULL,
+	file        TEXT NOT NULL,
+	volume      REAL NOT NULL,     -- dB
+	pitch       INTEGER NOT NULL,  -- cents
+	pan         REAL NOT NULL,     -- degrees
+	loop_start  INTEGER,
+	loop_length INTEGER,
+	PRIMARY KEY (bank, idx)
 );
 
--- (hole music-extract :tags (importer audio) :sev polish) where TK5 keeps its music is not known.
-CREATE TABLE music (
-	id   TEXT PRIMARY KEY,
-	file TEXT NOT NULL
+CREATE TABLE music (  -- id: the game's track number
+	id          TEXT PRIMARY KEY,
+	file        TEXT NOT NULL,
+	loop_start  INTEGER,
+	loop_length INTEGER
 );
 
 CREATE TABLE image (  -- UI, portraits
