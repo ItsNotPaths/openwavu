@@ -15,5 +15,6 @@ OW_EXPORT(ow_init) int32_t init(void) {
 OW_EXPORT(ow_frame) void frame(float dt, uint32_t cmdbuf) {
     if (!read_view()) return;
     t5_scene_send(&view, dt);
+    t5_sound_play(&view, dt);
     t5_hud_draw(&view);
 }

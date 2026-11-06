@@ -22,6 +22,10 @@ OwCamera t5_camera(const T5View *view, float seconds);
 void t5_effects_init(sqlite3 *db, const T5View *view);
 // The effects of the view's cues, at most max; returns how many.
 uint32_t t5_effects(const T5View *view, OwFx *entries, uint32_t max);
+// The sounds of the fighters, the stage and the announcer, the stage's track, and the sound channels.
+void t5_sound_init(sqlite3 *db, const T5View *view);
+// The new sound, voice, announcer and music cues of the view; keeps the music fed.
+void t5_sound_play(const T5View *view, float seconds);
 // Health, timer, round marks and the phase banners, in SDL 2D.
 void t5_hud_draw(const T5View *view);
 

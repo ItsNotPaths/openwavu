@@ -97,6 +97,7 @@ bool t5_scene_init(const T5View *view) {
     stage_asset = load_stage(db, view->stage);
     t5_camera_init(db, view);
     t5_effects_init(db, view);
+    t5_sound_init(db, view);
     sqlite3_close(db);
     return true;
 }
