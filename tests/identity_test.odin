@@ -3,6 +3,7 @@ package tests
 import "core:os"
 import "core:testing"
 import "../src/online"
+import "../src/online/wire"
 
 IDENTITY_DIR :: "build/identity_test"
 
@@ -23,8 +24,8 @@ identity_key_is_kept :: proc(t: ^testing.T) {
 
 	challenge := transmute([]byte)string("challenge")
 	signature := online.sign(loaded, challenge)
-	testing.expect(t, online.signed_by(made.public_key, challenge, signature))
-	testing.expect(t, !online.signed_by(made.public_key, transmute([]byte)string("other"), signature))
+	testing.expect(t, wire.signed_by(made.public_key, challenge, signature))
+	testing.expect(t, !wire.signed_by(made.public_key, transmute([]byte)string("other"), signature))
 
 	broken := transmute([]byte)string("short")
 	_ = os.write_entire_file(path, broken)

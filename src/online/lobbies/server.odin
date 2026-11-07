@@ -10,7 +10,7 @@ import "core:math/rand"
 import "core:sync"
 import enet "vendor:ENet"
 import "../../kipp"
-import "../../online"
+import "../wire"
 
 PEERS_MAX :: 64
 
@@ -53,7 +53,7 @@ Match :: struct {
 open :: proc(port: u16) -> (server: Server, ok: bool) {
 	if enet.initialize() != 0 do return
 	address := enet.Address{host = enet.HOST_ANY, port = port}
-	server.host = enet.host_create(&address, PEERS_MAX, online.CHANNELS, 0, 0)
+	server.host = enet.host_create(&address, PEERS_MAX, wire.CHANNELS, 0, 0)
 	server.allocator = context.allocator
 	return server, server.host != nil
 }
@@ -79,7 +79,7 @@ serve :: proc(server: ^Server, stop: ^bool) {
 		case .RECEIVE:
 			player := (^Player)(event.peer.data)
 			bytes := event.packet.data[:event.packet.dataLength]
-			if event.channelID == online.CHANNEL_SESSION do forward(player, bytes)
+			if event.channelID == wire.CHANNEL_SESSION do forward(player, bytes)
 			else if line, read := kipp.parse(string(bytes)); read do obey(server, player, line)
 			enet.packet_destroy(event.packet)
 		case .DISCONNECT:
@@ -97,7 +97,7 @@ arrive :: proc(peer: ^enet.Peer) {
 	player.peer = peer
 	crypto.rand_bytes(player.challenge[:])
 	peer.data = player
-	send(player, "version", {online.PROTOCOL, "openwavu-lobby"})
+	send(player, "version", {wire.PROTOCOL, "openwavu-lobby"})
 	send(player, "challenge", {string(hex.encode(player.challenge[:], context.temp_allocator))})
 	send(player, "sync", {"state"})
 }
@@ -133,7 +133,7 @@ hello :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	}
 	copy(public_key[:], key)
 	copy(signed[:], signature)
-	if !online.signed_by(public_key, player.challenge[:], signed) {
+	if !wire.signed_by(public_key, player.challenge[:], signed) {
 		refuse(player, "HELLO", "badarg", "the signature does not match the key")
 		return
 	}
@@ -181,7 +181,7 @@ join :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	switch {
 	case player.lobby != nil:                         refuse(player, "JOIN", "badarg", "leave the lobby first")
 	case lobby == nil:                                refuse(player, "JOIN", "badarg", "no such lobby")
-	case len(lobby.players) >= online.LOBBY_PLAYERS_MAX: refuse(player, "JOIN", "badarg", "the lobby is full")
+	case len(lobby.players) >= wire.LOBBY_PLAYERS_MAX: refuse(player, "JOIN", "badarg", "the lobby is full")
 	case:                                             enter(server, player, lobby)
 	}
 }
@@ -228,14 +228,14 @@ ready :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	switch {
 	case lobby == nil:                               refuse(player, "READY", "badarg", "join a lobby first")
 	case lobby.match != nil:                         refuse(player, "READY", "badarg", "the match is running")
-	case !loadout_read || len(loadout) > 2 * online.LOADOUT_MAX: refuse(player, "READY", "badarg", "the loadout does not read")
+	case !loadout_read || len(loadout) > 2 * wire.LOADOUT_MAX: refuse(player, "READY", "badarg", "the loadout does not read")
 	case:
 		delete(player.loadout)
 		player.loadout = fmt.aprint(loadout)
 		player.seat = .Ready
 		broadcast(server, player_line(lobby, player))
 		for member in lobby.players do if member.seat != .Ready do return
-		if len(lobby.players) == online.LOBBY_PLAYERS_MAX do start_match(server, lobby)
+		if len(lobby.players) == wire.LOBBY_PLAYERS_MAX do start_match(server, lobby)
 	}
 }
 
@@ -274,9 +274,9 @@ forward :: proc(player: ^Player, packet: []byte) {
 	lobby := player.lobby
 	if lobby == nil do return
 	match, running := lobby.match.?
-	if token, ok := online.packet_token(packet); !running || !ok || token != match.token do return
+	if token, ok := wire.packet_token(packet); !running || !ok || token != match.token do return
 	for member in lobby.players do if member != player {
-		enet.peer_send(member.peer, online.CHANNEL_SESSION, enet.packet_create(raw_data(packet), len(packet), {.UNSEQUENCED}))
+		enet.peer_send(member.peer, wire.CHANNEL_SESSION, enet.packet_create(raw_data(packet), len(packet), {.UNSEQUENCED}))
 	}
 }
 
@@ -293,7 +293,7 @@ player_line :: proc(lobby: ^Lobby, player: ^Player) -> string {
 @(private = "file")
 match_line :: proc(lobby: ^Lobby, match: Match) -> string {
 	return write("match", {lobby.id}, {"token", fmt.tprintf("%08x", match.token)}, {"seed", fmt.tprint(match.seed)},
-		{"delay_ms", fmt.tprint(online.START_DELAY_MS)}, {"side0", lobby.players[0].key}, {"side1", lobby.players[1].key})
+		{"delay_ms", fmt.tprint(wire.START_DELAY_MS)}, {"side0", lobby.players[0].key}, {"side1", lobby.players[1].key})
 }
 
 // A line the server wrote; its fields are ids, keys and cleaned values, so it always fits.
@@ -310,7 +310,7 @@ send :: proc(player: ^Player, kind: string, subject: []string, attributes: ..kip
 
 @(private = "file")
 send_line :: proc(player: ^Player, text: string) {
-	enet.peer_send(player.peer, online.CHANNEL_CONTROL, enet.packet_create(raw_data(text), len(text), {.RELIABLE}))
+	enet.peer_send(player.peer, wire.CHANNEL_CONTROL, enet.packet_create(raw_data(text), len(text), {.RELIABLE}))
 }
 
 @(private = "file")

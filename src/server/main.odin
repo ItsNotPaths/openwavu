@@ -6,7 +6,7 @@ package server
 import "core:fmt"
 import "core:os"
 import "core:thread"
-import "../online"
+import "../online/wire"
 import "../online/lobbies"
 
 // (hole lobby-regions :tags server) no region check-in to the files host, no spectator feed and no network.toml: one lobbies role on the files box.
@@ -22,13 +22,13 @@ main :: proc() {
 	incorporate_all(dir)
 	if prep do return
 	thread.create_and_start_with_poly_data(dir, proc(dir: string) {serve_files(dir)})
-	lobby_server, ok := lobbies.open(online.PORT)
+	lobby_server, ok := lobbies.open(wire.PORT)
 	if !ok {
-		fmt.eprintfln("openwavu-server: can not listen on udp %d", online.PORT)
+		fmt.eprintfln("openwavu-server: can not listen on udp %d", wire.PORT)
 		os.exit(1)
 	}
 	defer lobbies.close(&lobby_server)
-	fmt.eprintfln("openwavu-server: lobbies on udp %d", online.PORT)
+	fmt.eprintfln("openwavu-server: lobbies on udp %d", wire.PORT)
 	stop: bool
 	lobbies.serve(&lobby_server, &stop)
 }

@@ -2,7 +2,7 @@ package imports
 
 import "base:runtime"
 import "core:slice"
-import "core:strings"
+import "../online/wire"
 import "../titlepack"
 import "../wasm"
 
@@ -44,7 +44,6 @@ Entry :: struct {
 }
 
 HOST_VIEW_VERSION :: 1
-LOADOUT_MAX :: 4096
 
 entry_create :: proc(tp: titlepack.Title_Pack) -> Entry {
 	return {view = {version = HOST_VIEW_VERSION, size = size_of(Host_View)}, modes = tp.modes, params = tp.params, allocator = context.allocator}
@@ -52,7 +51,7 @@ entry_create :: proc(tp: titlepack.Title_Pack) -> Entry {
 
 match_request_destroy :: proc(r: ^Match_Request, allocator: runtime.Allocator) {
 	for loadout in r.loadouts do delete(loadout, allocator)
-	params_destroy(&r.params, allocator)
+	titlepack.params_destroy(&r.params, allocator)
 }
 
 // host_view(buf, cap) -> its length, copying as much as fits. match_local(mode, len, bot_sides, loadout0, len,
@@ -68,41 +67,6 @@ define_entry :: proc(l: wasm.Linker, entry: ^Entry) -> (err: string) {
 // instances; the host refills it each tick.
 define_view :: proc(l: wasm.Linker, view: ^[dynamic]byte) -> (err: string) {
 	return wasm.define_func(l, "view", {wasm.I32, wasm.I32}, {wasm.I32}, view_import, view)
-}
-
-// "stage=dragons_nest rounds=5" -> the values as text; ok is false for a pair with no name or no `=`.
-parse_params :: proc(text: string, allocator := context.allocator) -> (params: map[string]string, ok: bool) {
-	params = make(map[string]string, allocator)
-	for pair in strings.fields(text, context.temp_allocator) {
-		name, eq, value := strings.partition(pair, "=")
-		if name == "" || eq == "" {
-			params_destroy(&params, allocator)
-			return nil, false
-		}
-		params[strings.clone(name, allocator)] = strings.clone(value, allocator)
-	}
-	return params, true
-}
-
-// parse_params' inverse.
-params_text :: proc(params: map[string]string, allocator := context.allocator) -> string {
-	pairs := make([dynamic]string, context.temp_allocator)
-	for name, value in params do append(&pairs, strings.concatenate({name, "=", value}, context.temp_allocator))
-	return strings.join(pairs[:], " ", allocator)
-}
-
-params_clone :: proc(params: map[string]string, allocator := context.allocator) -> map[string]string {
-	copied := make(map[string]string, allocator)
-	for name, value in params do copied[strings.clone(name, allocator)] = strings.clone(value, allocator)
-	return copied
-}
-
-params_destroy :: proc(params: ^map[string]string, allocator := context.allocator) {
-	for name, value in params {
-		delete(name, allocator)
-		delete(value, allocator)
-	}
-	delete(params^)
 }
 
 @(private = "file")
@@ -123,10 +87,10 @@ match_local :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val,
 	params_text, params_ok := wasm.span(memory, u32(args[7].of.i32), u32(args[8].of.i32))
 	if !mode_ok || !loadout0_ok || !loadout1_ok || !params_ok do return wasm.trap("ow_match_local: an argument is outside the module's memory")
 	results[0] = wasm.i32_val(-1)
-	if entry.asked != nil || entry.view.match == .Running || len(loadout0) > LOADOUT_MAX || len(loadout1) > LOADOUT_MAX do return nil
+	if entry.asked != nil || entry.view.match == .Running || len(loadout0) > wire.LOADOUT_MAX || len(loadout1) > wire.LOADOUT_MAX do return nil
 	mode, known := find_mode(entry.modes, string(mode_name))
 	if !known do return nil
-	picks, read := parse_params(string(params_text), context.temp_allocator)
+	picks, read := titlepack.parse_params(string(params_text), context.temp_allocator)
 	if !read do return nil
 	params, refused := titlepack.resolve_params(entry.params, picks)
 	if refused != "" do return nil

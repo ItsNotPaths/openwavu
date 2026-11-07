@@ -1,8 +1,6 @@
-// The lobbies role's wire (docs/network.md): ENet channel 0 carries kipp lines, one per reliable packet; channel 1
-// carries session packets, unsequenced, which the server forwards to the other player of a running match.
+// A player's connection to a lobby server (docs/network.md), and the lobbies it shows.
 package online
 
-import "core:encoding/endian"
 import "core:encoding/hex"
 import "core:fmt"
 import "core:slice"
@@ -11,15 +9,8 @@ import "core:strings"
 import "core:time"
 import enet "vendor:ENet"
 import "../kipp"
+import "wire"
 
-PORT :: 9288  // "wavu" on a phone keypad
-CHANNEL_CONTROL :: 0
-CHANNEL_SESSION :: 1
-CHANNELS :: 2
-PROTOCOL :: "1"
-START_DELAY_MS :: 2000  // from the match fact to frame 0
-LOBBY_PLAYERS_MAX :: 2
-LOADOUT_MAX :: 256  // bytes; sent as hex inside one line
 CONNECT_TIMEOUT_MS :: 5000
 
 Lobby :: struct {
@@ -54,17 +45,17 @@ Lobby_Client :: struct {
 	session_packets: [dynamic][]byte,
 }
 
-lobby_connect :: proc(host_name: string, identity: Identity, name: string, port: u16 = PORT) -> (client: ^Lobby_Client, err: string) {
+lobby_connect :: proc(host_name: string, identity: Identity, name: string, port: u16 = wire.PORT) -> (client: ^Lobby_Client, err: string) {
 	if enet.initialize() != 0 do return nil, "ENet does not start"
 	client = new(Lobby_Client)
 	client.identity = identity
 	client.key = strings.clone(string(hex.encode(client.identity.public_key[:], context.temp_allocator)))
 	client.name = strings.clone(name)
 	defer if err != "" do lobby_disconnect(client)
-	if client.host = enet.host_create(nil, 1, CHANNELS, 0, 0); client.host == nil do return client, "ENet does not start"
+	if client.host = enet.host_create(nil, 1, wire.CHANNELS, 0, 0); client.host == nil do return client, "ENet does not start"
 	address := enet.Address{port = port}
 	if enet.address_set_host(&address, strings.clone_to_cstring(host_name, context.temp_allocator)) != 0 do return client, fmt.tprintf("%s does not resolve", host_name)
-	if client.server = enet.host_connect(client.host, &address, CHANNELS, 0); client.server == nil do return client, "ENet does not start"
+	if client.server = enet.host_connect(client.host, &address, wire.CHANNELS, 0); client.server == nil do return client, "ENet does not start"
 	event: enet.Event
 	if enet.host_service(client.host, &event, CONNECT_TIMEOUT_MS) <= 0 || event.type != .CONNECT do return client, "the lobby server did not answer"
 	enet.host_flush(client.host)  // the server counts the connect when this ack arrives
@@ -101,7 +92,7 @@ lobby_pump :: proc(client: ^Lobby_Client, timeout_ms: u32 = 0) -> (connected: bo
 			return false
 		case .RECEIVE:
 			bytes := event.packet.data[:event.packet.dataLength]
-			if event.channelID == CHANNEL_SESSION do append(&client.session_packets, slice.clone(bytes))
+			if event.channelID == wire.CHANNEL_SESSION do append(&client.session_packets, slice.clone(bytes))
 			else if line, read := kipp.parse(string(bytes)); read do apply(client, line)
 			enet.packet_destroy(event.packet)
 		}
@@ -178,16 +169,11 @@ match_start :: proc(client: ^Lobby_Client, lobby: ^Lobby) -> (start: Match_Start
 	return start, true
 }
 
-// A session packet's first four bytes are its match's token.
-packet_token :: proc(packet: []byte) -> (token: u32, ok: bool) {
-	return endian.get_u32(packet, .Little)
-}
-
 // Session packets go to the server, which forwards them; received ones wait in session_packets for lobby_pump.
 lobby_transport :: proc(client: ^Lobby_Client) -> Transport {
 	send :: proc(data: rawptr, packet: []byte) {
 		client := (^Lobby_Client)(data)
-		enet.peer_send(client.server, CHANNEL_SESSION, enet.packet_create(raw_data(packet), len(packet), {.UNSEQUENCED}))
+		enet.peer_send(client.server, wire.CHANNEL_SESSION, enet.packet_create(raw_data(packet), len(packet), {.UNSEQUENCED}))
 		enet.host_flush(client.host)
 	}
 	receive :: proc(data: rawptr, buffer: []byte) -> (size: int) {
@@ -205,7 +191,7 @@ lobby_transport :: proc(client: ^Lobby_Client) -> Transport {
 command :: proc(client: ^Lobby_Client, kind: string, subject: []string, attributes: ..kipp.Attribute) {
 	text, ok := kipp.write(kind, subject, ..attributes)
 	if !ok do return
-	enet.peer_send(client.server, CHANNEL_CONTROL, enet.packet_create(raw_data(text), len(text), {.RELIABLE}))
+	enet.peer_send(client.server, wire.CHANNEL_CONTROL, enet.packet_create(raw_data(text), len(text), {.RELIABLE}))
 	enet.host_flush(client.host)
 }
 

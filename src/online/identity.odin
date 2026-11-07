@@ -51,10 +51,3 @@ sign :: proc(identity: Identity, message: []byte) -> (signature: [ed25519.SIGNAT
 	ed25519.sign(&private_key, message, signature[:])
 	return
 }
-
-// True when signature is message signed by the key public_key.
-signed_by :: proc(public_key: [ed25519.PUBLIC_KEY_SIZE]u8, message: []byte, signature: [ed25519.SIGNATURE_SIZE]u8) -> bool {
-	public_key, signature := public_key, signature
-	key: ed25519.Public_Key
-	return ed25519.public_key_set_bytes(&key, public_key[:]) && ed25519.verify(&key, message, signature[:])
-}

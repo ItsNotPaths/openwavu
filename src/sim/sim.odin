@@ -6,6 +6,7 @@ import "core:hash/xxhash"
 import "core:slice"
 import "../content"
 import "../imports"
+import "../titlepack"
 import "../wasm"
 
 Input :: struct {
@@ -28,7 +29,7 @@ create :: proc(engine: wasm.Engine, module: wasm.Module, pack: ^content.Pack, pa
 	w = new(World)
 	w.inputs.seed = seed
 	w.inputs.events = make([dynamic]imports.Event)  // the event import grows it with this allocator
-	w.inputs.params = imports.params_clone(params)
+	w.inputs.params = titlepack.params_clone(params)
 	for loadout, side in loadouts do w.inputs.loadouts[side] = slice.clone(loadout)
 	if err = start(w, engine, module, pack); err != "" {
 		destroy(w)
@@ -54,7 +55,7 @@ start :: proc(w: ^World, engine: wasm.Engine, module: wasm.Module, pack: ^conten
 
 destroy :: proc(w: ^World) {
 	if w.module != nil do imports.module_destroy(w.module)
-	imports.params_destroy(&w.inputs.params)
+	titlepack.params_destroy(&w.inputs.params)
 	for loadout in w.inputs.loadouts do delete(loadout)
 	delete(w.inputs.events)
 	free(w)

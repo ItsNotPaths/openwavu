@@ -8,6 +8,14 @@ import "../sim"
 // and the remote's pad, guessed (its last known pad) until it arrives; a late pad that differs from the guess rolls the
 // sim back to that frame and runs the frames up to now again. Past ROLLBACK_MAX guessed frames, the session stalls.
 
+// How a session's packets travel: ENet through the lobby server, or a pipe in tests. Each send is one datagram, which
+// may be lost, late or out of order.
+Transport :: struct {
+	data:    rawptr,
+	send:    proc(data: rawptr, packet: []byte),
+	receive: proc(data: rawptr, buffer: []byte) -> (size: int),  // 0: nothing waiting
+}
+
 ROLLBACK_MAX :: 8
 HASH_INTERVAL :: 30  // frames between state hashes, on confirmed frames
 TIMEOUT_NS :: 5_000_000_000  // no packet for this long ends the match

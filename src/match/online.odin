@@ -35,7 +35,7 @@ start_online :: proc(engine: wasm.Engine, sim_code, presenter_code: wasm.Module,
 	if client, err = online.lobby_connect(player.host, player.identity, player.name); err != "" do return
 	defer if err != "" do online.lobby_disconnect(client)
 	picked := 0 in request.bot_sides ? 1 : 0
-	online.lobby_create(client, fmt.tprintf("%s@%s", tp.id, tp.version), request.mode.name, imports.params_text(request.params, context.temp_allocator), string(hex.encode(hash[:], context.temp_allocator)))
+	online.lobby_create(client, fmt.tprintf("%s@%s", tp.id, tp.version), request.mode.name, titlepack.params_text(request.params, context.temp_allocator), string(hex.encode(hash[:], context.temp_allocator)))
 	online.lobby_ready(client, request.loadouts[picked])
 	opening: online.Match_Start
 	waited := time.tick_now()

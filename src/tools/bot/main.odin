@@ -10,8 +10,8 @@ import "core:os"
 import "core:strings"
 import "core:time"
 import "../../content"
-import "../../imports"
 import "../../online"
+import "../../online/wire"
 import "../../sim"
 import "../../titlepack"
 import "../../wasm"
@@ -64,7 +64,7 @@ stay :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack,
 		switch {
 		case lobby == nil:
 			if open := open_lobby(client, tp); open != "" do online.lobby_join(client, open)
-		case len(lobby.players) < online.LOBBY_PLAYERS_MAX:
+		case len(lobby.players) < wire.LOBBY_PLAYERS_MAX:
 			online.lobby_leave(client)  // the host left: wait for the next lobby
 		case lobby.match != nil:
 			if lobby.match.?.token == played do break
@@ -83,7 +83,7 @@ open_lobby :: proc(client: ^online.Lobby_Client, tp: titlepack.Title_Pack) -> st
 	name := fmt.tprintf("%s@%s", tp.id, tp.version)
 	for lobby in client.lobbies {
 		if lobby.pack != name || len(lobby.players) != 1 do continue
-		picks, picks_read := imports.parse_params(lobby.params, context.temp_allocator)
+		picks, picks_read := titlepack.parse_params(lobby.params, context.temp_allocator)
 		if !picks_read do continue
 		hash, _, err := titlepack.lobby_hash_text(tp, picks, context.temp_allocator)
 		if err == "" && hash == lobby.hash do return lobby.id
@@ -102,7 +102,7 @@ play :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack,
 	module: wasm.Module
 	if module, err = wasm.compile(engine, code); err != "" do return
 	defer wasm.module_destroy(module)
-	picks, _ := imports.parse_params(lobby.params, context.temp_allocator)
+	picks, _ := titlepack.parse_params(lobby.params, context.temp_allocator)
 	_, params, refused := titlepack.lobby_hash_text(tp, picks, context.temp_allocator)
 	if refused != "" do return refused
 	world: ^sim.World
