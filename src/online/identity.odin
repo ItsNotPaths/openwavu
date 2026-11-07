@@ -18,9 +18,23 @@ load_identity :: proc(path: string) -> (identity: Identity, err: string) {
 		if read_err != nil || len(bytes) != len(identity.seed) do return {}, "identity.key does not read"
 		copy(identity.seed[:], bytes)
 	} else {
-		crypto.rand_bytes(identity.seed[:])
+		identity = new_identity()
 		if os.write_entire_file(path, identity.seed[:], {.Read_User, .Write_User}) != nil do return {}, "identity.key could not be saved"
 	}
+	return identity_of(identity.seed)
+}
+
+// A key that is never saved: the bot's.
+new_identity :: proc() -> Identity {
+	seed: [ed25519.PRIVATE_KEY_SIZE]u8
+	crypto.rand_bytes(seed[:])
+	identity, _ := identity_of(seed)
+	return identity
+}
+
+@(private = "file")
+identity_of :: proc(seed: [ed25519.PRIVATE_KEY_SIZE]u8) -> (identity: Identity, err: string) {
+	identity.seed = seed
 	private_key: ed25519.Private_Key
 	defer ed25519.private_key_clear(&private_key)
 	if !ed25519.private_key_set_bytes(&private_key, identity.seed[:]) do return {}, "identity.key does not read"

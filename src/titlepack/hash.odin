@@ -82,3 +82,12 @@ lobby_hash :: proc(tp: Title_Pack, final: map[string]string) -> (digest: Hash, e
 	hash.final(&lobby, digest[:])
 	return
 }
+
+// The lobby hash of a lobby's picks over this pack, as hex, and the final params it starts from; err when the pack
+// refuses a pick.
+lobby_hash_text :: proc(tp: Title_Pack, picks: map[string]string, allocator := context.allocator) -> (text: string, final: map[string]string, err: string) {
+	if final, err = resolve_params(tp.params, picks, allocator); err != "" do return
+	digest: Hash
+	if digest, err = lobby_hash(tp, final); err != "" do return
+	return string(hex.encode(digest[:], allocator)), final, ""
+}

@@ -6,6 +6,7 @@ import "core:os"
 import "core:strings"
 import sdl "vendor:sdl3"
 import "../input"
+import "../match"
 import "../online"
 import "../render"
 import "../titlepack"
@@ -75,9 +76,9 @@ main :: proc() {
 
 		if pack, picked := l.play.?; picked {
 			l.play = nil
-			host := l.online ? relay_host(l.settings.network) : ""
-			l.quit = play(&r, l.packs[pack], l.settings, host)
-			delete(host)
+			player: Maybe(match.Online_Player)
+			if l.online do player = match.Online_Player{relay_host(l.settings.network, context.temp_allocator), l.identity, strings.to_string(l.settings.name)}
+			l.quit = play(&r, l.packs[pack], l.settings, player)
 		}
 	}
 }

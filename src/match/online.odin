@@ -1,47 +1,62 @@
 package match
 
+import "core:encoding/hex"
+import "core:fmt"
 import "core:time"
 import "../imports"
 import "../online"
-import "../online/relay"
 import "../presentation"
+import "../titlepack"
 import "../wasm"
 
-PAIR_TIMEOUT_MS :: 30_000
+JOIN_TIMEOUT :: 30 * time.Second
 
-// An online match's ticks go through a session with whoever the relay pairs this player with.
+// An online match's ticks go through a session with the other player of its lobby.
 Online :: struct {
-	client:    ^online.Relay_Client,
+	client:    ^online.Lobby_Client,
 	session:   ^online.Session,
 	clock_ns:  u64,
 	local_pad: int,  // the controller of the side picked in the menu
 }
 
-// Pairs with whoever waits on the relay at host (openwavu-bot), sends it the asked match, and starts the same match on
-// both machines. The relay picks the local side; the loadout picked in the menu goes with it.
-// (hole server-lobby) stands in for the lobby's match start until then.
-start_online :: proc(engine: wasm.Engine, sim_code, presenter_code: wasm.Module, pack: ^presentation.Pack, request: imports.Match_Request, host: string) -> (m: ^Match, err: string) {
-	client, connected := online.relay_connect(host, relay.PORT)
-	if !connected do return nil, "the relay did not answer"
-	defer if err != "" do online.relay_disconnect(client)
-	paired, start_in_ns, started := online.relay_wait_start(client, PAIR_TIMEOUT_MS)
-	if !started do return nil, "no player to pair with"
-	waited := time.tick_now()
-	request := request
+Online_Player :: struct {
+	host:     string,  // the lobby server
+	identity: online.Identity,
+	name:     string,
+}
+
+// Hosts a lobby of the asked match on the lobby server, readies with the loadout picked in the menu, and starts once
+// someone joins and readies (openwavu-bot). The lobby picks the local side.
+// (hole lobby-intents) stands in for the pack's own lobby menus until then.
+start_online :: proc(engine: wasm.Engine, sim_code, presenter_code: wasm.Module, pack: ^presentation.Pack, tp: titlepack.Title_Pack, request: imports.Match_Request, player: Online_Player) -> (m: ^Match, err: string) {
+	hash: titlepack.Hash
+	if hash, err = titlepack.lobby_hash(tp, request.params); err != "" do return
+	client: ^online.Lobby_Client
+	if client, err = online.lobby_connect(player.host, player.identity, player.name); err != "" do return
+	defer if err != "" do online.lobby_disconnect(client)
 	picked := 0 in request.bot_sides ? 1 : 0
-	if paired.side != picked do request.loadouts = {request.loadouts[1], request.loadouts[0]}
-	params := imports.params_text(request.params, context.temp_allocator)
-	online.relay_send_control(client, relay.setup_encode({request.mode.sim, params, request.loadouts}, context.temp_allocator))
+	online.lobby_create(client, fmt.tprintf("%s@%s", tp.id, tp.version), request.mode.name, imports.params_text(request.params, context.temp_allocator), string(hex.encode(hash[:], context.temp_allocator)))
+	online.lobby_ready(client, request.loadouts[picked])
+	opening: online.Match_Start
+	waited := time.tick_now()
+	for started := false; !started; {
+		if !online.lobby_pump(client, 100) do return nil, "the lobby server hung up"
+		if time.tick_since(waited) > JOIN_TIMEOUT do return nil, "nobody joined"
+		if lobby := online.lobby_joined(client); lobby != nil do opening, started = online.match_start(client, lobby)
+	}
+	request := request
+	request.loadouts = opening.loadouts
 	request.bot_sides = {}
-	if m, err = start(engine, sim_code, presenter_code, pack, request, paired.seed); err != "" do return
-	m.online = {client, online.session_create(m.world, online.relay_transport(client), paired.side, paired.token, 0), 0, picked}
-	if left := time.Duration(start_in_ns) - time.tick_since(waited); left > 0 do time.sleep(left)
+	if m, err = start(engine, sim_code, presenter_code, pack, request, opening.seed); err != "" do return
+	m.online = {client, online.session_create(m.world, online.lobby_transport(client), opening.side, opening.token, 0), 0, picked}
+	if opening.start_in > 0 do time.sleep(opening.start_in)
 	return m, ""
 }
 
 online_stop :: proc(match_online: ^Online) {
 	if match_online.session == nil do return
 	if match_online.session.outcome == .Playing do online.session_linger(match_online.session, match_online.clock_ns)
+	online.lobby_done(match_online.client)
 	online.session_destroy(match_online.session)
-	online.relay_disconnect(match_online.client)
+	online.lobby_disconnect(match_online.client)
 }

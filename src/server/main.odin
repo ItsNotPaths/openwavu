@@ -6,11 +6,12 @@ package server
 import "core:fmt"
 import "core:os"
 import "core:thread"
-import "../online/relay"
+import "../online"
+import "../online/lobbies"
 
-// (hole server-lobby :tags server :sev blocker) no lobbies role: no lobby list per pack, match start, input relay, spectator feed or region check-in to the files host; no network.toml.
-// (hole orphan-refuse :tags (server saves) :needs server-lobby) the server does not refuse a pack version that is not the latest approved one (an orphaned tile) at lobby join.
-// (hole server-authority :tags server :needs server-lobby) no authority mode: the server does not run the mode's sim on confirmed inputs, compare the clients' hashes with its own, or send a client its snapshot.
+// (hole lobby-regions :tags server) no region check-in to the files host, no spectator feed and no network.toml: one lobbies role on the files box.
+// (hole orphan-refuse :tags (server saves)) the server does not refuse a pack version that is not the latest approved one (an orphaned tile) at lobby join.
+// (hole server-authority :tags server) no authority mode: the server does not run the mode's sim on confirmed inputs, compare the clients' hashes with its own, or send a client its snapshot.
 // (hole hosting-guide :tags server :sev polish) no hosting guide: DNS (serve.<domain> for files, region names for lobbies, grey records), TLS proxy, install-server.sh, firewall ports, network.toml.
 // openwavu-server [--prep] [packs folder]: --prep incorporates the dropped tars and exits.
 main :: proc() {
@@ -21,15 +22,15 @@ main :: proc() {
 	incorporate_all(dir)
 	if prep do return
 	thread.create_and_start_with_poly_data(dir, proc(dir: string) {serve_files(dir)})
-	relay_server, ok := relay.open(relay.PORT)
+	lobby_server, ok := lobbies.open(online.PORT)
 	if !ok {
-		fmt.eprintfln("openwavu-server: can not listen on udp %d", relay.PORT)
+		fmt.eprintfln("openwavu-server: can not listen on udp %d", online.PORT)
 		os.exit(1)
 	}
-	defer relay.close(&relay_server)
-	fmt.eprintfln("openwavu-server: relay on udp %d", relay.PORT)
+	defer lobbies.close(&lobby_server)
+	fmt.eprintfln("openwavu-server: lobbies on udp %d", online.PORT)
 	stop: bool
-	relay.serve(&relay_server, &stop)
+	lobbies.serve(&lobby_server, &stop)
 }
 
 Rotation :: enum {
@@ -38,7 +39,7 @@ Rotation :: enum {
 	Queue,
 }
 
-// (hole lobby-rotation :tags server :needs (server-lobby match-reports)) the lobby does not pick the next players from the match result and its rotation param.
+// (hole lobby-rotation :tags server :needs match-reports) the lobby does not pick the next players from the match result and its rotation param.
 next_players :: proc(rotation: Rotation, players: []string, winner: int) -> (next: [2]string) {
 	return {}
 }

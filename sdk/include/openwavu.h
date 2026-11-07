@@ -105,7 +105,7 @@ OW_EXPORT(ow_bot_pad) uint32_t ow_bot_pad(uint32_t side);
 
 // The host's state, read any time; returns its length and copies as much as fits. Fields are only added at the end:
 // size says how many bytes this host fills.
-// (hole host-view-online :tags (sdk net) :needs server-lobby) no connection states past offline, and no lobby list (every region, with ping) or current lobby sections.
+// (hole host-view-online :tags (sdk net)) no connection states past offline, and no lobby list (every region, with ping) or current lobby sections.
 #define OW_HOST_VIEW_VERSION 1
 enum { OW_CONNECTION_OFFLINE = 0 };
 enum { OW_MATCH_NONE = 0, OW_MATCH_RUNNING = 1, OW_MATCH_ENDED = 2 };
@@ -126,7 +126,7 @@ OW_IMPORT(exit) void ow_exit(void);
 OW_IMPORT(match_local) int32_t ow_match_local(const char *mode, uint32_t mode_len, uint32_t bot_sides,
 	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len, const char *params, uint32_t params_len);
 // (hole app-modules :tags (sdk game wasm)) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.
-// (hole lobby-intents :tags (sdk net) :needs server-lobby) no lobby list refresh, lobby join, create, leave, or ready with a loadout.
+// (hole lobby-intents :tags (sdk net)) no lobby list refresh, lobby join, create, leave, or ready with a loadout.
 // (hole save-imports :tags (sdk game saves)) no ow_save_read or ow_save_write on the pack save, and no save header stamped with the pack id and version (docs/packs.md).
 
 // Presentation exports. Outside rollback, once per rendered frame.

@@ -1,29 +1,39 @@
-// openwavu-bot <relay host> <pack>: the online test's dummy player. Waits on the relay, takes the match the paired
-// player sends, presses random buttons on its side at 60 Hz, then waits for the next player.
+// openwavu-bot <lobby host> <pack folder> [character]: the online test's dummy player. Joins any open lobby of its
+// pack whose hash matches its own, readies with the character (TK5 loadout, costume 1), presses random buttons on its
+// side at 60 Hz, then readies again for the rematch.
 package bot
 
+import "core:encoding/endian"
 import "core:fmt"
 import "core:math/rand"
 import "core:os"
+import "core:strings"
 import "core:time"
 import "../../content"
 import "../../imports"
 import "../../online"
-import "../../online/relay"
 import "../../sim"
+import "../../titlepack"
 import "../../wasm"
 
-WAIT_MS :: 600_000
-SETUP_TIMEOUT_MS :: 5000
 TICK :: time.Second / 60
 PAD_DIRECTIONS_AND_BUTTONS :: 0xff  // OW_PAD_UP..OW_PAD_BUTTON_4; never START
+T5_NAME_BYTES :: 32  // modules/tk5/loadout.h: character name, then the costume as a u32
 
 main :: proc() {
-	if len(os.args) != 3 {
-		fmt.eprintln("usage: openwavu-bot <relay host> <pack>")
+	if len(os.args) < 3 || len(os.args) > 4 {
+		fmt.eprintln("usage: openwavu-bot <lobby host> <pack folder> [character]")
 		os.exit(2)
 	}
 	host, pack_path := os.args[1], os.args[2]
+	character := len(os.args) == 4 ? os.args[3] : "kazuya"
+	manifest, manifest_read := titlepack.read_manifest(pack_path, context.temp_allocator)
+	tp, tp_read := titlepack.read_titlepack(manifest)
+	if !manifest_read || !tp_read {
+		fmt.eprintfln("openwavu-bot: %s has no pack.toml that reads", pack_path)
+		os.exit(1)
+	}
+	tp.path = strings.trim_right(pack_path, "/")  // its hash file sits beside it
 	pack, opened := content.open_pack(pack_path)
 	if !opened {
 		fmt.eprintfln("openwavu-bot: %s did not open", pack_path)
@@ -32,42 +42,76 @@ main :: proc() {
 	defer content.close_pack(&pack)
 	engine := wasm.engine_create()
 	defer wasm.engine_destroy(engine)
+	loadout: [T5_NAME_BYTES + 4]byte
+	copy(loadout[:T5_NAME_BYTES - 1], character)
+	endian.put_u32(loadout[T5_NAME_BYTES:], .Little, 1)
 	for {
-		if err := play_one(engine, &pack, host); err != "" do fmt.eprintln("openwavu-bot:", err)
+		if err := stay(engine, &pack, tp, host, loadout[:]); err != "" do fmt.eprintln("openwavu-bot:", err)
 		free_all(context.temp_allocator)
 		time.sleep(time.Second)
 	}
 }
 
-play_one :: proc(engine: wasm.Engine, pack: ^content.Pack, host: string) -> (err: string) {
-	client, connected := online.relay_connect(host, relay.PORT)
-	if !connected do return "the relay did not answer"
-	defer online.relay_disconnect(client)
-	fmt.eprintln("openwavu-bot: waiting for a player")
-	paired, start_in_ns, started := online.relay_wait_start(client, WAIT_MS)
-	if !started do return "nobody came"
-	waited := time.tick_now()
-	message, sent := online.relay_receive_control(client, SETUP_TIMEOUT_MS)
-	if !sent do return "the player sent no match"
-	setup, read := relay.setup_decode(message)
-	if !read do return "the match message does not read"
+// One connection: join, ready, play, ready again, until the server hangs up or a match fails.
+stay :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack, host: string, loadout: []byte) -> (err: string) {
+	client: ^online.Lobby_Client
+	if client, err = online.lobby_connect(host, online.new_identity(), "bot"); err != "" do return
+	defer online.lobby_disconnect(client)
+	fmt.eprintln("openwavu-bot: waiting for a lobby")
+	played: u32  // the last match's token: its fact stays until the other player is done too
+	for online.lobby_pump(client, 100) {
+		lobby := online.lobby_joined(client)
+		switch {
+		case lobby == nil:
+			if open := open_lobby(client, tp); open != "" do online.lobby_join(client, open)
+		case lobby.match != nil:
+			if lobby.match.?.token == played do break
+			played = lobby.match.?.token
+			if err = play(engine, pack, tp, client, lobby); err != "" do return
+		case !online.lobby_player(lobby, client.key).ready:
+			online.lobby_ready(client, loadout)
+		}
+		free_all(context.temp_allocator)
+	}
+	return "the lobby server hung up"
+}
 
-	code, found := content.pack_file(pack^, setup.sim)
-	if !found do return fmt.tprintf("the pack has no %s", setup.sim)
+// A lobby of this pack with one player and the same lobby hash; "" when there is none.
+open_lobby :: proc(client: ^online.Lobby_Client, tp: titlepack.Title_Pack) -> string {
+	name := fmt.tprintf("%s@%s", tp.id, tp.version)
+	for lobby in client.lobbies {
+		if lobby.pack != name || len(lobby.players) != 1 do continue
+		picks, picks_read := imports.parse_params(lobby.params, context.temp_allocator)
+		if !picks_read do continue
+		hash, _, err := titlepack.lobby_hash_text(tp, picks, context.temp_allocator)
+		if err == "" && hash == lobby.hash do return lobby.id
+	}
+	return ""
+}
+
+play :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack, client: ^online.Lobby_Client, lobby: ^online.Lobby) -> (err: string) {
+	defer online.lobby_done(client)
+	opening, started := online.match_start(client, lobby)
+	if !started do return "the match fact does not read"
+	mode: titlepack.Mode
+	for candidate in tp.modes do if candidate.name == lobby.mode do mode = candidate
+	code, found := content.pack_file(pack^, mode.sim)
+	if !found do return fmt.tprintf("the pack has no mode %s", lobby.mode)
 	module: wasm.Module
 	if module, err = wasm.compile(engine, code); err != "" do return
 	defer wasm.module_destroy(module)
-	params, params_read := imports.parse_params(setup.params, context.temp_allocator)
-	if !params_read do return "the params do not read"
+	picks, _ := imports.parse_params(lobby.params, context.temp_allocator)
+	_, params, refused := titlepack.lobby_hash_text(tp, picks, context.temp_allocator)
+	if refused != "" do return refused
 	world: ^sim.World
-	if world, err = sim.create(engine, module, pack, params, setup.loadouts, paired.seed); err != "" do return
+	if world, err = sim.create(engine, module, pack, params, opening.loadouts, opening.seed); err != "" do return
 	defer sim.destroy(world)
 	clock := time.tick_now()
-	session := online.session_create(world, online.relay_transport(client), paired.side, paired.token, 0)
+	session := online.session_create(world, online.lobby_transport(client), opening.side, opening.token, 0)
 	defer online.session_destroy(session)
-	if left := time.Duration(start_in_ns) - time.tick_since(waited); left > 0 do time.sleep(left)
+	if opening.start_in > 0 do time.sleep(opening.start_in)
 
-	fmt.eprintfln("openwavu-bot: playing side %d", paired.side)
+	fmt.eprintfln("openwavu-bot: playing side %d", opening.side)
 	pad: sim.Input
 	held := 0  // frames the pad has left
 	for next := time.tick_now(); ; next = time.tick_add(next, TICK) {

@@ -14,8 +14,8 @@ import "../wasm"
 
 // Runs the picked pack's entry module, one frame call per display frame, and the matches it starts, until the window
 // closes (quit), the pack calls ow_exit, or a module traps, which cuts off the whole pack; the last two return to the launcher.
-// relay_host: "" plays offline; otherwise every match pairs on that relay.
-play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, relay_host: string) -> (quit: bool) {
+// player: nil plays offline; otherwise every match is hosted as a lobby on its server.
+play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, player: Maybe(match.Online_Player)) -> (quit: bool) {
 	if base := titlepack.missing_base(tp); base != "" {
 		fmt.eprintfln("openwavu: %s needs the stock pack %s; import it first", tp.name, base)
 		return
@@ -61,7 +61,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, 
 		dt := now - last
 		last = now
 		if asked, has := &entry_state.asked.?; has {
-			game = start_match(&codes, running, asked^, relay_host)
+			game = start_match(&codes, running, tp, asked^, player)
 			imports.match_request_destroy(asked, entry_state.allocator)
 			entry_state.asked = nil
 			if game != nil do entry_state.view.match = .Running
@@ -137,13 +137,13 @@ start_entry :: proc(c: ^Codes, path: string, running: ^presentation.Pack, state:
 }
 
 // The asked match, or nil when its modules do not start; the entry module keeps running either way.
-start_match :: proc(c: ^Codes, running: ^presentation.Pack, asked: imports.Match_Request, relay_host: string) -> (m: ^match.Match) {
+start_match :: proc(c: ^Codes, running: ^presentation.Pack, tp: titlepack.Title_Pack, asked: imports.Match_Request, player: Maybe(match.Online_Player)) -> (m: ^match.Match) {
 	sim_code, presenter_code: wasm.Module
 	err: string
 	defer if err != "" do fmt.eprintfln("openwavu: the %s match did not start: %s", asked.mode.name, err)
 	if sim_code, err = code_of(c, asked.mode.sim); err != "" do return
 	if presenter_code, err = code_of(c, asked.mode.presenter); err != "" do return
-	if relay_host != "" do m, err = match.start_online(c.engine, sim_code, presenter_code, running, asked, relay_host)
+	if online_player, online := player.?; online do m, err = match.start_online(c.engine, sim_code, presenter_code, running, tp, asked, online_player)
 	else do m, err = match.start(c.engine, sim_code, presenter_code, running, asked, rand.uint64())
 	return
 }
