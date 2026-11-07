@@ -51,7 +51,7 @@ popup :: proc(l: ^Launcher, u: ^ui.Ui) -> (remove: bool) {
 	return
 }
 
-// (hole network-setting :tags (game net)) no network address (default openwavu.gg), no warning on a switch, no identity export or import.
+// (hole network-setting :tags (game net)) no network address (default serve.openwavu.org), no warning on a switch, no identity export or import.
 // (hole submit-line :tags (game net) :needs identity-key) no submit line: typed text is not signed and sent to the network's /note.
 @(private = "file")
 settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
