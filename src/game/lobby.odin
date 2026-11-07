@@ -15,17 +15,13 @@ Lobbies :: struct {
 	connection: imports.Connection,   // Offline -> Online or Failed (go_online); Online -> Failed (hang_up); any -> Offline (go_offline)
 	client:     ^online.Lobby_Client,  // only while Online
 	failed:     string,                // only while Failed: why
-	hashes:   map[string]string,     // a lobby's picks -> their lobby hash for this pack, "" when the pack refuses them
+	hashes:     online.Lobby_Hashes,
 	played:   u32,                   // the token of the last match started here
 }
 
 lobbies_close :: proc(l: ^Lobbies) {
 	go_offline(l)
-	for picks, hash in l.hashes {
-		delete(picks)
-		delete(hash)
-	}
-	delete(l.hashes)
+	online.lobby_hashes_destroy(&l.hashes)
 }
 
 // The entry module's intents, in order.
@@ -42,7 +38,7 @@ lobbies_apply :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, entry: ^imports.Ent
 		}
 		if l.connection != .Online do continue
 		#partial switch asked in intent {
-		case imports.Create_Lobby: online.lobby_create(l.client, pack_name(tp), asked.mode, asked.picks, picks_hash(l, tp, asked.picks))
+		case imports.Create_Lobby: online.lobby_create(l.client, titlepack.pack_name(tp.id, tp.version), asked.mode, asked.picks, online.picks_hash(&l.hashes, tp, asked.picks))
 		case imports.Join_Lobby:   online.lobby_join(l.client, fmt.tprintf("%08x", asked.id))
 		case imports.Leave_Lobby:  online.lobby_leave(l.client)
 		case imports.Ready:        online.lobby_ready(l.client, asked.loadout)
@@ -75,7 +71,7 @@ lobbies_view :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, view: ^imports.Host_
 	joined := online.lobby_joined(l.client)
 	for &lobby in l.client.lobbies {
 		if view.lobby_count == imports.LOBBIES_MAX do break
-		if &lobby == joined || !joinable(l, tp, &lobby) do continue
+		if &lobby == joined || !online.lobby_joinable(&l.hashes, tp, &lobby) do continue
 		view_lobby(l, &lobby, &view.lobbies[view.lobby_count])
 		view.lobby_count += 1
 	}
@@ -117,26 +113,6 @@ hang_up :: proc(l: ^Lobbies, why: string) {
 	l.failed, l.connection = fmt.aprint(why), .Failed
 }
 
-// This pack's, a free seat, no match, and the same lobby hash here.
-@(private = "file")
-joinable :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, lobby: ^online.Lobby) -> bool {
-	if lobby.pack != pack_name(tp) || len(lobby.players) >= 2 || lobby.match != nil do return false
-	hash := picks_hash(l, tp, lobby.params)
-	return hash != "" && hash == lobby.hash
-}
-
-// Cached: a stock base's hash is a file read, a tar pack's a full hash of the tar.
-@(private = "file")
-picks_hash :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, picks: string) -> string {
-	if known, has := l.hashes[picks]; has do return known
-	hash := ""
-	if parsed, read := titlepack.parse_params(picks, context.temp_allocator); read {
-		if text, _, err := titlepack.lobby_hash_text(tp, parsed, context.temp_allocator); err == "" do hash = text
-	}
-	l.hashes[fmt.aprint(picks)] = fmt.aprint(hash)
-	return l.hashes[picks]
-}
-
 @(private = "file")
 view_lobby :: proc(l: ^Lobbies, lobby: ^online.Lobby, into: ^imports.View_Lobby) {
 	id, _ := strconv.parse_u64_of_base(lobby.id, 16)
@@ -145,9 +121,4 @@ view_lobby :: proc(l: ^Lobbies, lobby: ^online.Lobby, into: ^imports.View_Lobby)
 	imports.view_text(into.host[:], host != nil ? host.name : "")
 	imports.view_text(into.mode[:], lobby.mode)
 	imports.view_text(into.params[:], lobby.params)
-}
-
-@(private = "file")
-pack_name :: proc(tp: titlepack.Title_Pack) -> string {
-	return fmt.tprintf("%s@%s", tp.id, tp.version)
 }

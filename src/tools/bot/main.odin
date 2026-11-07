@@ -59,11 +59,13 @@ stay :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack,
 	defer online.lobby_disconnect(client)
 	fmt.eprintln("openwavu-bot: waiting for a lobby")
 	played: u32  // the last match's token: its fact stays until the other player is done too
+	hashes: online.Lobby_Hashes
+	defer online.lobby_hashes_destroy(&hashes)
 	for online.lobby_pump(client, 100) {
 		lobby := online.lobby_joined(client)
 		switch {
 		case lobby == nil:
-			if open := open_lobby(client, tp); open != "" do online.lobby_join(client, open)
+			if open := open_lobby(client, tp, &hashes); open != "" do online.lobby_join(client, open)
 		case len(lobby.players) < wire.LOBBY_PLAYERS_MAX:
 			online.lobby_leave(client)  // the host left: wait for the next lobby
 		case lobby.match != nil:
@@ -78,16 +80,9 @@ stay :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack,
 	return "the lobby server hung up"
 }
 
-// A lobby of this pack with one player and the same lobby hash; "" when there is none.
-open_lobby :: proc(client: ^online.Lobby_Client, tp: titlepack.Title_Pack) -> string {
-	name := fmt.tprintf("%s@%s", tp.id, tp.version)
-	for lobby in client.lobbies {
-		if lobby.pack != name || len(lobby.players) != 1 do continue
-		picks, picks_read := titlepack.parse_params(lobby.params, context.temp_allocator)
-		if !picks_read do continue
-		hash, _, err := titlepack.lobby_hash_text(tp, picks, context.temp_allocator)
-		if err == "" && hash == lobby.hash do return lobby.id
-	}
+// A lobby this pack can join; "" when there is none.
+open_lobby :: proc(client: ^online.Lobby_Client, tp: titlepack.Title_Pack, hashes: ^online.Lobby_Hashes) -> string {
+	for &lobby in client.lobbies do if online.lobby_joinable(hashes, tp, &lobby) do return lobby.id
 	return ""
 }
 
