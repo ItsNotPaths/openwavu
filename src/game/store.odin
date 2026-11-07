@@ -2,11 +2,10 @@ package game
 
 import "core:fmt"
 import "core:os"
-import "core:path/filepath"
 import "core:strings"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
-import "../content"
+import "../download"
 import "../titlepack"
 import "../ui"
 
@@ -19,20 +18,20 @@ Store :: struct {
 	listing:     Listing,  // GET /store, started when the store column first shows
 	versions:    Listing,  // GET /versions/<id> of the picked store pack
 	versions_id: string,
-	cache:       map[string]^content.Download,  // by hash; a failed one stays, so it is not tried again
+	cache:       map[string]^download.Job,  // by hash; a failed one stays, so it is not tried again
 	install:     Install,
 }
 
 // A listing GET; packs read once it lands, pointing into its body.
 Listing :: struct {
-	job:   ^content.Download,
+	job:   ^download.Job,
 	packs: []titlepack.Listed,
 	read:  bool,
 }
 
 // The one running install, and the error of the last one.
 Install :: struct {
-	job:     ^content.Download,
+	job:     ^download.Job,
 	id:      string,
 	version: string,
 	err:     string,
@@ -47,7 +46,7 @@ store_destroy :: proc(store: ^Store) {
 	listing_destroy(&store.versions)
 	delete(store.versions_id)
 	for hash, job in store.cache {
-		content.download_destroy(job)
+		download.destroy(job)
 		delete(hash)
 	}
 	delete(store.cache)
@@ -56,14 +55,14 @@ store_destroy :: proc(store: ^Store) {
 
 @(private = "file")
 listing_destroy :: proc(listing: ^Listing) {
-	if listing.job != nil do content.download_destroy(listing.job)
+	if listing.job != nil do download.destroy(listing.job)
 	delete(listing.packs)
 	listing^ = {}
 }
 
 @(private = "file")
 install_destroy :: proc(install: ^Install) {
-	if install.job != nil do content.download_destroy(install.job)
+	if install.job != nil do download.destroy(install.job)
 	delete(install.id)
 	delete(install.version)
 	delete(install.err)
@@ -73,7 +72,7 @@ install_destroy :: proc(install: ^Install) {
 // "" while it downloads or when it landed; else why it failed.
 @(private = "file")
 listing_poll :: proc(listing: ^Listing) -> (err: string) {
-	if listing.read || !content.download_finished(listing.job) do return
+	if listing.read || !download.finished(listing.job) do return
 	if listing.job.err != "" do return listing.job.err
 	listing.packs = titlepack.read_listing(string(listing.job.body))
 	listing.read = true
@@ -83,9 +82,9 @@ listing_poll :: proc(listing: ^Listing) -> (err: string) {
 // Each frame: a finished install replaces the installed pack and picks it.
 store_poll :: proc(l: ^Launcher) {
 	install := &l.store.install
-	if install.job == nil || !content.download_finished(install.job) do return
+	if install.job == nil || !download.finished(install.job) do return
 	defer {
-		content.download_destroy(install.job)
+		download.destroy(install.job)
 		install.job = nil
 	}
 	if install.job.err != "" {
@@ -99,7 +98,7 @@ store_poll :: proc(l: ^Launcher) {
 }
 
 store_column :: proc(l: ^Launcher, u: ^ui.Ui) {
-	if l.store.listing.job == nil do l.store.listing.job = content.download_start(NETWORK + "/store")
+	if l.store.listing.job == nil do l.store.listing.job = download.start(NETWORK + "/store")
 	err := listing_poll(&l.store.listing)
 	if clay.UI()(side_column()) {
 		column_head(u, "STORE", clay.ID("SearchStore"), &l.search_store)
@@ -148,22 +147,22 @@ store_thumb :: proc(l: ^Launcher, u: ^ui.Ui, pack: titlepack.Listed) -> ^sdl.Tex
 // not be had.
 @(private = "file")
 cached :: proc(store: ^Store, sha256, suffix, name: string) -> (path: string, waiting: bool) {
-	path, _ = filepath.join({CACHE_DIR, strings.concatenate({sha256, suffix}, context.temp_allocator)}, context.temp_allocator)
+	path = titlepack.join_path(CACHE_DIR, strings.concatenate({sha256, suffix}, context.temp_allocator))
 	if os.exists(path) do return path, false
 	job, started := store.cache[sha256]
 	if !started {
 		if cache_downloads(store) >= CACHE_DOWNLOADS_MAX do return "", true
 		os.make_directory_all(CACHE_DIR)
-		store.cache[strings.clone(sha256)] = content.download_start(fmt.tprintf("%s/files/%s", NETWORK, name), sha256, path)
+		store.cache[strings.clone(sha256)] = download.start(fmt.tprintf("%s/files/%s", NETWORK, name), sha256, path)
 		return "", true
 	}
-	if !content.download_finished(job) do return "", true
+	if !download.finished(job) do return "", true
 	return job.err == "" ? path : "", false
 }
 
 @(private = "file")
 cache_downloads :: proc(store: ^Store) -> (running: int) {
-	for _, job in store.cache do if !content.download_finished(job) do running += 1
+	for _, job in store.cache do if !download.finished(job) do running += 1
 	return
 }
 
@@ -182,14 +181,14 @@ store_install_popup :: proc(l: ^Launcher, u: ^ui.Ui, pick: Store_Pick) {
 		listing_destroy(&store.versions)
 		delete(store.versions_id)
 		store.versions_id = strings.clone(pack.id)
-		store.versions.job = content.download_start(fmt.tprintf("%s/versions/%s", NETWORK, pack.id))
+		store.versions.job = download.start(fmt.tprintf("%s/versions/%s", NETWORK, pack.id))
 	}
 	ui.label(fmt.tprintf("Install %s", pack.id), ui.HEAD_SIZE, engraved = true, face = .Display)
 	if err := listing_poll(&store.versions); err != "" do ui.label(err, tint = ui.WARN)
 	if store.install.err != "" do ui.label(store.install.err, tint = ui.WARN)
 	if job := store.install.job; job != nil {
 		ui.label(fmt.tprintf("Downloading %s %s", store.install.id, store.install.version))
-		ui.progress(content.download_fraction(job))
+		ui.progress(download.fraction(job))
 		return
 	}
 	for version, index in store.versions.packs {
@@ -206,7 +205,7 @@ store_install_popup :: proc(l: ^Launcher, u: ^ui.Ui, pick: Store_Pick) {
 @(private = "file")
 install_start :: proc(install: ^Install, version: titlepack.Listed) {
 	install_destroy(install)
-	path, _ := filepath.join({titlepack.PACKS_DIR, strings.concatenate({version.id, ".tar"}, context.temp_allocator)}, context.temp_allocator)
+	path := titlepack.join_path(titlepack.PACKS_DIR, strings.concatenate({version.id, ".tar"}, context.temp_allocator))
 	url := fmt.tprintf("%s/files/%s@%s.tar", NETWORK, version.id, version.version)
-	install^ = {job = content.download_start(url, version.sha256, path), id = strings.clone(version.id), version = strings.clone(version.version)}
+	install^ = {job = download.start(url, version.sha256, path), id = strings.clone(version.id), version = strings.clone(version.version)}
 }

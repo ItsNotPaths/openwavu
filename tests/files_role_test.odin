@@ -7,7 +7,7 @@ import "core:strings"
 import "core:testing"
 import "core:thread"
 import "core:time"
-import "../src/content"
+import "../src/download"
 import "../src/server"
 import "../src/titlepack"
 
@@ -37,7 +37,7 @@ dropped_pack_lists_and_checks :: proc(t: ^testing.T) {
 	for file in ([][2]string{{"drop@1.2.tar", pack.sha256}, {"drop@1.2.front.tar", pack.front_sha256}, {"drop@1.2.thumb.png", pack.thumb_sha256}}) {
 		data, err := os.read_entire_file(fmt.tprintf("%s/store/%s", FILES_DIR, file[0]), context.temp_allocator)
 		if !testing.expectf(t, err == nil, "%s is missing", file[0]) do continue
-		testing.expectf(t, content.verify_download(data, file[1]), "%s does not match its listed hash", file[0])
+		testing.expectf(t, download.verify(data, file[1]), "%s does not match its listed hash", file[0])
 	}
 	manifest, read := titlepack.read_manifest(FILES_DIR + "/store/drop@1.2.front.tar", context.temp_allocator)
 	testing.expect(t, read && manifest != "", "the front has no pack.toml")
@@ -59,13 +59,13 @@ dropped_pack_lists_and_checks :: proc(t: ^testing.T) {
 	testing.expect_value(t, string(text), "old pack")
 	testing.expect_value(t, wait_download(url, pack.sha256, installed), "")
 	text, _ = os.read_entire_file(installed, context.temp_allocator)
-	testing.expect(t, content.verify_download(text, pack.sha256), "the landed pack is not the listed one")
+	testing.expect(t, download.verify(text, pack.sha256), "the landed pack is not the listed one")
 }
 
 // The download's error, once it finishes.
 wait_download :: proc(url, sha256, path: string) -> (err: string) {
-	job := content.download_start(url, sha256, path)
-	defer content.download_destroy(job)
-	for !content.download_finished(job) do time.sleep(time.Millisecond)
+	job := download.start(url, sha256, path)
+	defer download.destroy(job)
+	for !download.finished(job) do time.sleep(time.Millisecond)
 	return strings.clone(job.err, context.temp_allocator)
 }

@@ -1,4 +1,4 @@
-package content
+package download
 
 import "base:runtime"
 import "core:c"
