@@ -1,5 +1,6 @@
 // The stock TK5 gameplay module's match: the world setup, one battle frame per tick from two pads, and the view.
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "gameplay/match.h"
@@ -17,7 +18,7 @@ enum {
 static const float STAGE_DEPTH = 10000.0f;  // mm: past it the arena pass counts a fighter as out of range
 
 T5MatchState t5_match;
-static T5View view;
+static T5View *view;  // on the heap: built from the state when asked, so it is no part of it
 
 // The fields the passes read of a fresh fighter on a side (no position, no move: the round init places it).
 static void fighter_init(T5World *w, T5Fighter *f, uint32_t side) {
@@ -113,7 +114,7 @@ OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1) {
 }
 
 // The state is the statics, from the start to the end of the data. The stack before them is empty between ticks; the
-// heap after them holds load data, written only at init, and the bots.
+// heap after them holds load data, written only at init, the bots and the view.
 extern uint8_t __global_base[], __data_end[];  // set by the linker
 OW_EXPORT(ow_sim_state) void *ow_sim_state(void) { return __global_base; }
 OW_EXPORT(ow_sim_state_size) uint32_t ow_sim_state_size(void) { return (uint32_t)(__data_end - __global_base); }
@@ -147,10 +148,15 @@ static int8_t focus_of(const T5World *w) {
     }
 }
 
+const char *t5_view_begin(void) {
+    view = malloc(sizeof *view);
+    return view ? NULL : "out of memory for the view";
+}
+
 // Built when asked, from the state, so it is right after a restore too.
 OW_EXPORT(ow_sim_view) const void *ow_sim_view(void) {
     const T5World *w = &t5_match.world;
-    view = (T5View){
+    *view = (T5View){
         .version = T5_VIEW_VERSION,
         .phase = w->round.phase,
         .phase_frame = w->round.frame.ticks,
@@ -161,10 +167,10 @@ OW_EXPORT(ow_sim_view) const void *ow_sim_view(void) {
         .snap = w->blend_snap_left > 0,
         .focus = focus_of(w),
     };
-    memcpy(view.stage, t5_match_data.stage_id, sizeof view.stage);
-    t5_view_poses(&view, w);
-    for (uint32_t side = 0; side < T5_FIGHTER_COUNT; side++) view_fighter(&view.fighters[side], side);
-    return &view;
+    memcpy(view->stage, t5_match_data.stage_id, sizeof view->stage);
+    t5_view_poses(view, w);
+    for (uint32_t side = 0; side < T5_FIGHTER_COUNT; side++) view_fighter(&view->fighters[side], side);
+    return view;
 }
 
-OW_EXPORT(ow_sim_view_size) uint32_t ow_sim_view_size(void) { return sizeof view; }
+OW_EXPORT(ow_sim_view_size) uint32_t ow_sim_view_size(void) { return sizeof *view; }

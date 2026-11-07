@@ -33,5 +33,6 @@ extern T5MatchData t5_match_data;
 
 // Puts the loaded fighters on the stage and starts the round flow.
 void t5_match_begin(uint64_t seed);
+const char *t5_view_begin(void);  // NULL or the failure
 
 #endif

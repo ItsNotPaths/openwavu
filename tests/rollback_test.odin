@@ -64,3 +64,19 @@ rollback_keeps_the_match_state :: proc(t: ^testing.T) {
 	testing.expect(t, heap_hash(rolled) == heap, "the heap changed after init")
 	log.infof("%d frames, rolled back %d frames at a time, state %d bytes", frame + 1, ROLLBACK, sim.snapshot_size(rolled))
 }
+
+// Only the machine that draws the match reads its view, so reading it must leave the state both players hash.
+@(test)
+reading_the_view_keeps_the_state :: proc(t: ^testing.T) {
+	stock, opened := stock_sim_open(t)
+	if !opened do return
+	defer stock_sim_close(stock)
+	w, created := stock_world(t, stock)
+	if !created do return
+	defer sim.destroy(w)
+	for _ in 0 ..< 120 do if !testing.expect_value(t, sim.step(w, {}), "") do return
+	before := sim.state_hash(w)
+	_, err := sim.view(w)
+	testing.expect_value(t, err, "")
+	testing.expect(t, sim.state_hash(w) == before, "the view is no part of the state")
+}

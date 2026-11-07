@@ -58,6 +58,7 @@ OW_EXPORT(ow_sim_init) int32_t ow_sim_init(void) {
         t5_match_begin(seed);
         failed = t5_bots_begin(seed);
     }
+    if (!failed) failed = t5_view_begin();
     if (failed) {
         ow_log((OwStr){(uint32_t)strlen(failed), failed});
         return -1;
