@@ -1,14 +1,13 @@
-package server
+package relay
 
 import "core:fmt"
 import "core:math/rand"
 import "core:sync"
 import enet "vendor:ENet"
-import "../net/relay"
 
 // The bare relay (ws.md Workstream E): players are paired in the order they connect, and each pair's session packets
 // are forwarded to the other player. Runs no pack code.
-Relay :: struct {
+Server :: struct {
 	host:    ^enet.Host,
 	waiting: ^enet.Peer,  // connected, not yet paired
 }
@@ -19,22 +18,22 @@ Pair :: struct {
 	token:   u32,
 }
 
-RELAY_PEERS_MAX :: 64
+PEERS_MAX :: 64
 
-relay_open :: proc(port: u16) -> (r: Relay, ok: bool) {
+open :: proc(port: u16) -> (r: Server, ok: bool) {
 	if enet.initialize() != 0 do return
 	address := enet.Address{host = enet.HOST_ANY, port = port}
-	r.host = enet.host_create(&address, RELAY_PEERS_MAX, relay.CHANNELS, 0, 0)
+	r.host = enet.host_create(&address, PEERS_MAX, CHANNELS, 0, 0)
 	return r, r.host != nil
 }
 
-relay_close :: proc(r: ^Relay) {
+close :: proc(r: ^Server) {
 	enet.host_destroy(r.host)
 	enet.deinitialize()
 }
 
 // Serves until stop is set.
-relay_serve :: proc(r: ^Relay, stop: ^bool) {
+serve :: proc(r: ^Server, stop: ^bool) {
 	event: enet.Event
 	for !sync.atomic_load(stop) {
 		if enet.host_service(r.host, &event, 100) <= 0 do continue
@@ -47,7 +46,7 @@ relay_serve :: proc(r: ^Relay, stop: ^bool) {
 }
 
 @(private = "file")
-arrive :: proc(r: ^Relay, peer: ^enet.Peer) {
+arrive :: proc(r: ^Server, peer: ^enet.Peer) {
 	if r.waiting == nil {
 		r.waiting = peer
 		return
@@ -63,8 +62,8 @@ pair_players :: proc(first, second: ^enet.Peer) {
 	seed := rand.uint64()
 	for player, side in pair.players {
 		player.data = pair
-		message := relay.start_encode({side = side, token = pair.token, seed = seed, delay_ms = relay.START_DELAY_MS})
-		enet.peer_send(player, relay.CHANNEL_CONTROL, enet.packet_create(&message, len(message), {.RELIABLE}))
+		message := start_encode({side = side, token = pair.token, seed = seed, delay_ms = START_DELAY_MS})
+		enet.peer_send(player, CHANNEL_CONTROL, enet.packet_create(&message, len(message), {.RELIABLE}))
 	}
 	fmt.eprintfln("relay: match %08x paired", pair.token)
 }
@@ -73,16 +72,16 @@ pair_players :: proc(first, second: ^enet.Peer) {
 forward :: proc(from: ^enet.Peer, packet: ^enet.Packet, channel: u8) {
 	defer enet.packet_destroy(packet)
 	pair := (^Pair)(from.data)
-	if pair == nil || channel != relay.CHANNEL_SESSION do return
+	if pair == nil || channel != CHANNEL_SESSION do return
 	bytes := packet.data[:packet.dataLength]
-	if token, ok := relay.packet_token(bytes); !ok || token != pair.token do return
+	if token, ok := packet_token(bytes); !ok || token != pair.token do return
 	to := pair.players[0] == from ? pair.players[1] : pair.players[0]
-	enet.peer_send(to, relay.CHANNEL_SESSION, enet.packet_create(raw_data(bytes), len(bytes), {.UNSEQUENCED}))
+	enet.peer_send(to, CHANNEL_SESSION, enet.packet_create(raw_data(bytes), len(bytes), {.UNSEQUENCED}))
 }
 
 // The other player's session ends on its own after the session timeout.
 @(private = "file")
-leave :: proc(r: ^Relay, peer: ^enet.Peer) {
+leave :: proc(r: ^Server, peer: ^enet.Peer) {
 	if r.waiting == peer do r.waiting = nil
 	pair := (^Pair)(peer.data)
 	if pair == nil do return

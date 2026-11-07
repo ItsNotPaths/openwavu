@@ -6,7 +6,6 @@ import "core:thread"
 import "core:time"
 import "../src/net"
 import "../src/net/relay"
-import "../src/server"
 import "../src/sim"
 
 RELAY_TEST_PORT :: 9289
@@ -19,21 +18,21 @@ sessions_agree_through_the_relay :: proc(t: ^testing.T) {
 	if !opened do return
 	defer stock_sim_close(stock)
 	host, port := RELAY_HOST, u16(relay.PORT)
-	r: server.Relay
+	r: relay.Server
 	stop: bool
 	serving: ^thread.Thread
 	defer if serving != nil {
 		sync.atomic_store(&stop, true)
 		thread.join(serving)
 		thread.destroy(serving)
-		server.relay_close(&r)
+		relay.close(&r)
 	}
 	if host == "" {
 		host, port = "127.0.0.1", RELAY_TEST_PORT
 		listening: bool
-		r, listening = server.relay_open(port)
+		r, listening = relay.open(port)
 		if !testing.expect(t, listening, "the relay can not listen") do return
-		serving = thread.create_and_start_with_poly_data2(&r, &stop, server.relay_serve)
+		serving = thread.create_and_start_with_poly_data2(&r, &stop, relay.serve)
 	}
 
 	clients: [2]^net.Relay_Client
