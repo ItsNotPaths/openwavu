@@ -12,6 +12,7 @@ sdl_glue :: proc() -> []Sdl_Define {
 		{"SDL_SetRenderDrawColor", {wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_SetRenderDrawColor},
 		{"SDL_SetRenderDrawColorFloat", {wasm.I32, wasm.F32, wasm.F32, wasm.F32, wasm.F32}, {wasm.I32}, import_SDL_SetRenderDrawColorFloat},
 		{"SDL_SetRenderDrawBlendMode", {wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_SetRenderDrawBlendMode},
+		{"SDL_ComposeCustomBlendMode", {wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_ComposeCustomBlendMode},
 		{"SDL_SetRenderClipRect", {wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_SetRenderClipRect},
 		{"SDL_SetRenderScale", {wasm.I32, wasm.F32, wasm.F32}, {wasm.I32}, import_SDL_SetRenderScale},
 		{"SDL_GetRenderOutputSize", {wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_GetRenderOutputSize},
@@ -38,11 +39,13 @@ sdl_glue :: proc() -> []Sdl_Define {
 		{"SDL_SetTextureAlphaModFloat", {wasm.I32, wasm.F32}, {wasm.I32}, import_SDL_SetTextureAlphaModFloat},
 		{"SDL_SetTextureBlendMode", {wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_SetTextureBlendMode},
 		{"SDL_SetTextureScaleMode", {wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_SetTextureScaleMode},
+		{"SDL_DestroySurface", {wasm.I32}, {}, import_SDL_DestroySurface},
 		{"SDL_CloseIO", {wasm.I32}, {wasm.I32}, import_SDL_CloseIO},
 		{"TTF_CloseFont", {wasm.I32}, {}, import_TTF_CloseFont},
 		{"TTF_SetFontSize", {wasm.I32, wasm.F32}, {wasm.I32}, import_TTF_SetFontSize},
 		{"TTF_SetFontStyle", {wasm.I32, wasm.I32}, {}, import_TTF_SetFontStyle},
 		{"TTF_GetFontHeight", {wasm.I32}, {wasm.I32}, import_TTF_GetFontHeight},
+		{"TTF_GetFontAscent", {wasm.I32}, {wasm.I32}, import_TTF_GetFontAscent},
 		{"TTF_GetStringSize", {wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, import_TTF_GetStringSize},
 		{"TTF_CreateRendererTextEngine", {wasm.I32}, {wasm.I32}, import_TTF_CreateRendererTextEngine},
 		{"TTF_DestroyRendererTextEngine", {wasm.I32}, {}, import_TTF_DestroyRendererTextEngine},
@@ -69,6 +72,7 @@ sdl_glue :: proc() -> []Sdl_Define {
 sdl_destroy_object :: proc(kind: Sdl_Kind, pointer: rawptr) {
 	#partial switch kind {
 	case .Texture: SDL_DestroyTexture(pointer)
+	case .Surface: SDL_DestroySurface(pointer)
 	case .IO_Stream: SDL_CloseIO(pointer)
 	case .Font: TTF_CloseFont(pointer)
 	case .Text_Engine: TTF_DestroyRendererTextEngine(pointer)
@@ -113,6 +117,21 @@ import_SDL_SetRenderDrawBlendMode :: proc "c" (env: rawptr, caller: ^wasm.C_Call
 	p2 := u32(args[1].of.i32)
 	if call.error != "" do return wasm.trap(call.error)
 	results[0] = wasm.i32_val(i32(SDL_SetRenderDrawBlendMode(p1, p2)))
+	return nil
+}
+
+@(private = "file")
+import_SDL_ComposeCustomBlendMode :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_ComposeCustomBlendMode")
+	p1 := args[0].of.i32
+	p2 := args[1].of.i32
+	p3 := args[2].of.i32
+	p4 := args[3].of.i32
+	p5 := args[4].of.i32
+	p6 := args[5].of.i32
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(i32(SDL_ComposeCustomBlendMode(p1, p2, p3, p4, p5, p6)))
 	return nil
 }
 
@@ -443,6 +462,16 @@ import_SDL_SetTextureScaleMode :: proc "c" (env: rawptr, caller: ^wasm.C_Caller,
 }
 
 @(private = "file")
+import_SDL_DestroySurface :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_DestroySurface")
+	_ = sdl_handle(&call, 1, args[0], .Surface)
+	if call.error != "" do return wasm.trap(call.error)
+	sdl_destroy(call.set, u32(args[0].of.i32))
+	return nil
+}
+
+@(private = "file")
 import_SDL_CloseIO :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
 	context = runtime.default_context()
 	call := sdl_call(env, caller, "SDL_CloseIO")
@@ -492,6 +521,16 @@ import_TTF_GetFontHeight :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args:
 	p1 := sdl_handle(&call, 1, args[0], .Font)
 	if call.error != "" do return wasm.trap(call.error)
 	results[0] = wasm.i32_val(TTF_GetFontHeight(p1))
+	return nil
+}
+
+@(private = "file")
+import_TTF_GetFontAscent :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "TTF_GetFontAscent")
+	p1 := sdl_handle(&call, 1, args[0], .Font)
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(TTF_GetFontAscent(p1))
 	return nil
 }
 
@@ -716,6 +755,11 @@ SDL_SetRenderDrawBlendMode :: proc(p1: rawptr, p2: u32) -> bool {
 }
 
 @(private = "file")
+SDL_ComposeCustomBlendMode :: proc(p1: i32, p2: i32, p3: i32, p4: i32, p5: i32, p6: i32) -> u32 {
+	return (proc "c" (i32, i32, i32, i32, i32, i32) -> u32)(rawptr(sdl.ComposeCustomBlendMode))(p1, p2, p3, p4, p5, p6)
+}
+
+@(private = "file")
 SDL_SetRenderClipRect :: proc(p1: rawptr, p2: rawptr) -> bool {
 	return (proc "c" (rawptr, rawptr) -> bool)(rawptr(sdl.SetRenderClipRect))(p1, p2)
 }
@@ -846,6 +890,11 @@ SDL_SetTextureScaleMode :: proc(p1: rawptr, p2: i32) -> bool {
 }
 
 @(private = "file")
+SDL_DestroySurface :: proc(p1: rawptr) {
+	(proc "c" (rawptr))(rawptr(sdl.DestroySurface))(p1)
+}
+
+@(private = "file")
 SDL_CloseIO :: proc(p1: rawptr) -> bool {
 	return (proc "c" (rawptr) -> bool)(rawptr(sdl.CloseIO))(p1)
 }
@@ -868,6 +917,11 @@ TTF_SetFontStyle :: proc(p1: rawptr, p2: u32) {
 @(private = "file")
 TTF_GetFontHeight :: proc(p1: rawptr) -> i32 {
 	return (proc "c" (rawptr) -> i32)(rawptr(ttf.GetFontHeight))(p1)
+}
+
+@(private = "file")
+TTF_GetFontAscent :: proc(p1: rawptr) -> i32 {
+	return (proc "c" (rawptr) -> i32)(rawptr(ttf.GetFontAscent))(p1)
 }
 
 @(private = "file")

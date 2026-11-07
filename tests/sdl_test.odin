@@ -12,7 +12,7 @@ import "../src/imports"
 import "../src/titlepack"
 import "../src/wasm"
 
-// A module draws shapes, a texture and text on the host's renderer through the SDL imports. A bad pointer, pixels past
+// A module draws shapes, a texture, a pack PNG and text on the host's renderer through the SDL imports. A bad pointer, pixels past
 // its memory, a handle that is not the pack's, of the wrong kind or destroyed, a stream two fonts would close, and a
 // text whose font is closed each stop it before SDL runs.
 @(test)
@@ -25,6 +25,10 @@ module_draws_through_sdl_imports :: proc(t: ^testing.T) {
 	defer os.remove_all(dir)
 	font, _ := os.read_entire_file("vendor/fonts/Michroma-Regular.ttf", context.temp_allocator)
 	_ = os.write_entire_file(fmt.tprintf("%s/font.ttf", dir), font)
+	blue := sdl.CreateSurface(2, 2, .RGBA32)
+	_ = sdl.FillSurfaceRect(blue, nil, sdl.MapSurfaceRGBA(blue, 0, 0, 255, 255))
+	_ = sdl.SavePNG(blue, fmt.ctprintf("%s/image.png", dir))
+	sdl.DestroySurface(blue)
 	_ = os.write_entire_file(fmt.tprintf("%s/%s", dir, titlepack.MANIFEST), transmute([]byte)string("id = \"x\"\nversion = \"1\"\n"))
 	tar := fmt.tprintf("%s.tar", dir)
 	if !testing.expect_value(t, titlepack.write_tar(dir, tar), "") do return
@@ -55,6 +59,8 @@ module_draws_through_sdl_imports :: proc(t: ^testing.T) {
 	got := []wasm.Val{{}}
 	testing.expect_value(t, wasm.call(r.store, inst, "draw", nil, got), "")
 	testing.expect_value(t, got[0].of.i32, 1)
+	testing.expect_value(t, wasm.call(r.store, inst, "image", nil, got), "")
+	testing.expect_value(t, got[0].of.i32, 1)
 	testing.expect_value(t, wasm.call(r.store, inst, "text", nil, got), "")
 	testing.expect_value(t, got[0].of.i32, 1)
 	_ = sdl.FlushRenderer(renderer)
@@ -64,6 +70,7 @@ module_draws_through_sdl_imports :: proc(t: ^testing.T) {
 	testing.expect_value(t, pixel(surface, 1, 1), [4]u8{255, 0, 0, 255})
 	testing.expect_value(t, pixel(surface, 9, 1), [4]u8{0, 255, 0, 255})
 	testing.expect_value(t, pixel(surface, 6, 1), [4]u8{0, 0, 0, 0})
+	testing.expect_value(t, pixel(surface, 13, 1), [4]u8{0, 0, 255, 255})
 	lit := 0
 	for y in 8 ..< 16 do for x in 0 ..< 16 do if pixel(surface, x, y).r > 0 do lit += 1
 	testing.expectf(t, lit > 4, "text lit %d pixels", lit)
@@ -72,7 +79,7 @@ module_draws_through_sdl_imports :: proc(t: ^testing.T) {
 		{"bad_rect", "SDL_RenderFillRect: argument 2 is outside the module's memory"},
 		{"bad_handle", "SDL_RenderTexture: argument 2 is not a Texture handle"},
 		{"pixels_past_memory", "SDL_UpdateTexture: argument 3 is outside the module's memory"},
-		{"closeio_on_shared_stream", "TTF_OpenFontIO: closeio on a stream another font still reads"},
+		{"closeio_on_shared_stream", "TTF_OpenFontIO: closeio on a stream a font still reads"},
 		{"stale_texture", "SDL_RenderTexture: argument 2 is not a Texture handle"},
 		{"font_as_texture", "SDL_RenderTexture: argument 2 is not a Texture handle"},
 		{"text_after_font_closed", "TTF_DrawRendererText: argument 1 is not a Text handle"},

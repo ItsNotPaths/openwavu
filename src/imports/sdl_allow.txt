@@ -10,6 +10,7 @@
 SDL_SetRenderDrawColor
 SDL_SetRenderDrawColorFloat
 SDL_SetRenderDrawBlendMode
+SDL_ComposeCustomBlendMode
 SDL_SetRenderClipRect
 SDL_SetRenderScale
 SDL_GetRenderOutputSize
@@ -40,6 +41,11 @@ SDL_SetTextureAlphaModFloat
 SDL_SetTextureBlendMode
 SDL_SetTextureScaleMode
 
+// Images from pack memory
+SDL_LoadPNG_IO hand
+SDL_DestroySurface destroy
+SDL_CreateTextureFromSurface hand
+
 // Font files from pack memory
 SDL_IOFromConstMem hand
 SDL_CloseIO destroy
@@ -50,6 +56,7 @@ TTF_CloseFont destroy
 TTF_SetFontSize
 TTF_SetFontStyle
 TTF_GetFontHeight
+TTF_GetFontAscent
 TTF_GetStringSize 2=3
 TTF_CreateRendererTextEngine
 TTF_DestroyRendererTextEngine destroy

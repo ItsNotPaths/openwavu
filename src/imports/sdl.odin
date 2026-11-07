@@ -17,6 +17,7 @@ Sdl_Kind :: enum u8 {
 	Renderer,
 	Texture,
 	IO_Stream,
+	Surface,
 	Font,
 	Text_Engine,
 	Text,
@@ -86,6 +87,8 @@ define_sdl :: proc(l: wasm.Linker, set: ^Sdl_Set) -> (err: string) {
 		{"SDL_UpdateTexture", {wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, update_texture},
 		{"SDL_IOFromConstMem", {wasm.I32, wasm.I32}, {wasm.I32}, io_from_const_mem},
 		{"TTF_OpenFontIO", {wasm.I32, wasm.I32, wasm.F32}, {wasm.I32}, open_font_io},
+		{"SDL_LoadPNG_IO", {wasm.I32, wasm.I32}, {wasm.I32}, load_png_io},
+		{"SDL_CreateTextureFromSurface", {wasm.I32, wasm.I32}, {wasm.I32}, create_texture_from_surface},
 		{"SDL_OpenAudioDeviceStream", {wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, open_audio_device_stream},
 		{"SDL_SetAudioStreamGain", {wasm.I32, wasm.F32}, {wasm.I32}, set_audio_stream_gain},
 	}
@@ -243,14 +246,46 @@ open_font_io :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val
 	handle, closeio := u32(args[0].of.i32), args[1].of.i32 != 0
 	owners := [2]u32{}
 	if closeio {
-		iterator := hm.iterator_make(&call.set.objects)
-		for other, _ in hm.iterate(&iterator) do if made_with(other^, handle) do return wasm.trap("TTF_OpenFontIO: closeio on a stream another font still reads")
-		if stream != nil do release(call.set, handle)
+		if !take_stream(call.set, handle) do return wasm.trap("TTF_OpenFontIO: closeio on a stream a font still reads")
 	} else {
 		owners[0] = handle
 	}
 	results[0] = wasm.i32_val(i32(sdl_new(call.set, .Font, ttf.OpenFontIO(stream, closeio, args[2].of.f32), owners)))
 	return nil
+}
+
+// The surface keeps no reference to the stream; with closeio SDL closes it, so it leaves the table.
+@(private = "file")
+load_png_io :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_LoadPNG_IO")
+	stream := (^sdl.IOStream)(sdl_handle(&call, 1, args[0], .IO_Stream))
+	if call.error != "" do return wasm.trap(call.error)
+	closeio := args[1].of.i32 != 0
+	if closeio && !take_stream(call.set, u32(args[0].of.i32)) do return wasm.trap("SDL_LoadPNG_IO: closeio on a stream a font still reads")
+	results[0] = wasm.i32_val(i32(sdl_new(call.set, .Surface, sdl.LoadPNG_IO(stream, closeio), {})))
+	return nil
+}
+
+// The texture is a copy: it lives on after the surface, so only the renderer owns it.
+@(private = "file")
+create_texture_from_surface :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_CreateTextureFromSurface")
+	renderer := (^sdl.Renderer)(sdl_handle(&call, 1, args[0], .Renderer))
+	surface := (^sdl.Surface)(sdl_handle(&call, 2, args[1], .Surface))
+	if call.error != "" do return wasm.trap(call.error)
+	results[0] = wasm.i32_val(i32(sdl_new(call.set, .Texture, sdl.CreateTextureFromSurface(renderer, surface), {u32(args[0].of.i32), 0})))
+	return nil
+}
+
+// A stream SDL will close leaves the table; false when another object still reads it.
+@(private = "file")
+take_stream :: proc(set: ^Sdl_Set, handle: u32) -> bool {
+	iterator := hm.iterator_make(&set.objects)
+	for other, _ in hm.iterate(&iterator) do if made_with(other^, handle) do return false
+	if _, valid := hm.get(&set.objects, transmute(Sdl_Handle)handle); valid do release(set, handle)
+	return true
 }
 
 // Only the default playback device, and no callback: the pack feeds the stream itself. Each stream gets its own

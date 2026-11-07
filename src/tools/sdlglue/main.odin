@@ -37,7 +37,7 @@ main :: proc() {
 
 scalar :: proc(c: string) -> (s: Scalar, ok: bool) {
 	switch c {
-	case "int", "Sint32", "SDL_PixelFormat", "SDL_TextureAccess", "SDL_ScaleMode", "SDL_FlipMode":
+	case "int", "Sint32", "SDL_PixelFormat", "SDL_TextureAccess", "SDL_ScaleMode", "SDL_FlipMode", "SDL_BlendFactor", "SDL_BlendOperation":
 		return {"I32", "i32", "$.of.i32", "wasm.i32_val($)"}, true
 	case "Uint32", "SDL_BlendMode", "TTF_FontStyleFlags":
 		return {"I32", "u32", "u32($.of.i32)", "wasm.i32_val(i32($))"}, true
@@ -61,6 +61,7 @@ handle_kind :: proc(c: string) -> (kind: string, ok: bool) {
 	case "SDL_Renderer*": return "Renderer", true
 	case "SDL_Texture*": return "Texture", true
 	case "SDL_IOStream*": return "IO_Stream", true
+	case "SDL_Surface*": return "Surface", true
 	case "TTF_Font*": return "Font", true
 	case "TTF_TextEngine*": return "Text_Engine", true
 	case "TTF_Text*": return "Text", true

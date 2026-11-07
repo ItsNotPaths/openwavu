@@ -19,19 +19,27 @@ OW_EXPORT(draw) int draw(void) {
     return ok;
 }
 
-// The pack's font.ttf as a stream; NULL if it does not read.
-static SDL_IOStream *font_stream(void) {
-    int32_t size = ow_content_size(OW_STR("font.ttf"));
+// A pack file as a stream; NULL if it does not read.
+static SDL_IOStream *pack_stream(OwStr path) {
+    int32_t size = ow_content_size(path);
     if (size <= 0) return NULL;
     void *bytes = malloc(size);
-    SDL_IOStream *stream = ow_content_read(OW_STR("font.ttf"), 0, bytes, size) == size ? SDL_IOFromConstMem(bytes, size) : NULL;
+    SDL_IOStream *stream = ow_content_read(path, 0, bytes, size) == size ? SDL_IOFromConstMem(bytes, size) : NULL;
     free(bytes);  // the host copied it
     return stream;
 }
 
+// The pack's blue image.png at (12, 0), 4x4, drawn after its surface is gone.
+OW_EXPORT(image) int image(void) {
+    SDL_Surface *surface = SDL_LoadPNG_IO(pack_stream(OW_STR("image.png")), true);
+    SDL_Texture *t = surface ? SDL_CreateTextureFromSurface(ow_renderer(), surface) : NULL;
+    SDL_DestroySurface(surface);
+    return t && SDL_RenderTexture(ow_renderer(), t, NULL, &(SDL_FRect){12, 0, 4, 4});
+}
+
 // "Hi" in white from the pack's font, at (0, 8).
 OW_EXPORT(text) int draw_text(void) {
-    font = TTF_OpenFontIO(font_stream(), true, 12);
+    font = TTF_OpenFontIO(pack_stream(OW_STR("font.ttf")), true, 12);
     TTF_TextEngine *engine = TTF_CreateRendererTextEngine(ow_renderer());
     text = TTF_CreateText(engine, font, "Hi", 0);
     return text && TTF_SetTextColor(text, 255, 255, 255, 255) && TTF_DrawRendererText(text, 0, 8);
@@ -53,7 +61,7 @@ OW_EXPORT(pixels_past_memory) void pixels_past_memory(void) {
 
 // The first font reads the stream; a second that would close it with itself must not get it.
 OW_EXPORT(closeio_on_shared_stream) void closeio_on_shared_stream(void) {
-    SDL_IOStream *stream = font_stream();
+    SDL_IOStream *stream = pack_stream(OW_STR("font.ttf"));
     TTF_OpenFontIO(stream, false, 12);
     TTF_OpenFontIO(stream, true, 12);
 }
