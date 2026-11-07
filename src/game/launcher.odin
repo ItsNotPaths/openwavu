@@ -63,13 +63,14 @@ Install_Source :: enum u8 {
 // Installed packs left, the store right, whatever is selected in the middle; columns have no panel.
 // A front replaces the spotlight with its own backgrounds.
 launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
+	store_poll(l)
 	path, file := "", ""
 	switch pick in l.selected {
 	case int: path = l.packs[pick].path
 	case Front_Preview:
 		path, file = pick.path, pick.file
 		if front_changed(path, file) != l.front.changed do front_close(&l.front)
-	case Store_Pick: if pick.has_front do path = store_front(l.store.packs[pick.index])
+	case Store_Pick: path = store_front(l, pick)
 	case Install_Screen:
 	}
 	if path != "" && path != l.front.path do front_open(&l.front, u, path, file)
@@ -122,7 +123,7 @@ center :: proc(l: ^Launcher, u: ^ui.Ui) {
 		case Front_Preview:
 			pack_page(l, u, pick.path, nil)
 		case Store_Pick:
-			pack_page(l, u, l.store.packs[pick.index].id, nil)
+			pack_page(l, u, l.store.listing.packs[pick.index].id, nil)
 		}
 	}
 }

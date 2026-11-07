@@ -12,73 +12,109 @@ import "../ui"
 
 NETWORK :: "https://openwavu.paths.place:9443"
 CACHE_DIR :: titlepack.PACKS_DIR + "/cache"  // fronts and thumbs by hash; they never change
+CACHE_DOWNLOADS_MAX :: 4  // cache files downloading at once
 
-// The network's packs (GET /store), fetched when the store column first shows.
+// The network's packs. Every GET runs on its own thread; the launcher polls each frame.
 Store :: struct {
-	fetched:  bool,
-	answer:   []byte,  // packs point into it
-	packs:    []titlepack.Listed,
-	err:      string,
-	versions: Versions,
+	listing:     Listing,  // GET /store, started when the store column first shows
+	versions:    Listing,  // GET /versions/<id> of the picked store pack
+	versions_id: string,
+	cache:       map[string]^content.Download,  // by hash; a failed one stays, so it is not tried again
+	install:     Install,
 }
 
-// Every version of the picked store pack, for the install popup.
-Versions :: struct {
+// A listing GET; packs read once it lands, pointing into its body.
+Listing :: struct {
+	job:   ^content.Download,
+	packs: []titlepack.Listed,
+	read:  bool,
+}
+
+// The one running install, and the error of the last one.
+Install :: struct {
+	job:     ^content.Download,
 	id:      string,
-	answer:  []byte,
-	listed:  []titlepack.Listed,
+	version: string,
 	err:     string,
 }
 
 Store_Pick :: struct {
-	index:     int,
-	has_front: bool,  // downloaded once at the pick, so a failed download is not tried again each frame
+	index: int,
 }
 
 store_destroy :: proc(store: ^Store) {
-	delete(store.answer)
-	delete(store.packs)
-	delete(store.err)
-	versions_destroy(&store.versions)
+	listing_destroy(&store.listing)
+	listing_destroy(&store.versions)
+	delete(store.versions_id)
+	for hash, job in store.cache {
+		content.download_destroy(job)
+		delete(hash)
+	}
+	delete(store.cache)
+	install_destroy(&store.install)
 }
 
 @(private = "file")
-versions_destroy :: proc(versions: ^Versions) {
-	delete(versions.id)
-	delete(versions.answer)
-	delete(versions.listed)
-	delete(versions.err)
-	versions^ = {}
+listing_destroy :: proc(listing: ^Listing) {
+	if listing.job != nil do content.download_destroy(listing.job)
+	delete(listing.packs)
+	listing^ = {}
+}
+
+@(private = "file")
+install_destroy :: proc(install: ^Install) {
+	if install.job != nil do content.download_destroy(install.job)
+	delete(install.id)
+	delete(install.version)
+	delete(install.err)
+	install^ = {}
+}
+
+// "" while it downloads or when it landed; else why it failed.
+@(private = "file")
+listing_poll :: proc(listing: ^Listing) -> (err: string) {
+	if listing.read || !content.download_finished(listing.job) do return
+	if listing.job.err != "" do return listing.job.err
+	listing.packs = titlepack.read_listing(string(listing.job.body))
+	listing.read = true
+	return
+}
+
+// Each frame: a finished install replaces the installed pack and picks it.
+store_poll :: proc(l: ^Launcher) {
+	install := &l.store.install
+	if install.job == nil || !content.download_finished(install.job) do return
+	defer {
+		content.download_destroy(install.job)
+		install.job = nil
+	}
+	if install.job.err != "" {
+		install.err = strings.clone(install.job.err)
+		return
+	}
+	titlepack.destroy_installed(l.packs)
+	l.packs = titlepack.installed()
+	for pack, index in l.packs do if pack.id == install.id do l.selected = index
+	l.popup.open = false
 }
 
 store_column :: proc(l: ^Launcher, u: ^ui.Ui) {
-	if !l.store.fetched do store_fetch(&l.store)
+	if l.store.listing.job == nil do l.store.listing.job = content.download_start(NETWORK + "/store")
+	err := listing_poll(&l.store.listing)
 	if clay.UI()(side_column()) {
 		column_head(u, "STORE", clay.ID("SearchStore"), &l.search_store)
-		if l.store.err != "" do ui.label(l.store.err, tint = ui.TEXT_DIM)
+		if err != "" do ui.label(fmt.tprintf("The store did not answer: %s", err), tint = ui.TEXT_DIM)
 		if clay.UI()(slot_list(u, clay.ID("StoreList"))) {
-			for pack, index in l.store.packs {
+			for pack, index in l.store.listing.packs {
 				if !matches(pack.id, strings.to_string(l.search_store)) do continue
 				picked, is_store := l.selected.(Store_Pick)
 				art := store_thumb(l, u, pack)
 				if ui.slot(u, clay.ID("StorePack", u32(index)), pack.id, art, is_store && picked.index == index) {
-					l.selected = Store_Pick{index, store_front(pack) != ""}
+					l.selected = Store_Pick{index}
 				}
 			}
 		}
 	}
-}
-
-@(private = "file")
-store_fetch :: proc(store: ^Store) {
-	store.fetched = true
-	answer, err := content.http_get(NETWORK + "/store")
-	if err != "" {
-		store.err = fmt.aprintf("The store did not answer: %s", err)
-		return
-	}
-	store.answer = answer
-	store.packs = titlepack.read_listing(string(answer))
 }
 
 // Slot art by key, loaded once; nil when the pack has none or it does not load.
@@ -102,63 +138,75 @@ installed_thumb :: proc(l: ^Launcher, u: ^ui.Ui, pack: titlepack.Title_Pack) -> 
 store_thumb :: proc(l: ^Launcher, u: ^ui.Ui, pack: titlepack.Listed) -> ^sdl.Texture {
 	if pack.thumb_sha256 == "" do return nil
 	if texture, known := l.thumbs[pack.thumb_sha256]; known do return texture
-	path := cached(pack.thumb_sha256, ".png", fmt.tprintf("%s@%s.thumb.png", pack.id, pack.version))
+	path, waiting := cached(&l.store, pack.thumb_sha256, ".png", fmt.tprintf("%s@%s.thumb.png", pack.id, pack.version))
+	if waiting do return nil
 	bytes, err := os.read_entire_file(path, context.temp_allocator)
-	return remember_thumb(l, u, pack.thumb_sha256, err == nil ? bytes : nil)
+	return remember_thumb(l, u, pack.thumb_sha256, path != "" && err == nil ? bytes : nil)
 }
 
-// A cached file named by its hash, downloaded first when missing. "" when it can not be had.
-cached :: proc(sha256, suffix, name: string) -> (path: string) {
+// A cached file named by its hash, downloaded first when missing. waiting while it downloads; path "" when it can
+// not be had.
+@(private = "file")
+cached :: proc(store: ^Store, sha256, suffix, name: string) -> (path: string, waiting: bool) {
 	path, _ = filepath.join({CACHE_DIR, strings.concatenate({sha256, suffix}, context.temp_allocator)}, context.temp_allocator)
-	if os.exists(path) do return
-	os.make_directory_all(CACHE_DIR)
-	if err := content.download_checked(fmt.tprintf("%s/files/%s", NETWORK, name), sha256, path); err != "" {
-		fmt.eprintfln("openwavu: %s: %s", name, err)
-		return ""
+	if os.exists(path) do return path, false
+	job, started := store.cache[sha256]
+	if !started {
+		if cache_downloads(store) >= CACHE_DOWNLOADS_MAX do return "", true
+		os.make_directory_all(CACHE_DIR)
+		store.cache[strings.clone(sha256)] = content.download_start(fmt.tprintf("%s/files/%s", NETWORK, name), sha256, path)
+		return "", true
 	}
+	if !content.download_finished(job) do return "", true
+	return job.err == "" ? path : "", false
+}
+
+@(private = "file")
+cache_downloads :: proc(store: ^Store) -> (running: int) {
+	for _, job in store.cache do if !content.download_finished(job) do running += 1
 	return
 }
 
-// A store pack's front tar, from the cache.
-store_front :: proc(pack: titlepack.Listed) -> string {
-	return cached(pack.front_sha256, ".front.tar", fmt.tprintf("%s@%s.front.tar", pack.id, pack.version))
+// The picked store pack's front tar; "" until it is in the cache.
+store_front :: proc(l: ^Launcher, pick: Store_Pick) -> string {
+	pack := l.store.listing.packs[pick.index]
+	path, _ := cached(&l.store, pack.front_sha256, ".front.tar", fmt.tprintf("%s@%s.front.tar", pack.id, pack.version))
+	return path
 }
 
-// (hole store-download-thread :tags (game net)) store fetches and installs run on the UI thread: a big install freezes the window with no progress bar.
-// Every version, newest first; Install downloads it over the installed one and picks it.
+// Every version, newest first; Install downloads it over the installed one and picks it. While it runs, its bar.
 store_install_popup :: proc(l: ^Launcher, u: ^ui.Ui, pick: Store_Pick) {
-	pack := l.store.packs[pick.index]
-	versions := &l.store.versions
-	if versions.id != pack.id {
-		versions_destroy(versions)
-		versions.id = strings.clone(pack.id)
-		answer, err := content.http_get(fmt.tprintf("%s/versions/%s", NETWORK, pack.id))
-		versions.answer, versions.err = answer, strings.clone(err)
-		versions.listed = titlepack.read_listing(string(answer))
+	pack := l.store.listing.packs[pick.index]
+	store := &l.store
+	if store.versions_id != pack.id {
+		listing_destroy(&store.versions)
+		delete(store.versions_id)
+		store.versions_id = strings.clone(pack.id)
+		store.versions.job = content.download_start(fmt.tprintf("%s/versions/%s", NETWORK, pack.id))
 	}
 	ui.label(fmt.tprintf("Install %s", pack.id), ui.HEAD_SIZE, engraved = true, face = .Display)
-	if versions.err != "" do ui.label(versions.err, tint = ui.WARN)
-	for version, index in versions.listed {
+	if err := listing_poll(&store.versions); err != "" do ui.label(err, tint = ui.WARN)
+	if store.install.err != "" do ui.label(store.install.err, tint = ui.WARN)
+	if job := store.install.job; job != nil {
+		ui.label(fmt.tprintf("Downloading %s %s", store.install.id, store.install.version))
+		ui.progress(content.download_fraction(job))
+		return
+	}
+	for version, index in store.versions.packs {
 		if clay.UI()(ui.row(8)) {
 			ui.label(index == 0 ? fmt.tprintf("Latest  %s", version.version) : version.version)
 			ui.spacer()
 			if ui.button(u, clay.ID("InstallVersion", u32(index)), fmt.tprintf("Install  %.1f MB", f64(version.size) / 1e6)) {
-				install_from_store(l, version)
+				install_start(&store.install, version)
 			}
 		}
 	}
 }
 
 @(private = "file")
-install_from_store :: proc(l: ^Launcher, version: titlepack.Listed) {
+install_start :: proc(install: ^Install, version: titlepack.Listed) {
+	install_destroy(install)
 	path, _ := filepath.join({titlepack.PACKS_DIR, strings.concatenate({version.id, ".tar"}, context.temp_allocator)}, context.temp_allocator)
-	if err := content.download_checked(fmt.tprintf("%s/files/%s@%s.tar", NETWORK, version.id, version.version), version.sha256, path); err != "" {
-		delete(l.store.versions.err)
-		l.store.versions.err = strings.clone(err)
-		return
-	}
-	titlepack.destroy_installed(l.packs)
-	l.packs = titlepack.installed()
-	for pack, index in l.packs do if pack.id == version.id do l.selected = index
-	l.popup.open = false
+	url := fmt.tprintf("%s/files/%s@%s.tar", NETWORK, version.id, version.version)
+	install^ = {job = content.download_start(url, version.sha256, path), id = strings.clone(version.id), version = strings.clone(version.version)}
 }
