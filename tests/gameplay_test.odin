@@ -8,7 +8,7 @@ import "../src/imports"
 import "../src/sim"
 import "../src/wasm"
 
-STOCK_PACK :: "packs/tekken5dr.tar"
+STOCK_PACK :: "packs/tekken5dr"
 GAMEPLAY :: "build/modules/gameplay.wasm"
 
 // modules/tk5/loadout.h

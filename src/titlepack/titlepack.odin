@@ -4,6 +4,7 @@
 package titlepack
 
 import "core:c"
+import "core:os"
 import "core:path/filepath"
 import "core:slice"
 import "core:strings"
@@ -104,13 +105,20 @@ destroy_titlepack :: proc(tp: Title_Pack, allocator := context.allocator) {
 // (hole data-dir :tags titlepack :sev polish) packs live in the working directory, not a per-user data folder.
 PACKS_DIR :: "packs"
 
-// Every packs/*.tar whose pack.toml reads, sorted by name. Others are skipped.
+// Every packs/*.tar and stock packs/<id>/ folder whose pack.toml reads, sorted by name. Others are skipped, and so is
+// a folder with bases: only stock packs, built on this machine, are folders.
 installed :: proc(allocator := context.allocator) -> []Title_Pack {
-	paths, _ := filepath.glob(PACKS_DIR + "/*.tar", context.temp_allocator)
+	paths, _ := filepath.glob(PACKS_DIR + "/*", context.temp_allocator)
 	packs := make([dynamic]Title_Pack, allocator)
 	for path in paths {
+		folder := os.is_dir(path)
+		if !folder && !strings.has_suffix(path, ".tar") do continue
 		manifest := read_manifest(path, context.temp_allocator) or_continue
 		tp := read_titlepack(manifest, allocator) or_continue
+		if folder && len(tp.bases) > 0 {
+			destroy_titlepack(tp, allocator)
+			continue
+		}
 		tp.path = strings.clone(path, allocator)
 		append(&packs, tp)
 	}

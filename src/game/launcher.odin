@@ -244,7 +244,7 @@ remove_pack :: proc(l: ^Launcher) {
 	if !is_pack do return
 	path := strings.clone(l.packs[pick].path, context.temp_allocator)
 	front_close(&l.front)
-	_ = os.remove(path)
+	_ = os.remove_all(path)  // a tar, or a stock pack's folder
 	titlepack.destroy_installed(l.packs)
 	l.packs = titlepack.installed()
 	l.selected = nil

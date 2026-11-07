@@ -15,8 +15,8 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	if !os.exists(TK5 + "/game") do return
 	os.remove_all("build/test_packs")
 	defer os.remove_all("build/test_packs")
-	if !testing.expect_value(t, tk5.build_pack({TK5 + "/game"}, "build/test_packs", keep = true), "") do return
-	check_stock_tar(t)
+	if !testing.expect_value(t, tk5.build_pack({TK5 + "/game"}, "build/test_packs"), "") do return
+	check_stock_pack(t)
 
 	handle: ^db.Sqlite
 	if !testing.expect(t, db.open_v2("build/test_packs/tekken5dr/tk5.db", &handle, db.OPEN_READWRITE, nil) == db.OK) do return
@@ -105,27 +105,22 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect(t, ok && a.layout == "tk5" && len(a.channels) == 23 && a.frames > 0, "kazuya anim 0 is not a tk5 .anim")
 }
 
-// The pack file holds the root files every pack needs, and the import's files byte for byte.
-check_stock_tar :: proc(t: ^testing.T) {
-	data, err := os.read_entire_file("build/test_packs/" + tk5.STOCK_PACK, context.temp_allocator)
-	if !testing.expect_value(t, err, nil) do return
-	index, ok := titlepack.read_tar(data)
-	if !testing.expect(t, ok, "stock pack did not read") do return
-	defer titlepack.destroy_tar(index)
+// The stock pack opens as a pack, holds the root files every pack needs, and its front names only files it has.
+check_stock_pack :: proc(t: ^testing.T) {
+	files, opened := titlepack.open_files("build/test_packs/" + tk5.STOCK_PACK)
+	if !testing.expect(t, opened, "stock pack did not open") do return
+	defer titlepack.close_files(&files)
 	for path in ([]string{"pack.toml", titlepack.FRONT, "gameplay.wasm", "gamerender.wasm", "app.wasm", "tk5.db", "ui/pic1.png", "anims/kazuya/0.anim"}) {
-		entry, has := index[path]
-		if !testing.expect(t, has, path) do continue
-		file, _ := os.read_entire_file(fmt.tprintf("build/test_packs/tekken5dr/%s", path), context.temp_allocator)
-		testing.expect(t, string(data[entry.offset:][:entry.size]) == string(file), path)
+		testing.expect(t, path in files.files, path)
 	}
-	manifest := string(data[index["pack.toml"].offset:][:index["pack.toml"].size])
+	manifest, has_manifest := titlepack.read_manifest("build/test_packs/" + tk5.STOCK_PACK, context.temp_allocator)
 	tp, read := titlepack.read_titlepack(manifest, context.temp_allocator)
-	testing.expect(t, read && tp.main == "app.wasm", "pack.toml names its entry module")
+	testing.expect(t, has_manifest && read && tp.main == "app.wasm", "pack.toml names its entry module")
 	testing.expect(t, len(tp.modes) == 1 && tp.modes[0] == {"versus", "gameplay.wasm", "gamerender.wasm"}, "pack.toml has the versus mode")
 
-	// The stock front reads and shows: every file it names is in the pack.
-	front_entry := index[titlepack.FRONT]
-	front, front_err := titlepack.read_front(string(data[front_entry.offset:][:front_entry.size]), context.temp_allocator)
+	front_text, has_front := titlepack.read_file(files, titlepack.FRONT)
+	if !testing.expect(t, has_front, "no front") do return
+	front, front_err := titlepack.read_front(string(front_text), context.temp_allocator)
 	testing.expect_value(t, front_err, "")
-	for e in front.elements do if e.file != "" do testing.expect(t, e.file in index, e.file)
+	for e in front.elements do if e.file != "" do testing.expect(t, e.file in files.files, e.file)
 }

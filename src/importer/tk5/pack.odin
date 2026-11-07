@@ -7,7 +7,7 @@ import "core:sync"
 import "../../titlepack"
 
 PACK_ID :: "tekken5dr"
-STOCK_PACK :: PACK_ID + ".tar"
+STOCK_PACK :: PACK_ID  // a folder: stock packs are built here and never sent, so they need no tar
 TITLE :: "Tekken 5: Dark Resurrection"
 
 // The stock modules build.sh made from modules/tk5, so an import writes this openwavu's own.
@@ -16,9 +16,9 @@ GAMERENDER_MODULE :: #load("../../../build/modules/gamerender.wasm", string)
 APP_MODULE :: #load("../../../build/modules/app.wasm", string)
 STOCK_FRONT :: #load("../../../modules/tk5/front.owf", string)
 
-// The game's stock title pack: packs_dir/tekken5dr.tar. inputs are recorded so an openwavu update can rebuild it.
-// The unpacked files stay in packs_dir/tekken5dr/ when keep is set.
-build_pack :: proc(inputs: []string, packs_dir: string, keep := false, progress: ^Progress = nil) -> (err: string) {
+// The game's stock title pack: the folder packs_dir/tekken5dr/, built beside it and renamed in when whole. inputs are
+// recorded so an openwavu update can rebuild it.
+build_pack :: proc(inputs: []string, packs_dir: string, progress: ^Progress = nil) -> (err: string) {
 	if progress != nil do sync.atomic_store(&progress.total, PROGRESS_STEPS)
 	if !make_dir(packs_dir) do return fmt.aprintf("cannot create %s", packs_dir)
 	scratch := strings.clone(join(packs_dir, PACK_ID + ".source"))  // an unpacked .pkg
@@ -28,13 +28,15 @@ build_pack :: proc(inputs: []string, packs_dir: string, keep := false, progress:
 	game: Game
 	if game, err = find_game(inputs, scratch); err != "" do return
 	defer destroy_game(game)
-	stage := strings.clone(join(packs_dir, PACK_ID))  // run frees temp memory
+	stage := strings.clone(join(packs_dir, PACK_ID + ".part"))  // run frees temp memory
 	defer delete(stage)
 	os.remove_all(stage)
-	defer if !keep do os.remove_all(stage)
+	defer os.remove_all(stage)
 	if err = run(game, stage, progress); err != "" do return
 	if err = write_pack_files(stage, inputs); err != "" do return
-	err = titlepack.write_tar(stage, join(packs_dir, STOCK_PACK))
+	pack := join(packs_dir, STOCK_PACK)
+	os.remove_all(pack)
+	if os.rename(stage, pack) != nil do err = fmt.aprintf("cannot move the pack into %s", pack)
 	if progress != nil do sync.atomic_add(&progress.done, 1)
 	return
 }

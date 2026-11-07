@@ -93,6 +93,10 @@ read_tar :: proc(data: []byte, allocator := context.allocator) -> (files: map[st
 
 // pack.toml of the tar at path, read from the first entry only; a tar that does not start with it has none.
 read_manifest :: proc(path: string, allocator := context.allocator) -> (text: string, ok: bool) {
+	if os.is_dir(path) {
+		data, read_err := os.read_entire_file(join_path(path, MANIFEST), allocator)
+		return string(data), read_err == nil
+	}
 	f, open_err := os.open(path)
 	if open_err != nil do return
 	defer os.close(f)
@@ -193,7 +197,6 @@ safe_path :: proc(path: string) -> bool {
 }
 
 // Files under dir, relative with forward slashes, sorted.
-@(private = "file")
 files_under :: proc(dir: string, allocator := context.allocator) -> (paths: []string, err: string) {
 	list := make([dynamic]string, allocator)
 	base, abs_err := os.get_absolute_path(dir, allocator)  // the walker gives absolute paths
