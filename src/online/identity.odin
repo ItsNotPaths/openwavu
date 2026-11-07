@@ -1,4 +1,4 @@
-package net
+package online
 
 // The player id: an Ed25519 key made once per install (docs/network.md).
 Identity :: struct {

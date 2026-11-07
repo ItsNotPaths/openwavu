@@ -4,8 +4,8 @@ import "core:sync"
 import "core:testing"
 import "core:thread"
 import "core:time"
-import "../src/net"
-import "../src/net/relay"
+import "../src/online"
+import "../src/online/relay"
 import "../src/sim"
 
 RELAY_TEST_PORT :: 9289
@@ -35,11 +35,11 @@ sessions_agree_through_the_relay :: proc(t: ^testing.T) {
 		serving = thread.create_and_start_with_poly_data2(&r, &stop, relay.serve)
 	}
 
-	clients: [2]^net.Relay_Client
-	defer for client in clients do if client != nil do net.relay_disconnect(client)
+	clients: [2]^online.Relay_Client
+	defer for client in clients do if client != nil do online.relay_disconnect(client)
 	for &client in clients {
 		connected: bool
-		client, connected = net.relay_connect(host, port)
+		client, connected = online.relay_connect(host, port)
 		if !testing.expect(t, connected, "a client did not connect") do return
 	}
 	machines := new(Two_Machines)
@@ -47,13 +47,13 @@ sessions_agree_through_the_relay :: proc(t: ^testing.T) {
 	machines.pause = time.Millisecond
 	seeds: [2]u64
 	for client in clients {
-		start, start_in_ns, started := net.relay_wait_start(client, 5000)
+		start, start_in_ns, started := online.relay_wait_start(client, 5000)
 		if !testing.expect(t, started, "a client was not paired") do return
 		testing.expect(t, start_in_ns <= u64(relay.START_DELAY_MS) * 1_000_000)
 		err: string
 		machines.worlds[start.side], err = sim.create(stock.engine, stock.module, &stock.pack, stage_params(), {loadout_bytes("paul"), loadout_bytes("kazuya")}, start.seed)
 		if !testing.expect_value(t, err, "") do return
-		machines.sessions[start.side] = net.session_create(machines.worlds[start.side], net.relay_transport(client), start.side, start.token, 0)
+		machines.sessions[start.side] = online.session_create(machines.worlds[start.side], online.relay_transport(client), start.side, start.token, 0)
 		seeds[start.side] = start.seed
 	}
 	testing.expect_value(t, seeds[0], seeds[1])
@@ -61,5 +61,5 @@ sessions_agree_through_the_relay :: proc(t: ^testing.T) {
 	FRAMES :: 600
 	if !testing.expect(t, two_machines_play(t, machines, FRAMES), "the sessions did not both finish") do return
 	testing.expect(t, sim.state_hash(machines.worlds[0]) == sim.state_hash(machines.worlds[1]), "the two machines' states differ")
-	for session in machines.sessions do testing.expect_value(t, session.outcome, net.Outcome.Playing)
+	for session in machines.sessions do testing.expect_value(t, session.outcome, online.Outcome.Playing)
 }

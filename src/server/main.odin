@@ -6,7 +6,7 @@ package server
 import "core:fmt"
 import "core:os"
 import "core:thread"
-import "../net/relay"
+import "../online/relay"
 
 // (hole server-lobby :tags server :needs (titlepack-hash param-layers) :sev blocker) no lobbies role: no lobby list per pack, match start, input relay, spectator feed or region check-in to the files host; no network.toml.
 // (hole server-authority :tags server :needs server-lobby) no authority mode: the server does not run the mode's sim on confirmed inputs, compare the clients' hashes with its own, or send a client its snapshot.

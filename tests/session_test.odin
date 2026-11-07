@@ -4,7 +4,7 @@ import "core:log"
 import "core:slice"
 import "core:testing"
 import "core:time"
-import "../src/net"
+import "../src/online"
 import "../src/sim"
 
 TICK_NS :: 1_000_000_000 / 60
@@ -36,7 +36,7 @@ Link :: struct {
 	out, back: ^Pipe,
 }
 
-link_transport :: proc(link: ^Link) -> net.Transport {
+link_transport :: proc(link: ^Link) -> online.Transport {
 	send :: proc(data: rawptr, packet: []byte) {
 		pipe := (^Link)(data).out
 		if pipe.cut || pipe_random(pipe, 100) < pipe.loss_percent do return
@@ -57,7 +57,7 @@ link_transport :: proc(link: ^Link) -> net.Transport {
 // Two machines, each with its own sim and session, its bot on its own side; the sessions talk through two pipes.
 Two_Machines :: struct {
 	worlds:   [2]^sim.World,
-	sessions: [2]^net.Session,
+	sessions: [2]^online.Session,
 	pipes:    [2]Pipe,  // pipes[side]: from that side to the other
 	links:    [2]Link,
 	tick:     int,
@@ -72,14 +72,14 @@ two_machines_create :: proc(t: ^testing.T, stock: ^Stock_Sim, lag, jitter, loss_
 	}
 	for side in 0 ..< 2 {
 		machines.links[side] = {&machines.pipes[side], &machines.pipes[1 - side]}
-		machines.sessions[side] = net.session_create(machines.worlds[side], link_transport(&machines.links[side]), side, 77, 0)
+		machines.sessions[side] = online.session_create(machines.worlds[side], link_transport(&machines.links[side]), side, 77, 0)
 	}
 	return machines, true
 }
 
 two_machines_destroy :: proc(machines: ^Two_Machines) {
 	for side in 0 ..< 2 {
-		if machines.sessions[side] != nil do net.session_destroy(machines.sessions[side])
+		if machines.sessions[side] != nil do online.session_destroy(machines.sessions[side])
 		if machines.worlds[side] != nil do sim.destroy(machines.worlds[side])
 		delete(machines.pipes[side].packets)
 	}
@@ -99,9 +99,9 @@ two_machines_play :: proc(t: ^testing.T, machines: ^Two_Machines, frames: int) -
 			if session.frame < frames {
 				pad: sim.Input
 				if pad, err = sim.bot_pad(machines.worlds[side], side); !testing.expect_value(t, err, "") do return false
-				_, err = net.session_tick(session, pad, now)
+				_, err = online.session_tick(session, pad, now)
 			} else {
-				err = net.session_exchange(session, now)
+				err = online.session_exchange(session, now)
 			}
 			if !testing.expect_value(t, err, "") || session.outcome != .Playing do return false
 		}
@@ -127,7 +127,7 @@ sessions_agree_over_a_bad_network :: proc(t: ^testing.T) {
 	if !testing.expect(t, two_machines_play(t, machines, FRAMES), "the sessions did not both finish") do return
 	testing.expect(t, sim.state_hash(machines.worlds[0]) == sim.state_hash(machines.worlds[1]), "the two machines' states differ")
 	for session in machines.sessions {
-		testing.expect_value(t, session.outcome, net.Outcome.Playing)
+		testing.expect_value(t, session.outcome, online.Outcome.Playing)
 		testing.expectf(t, session.checked_frame >= FRAMES / 2, "hashes matched only up to frame %d", session.checked_frame)
 	}
 	log.infof("%d frames in %d ticks", FRAMES, machines.tick)
@@ -169,14 +169,14 @@ session_reports_a_lasting_desync :: proc(t: ^testing.T) {
 	}
 	for side in 0 ..< 2 {
 		machines.links[side] = {&machines.pipes[side], &machines.pipes[1 - side]}
-		machines.sessions[side] = net.session_create(machines.worlds[side], link_transport(&machines.links[side]), side, 77, 0)
+		machines.sessions[side] = online.session_create(machines.worlds[side], link_transport(&machines.links[side]), side, 77, 0)
 	}
 	testing.expect(t, !two_machines_play(t, machines, 300), "the sessions finished")
 	for _ in 0 ..< 60 {  // the other machine hears the last hashes
 		machines.tick += 1
-		for session in machines.sessions do if session.outcome == .Playing do testing.expect_value(t, net.session_exchange(session, u64(machines.tick) * TICK_NS), "")
+		for session in machines.sessions do if session.outcome == .Playing do testing.expect_value(t, online.session_exchange(session, u64(machines.tick) * TICK_NS), "")
 	}
-	for session in machines.sessions do testing.expect_value(t, session.outcome, net.Outcome.Desync)
+	for session in machines.sessions do testing.expect_value(t, session.outcome, online.Outcome.Desync)
 }
 
 // A machine that hears nothing for five seconds ends the match.
@@ -191,6 +191,6 @@ session_ends_on_silence :: proc(t: ^testing.T) {
 	if !two_machines_play(t, machines, 60) do return
 	machines.pipes[1].cut = true
 	testing.expect(t, !two_machines_play(t, machines, 1000), "the sessions finished")
-	testing.expect_value(t, machines.sessions[0].outcome, net.Outcome.Disconnected)
+	testing.expect_value(t, machines.sessions[0].outcome, online.Outcome.Disconnected)
 	testing.expectf(t, machines.tick < 60 + 5 * 60 + 10, "ended at tick %d", machines.tick)
 }

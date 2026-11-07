@@ -1,4 +1,4 @@
-package net
+package online
 
 import "core:encoding/endian"
 import "../sim"

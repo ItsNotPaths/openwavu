@@ -1,5 +1,5 @@
 // An offline match: the mode's sim stepped at 60 Hz against display time, bots on their sides, the sim view to the
-// presenter each display frame, until the sim reports the match end. Online play steps the same sim through src/net.
+// presenter each display frame, until the sim reports the match end. Online play steps the same sim through src/online.
 package match
 
 import "../imports"
@@ -88,7 +88,7 @@ tick :: proc(m: ^Match, pads: [2]sim.Input) -> (err: string) {
 	return sim.step(m.world, pads)
 }
 
-// (hole match-online :tags (net game)) match.frame steps offline only: no net.Session ticks it, and the sim's events count on every frame, not only on confirmed ones.
+// (hole match-online :tags (net game)) match.frame steps offline only: no online.Session ticks it, and the sim's events count on every frame, not only on confirmed ones.
 @(private = "file")
 match_end :: proc(w: ^sim.World) -> (winner: i32, ended: bool) {
 	events := w.inputs.events[:]

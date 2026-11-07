@@ -1,6 +1,6 @@
 // Online play: a connection to a network's lobby server (ENet over UDP), lobbies that run one title pack, and the
 // rollback session of a match (session.odin). Every packet goes through the lobby server, never P2P.
-package net
+package online
 
 Connection :: struct {}
 
