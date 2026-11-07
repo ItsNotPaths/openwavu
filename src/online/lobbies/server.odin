@@ -27,18 +27,27 @@ Player :: struct {
 	challenge: [32]u8,
 	key, name: string,  // "" until HELLO
 	lobby:     ^Lobby,
-	ready:     bool,
+	seat:      Seat,
 	loadout:   string,  // hex
-	done:      bool,    // its match has ended
+}
+
+// A player's place in its lobby's cycle: unready, ready, then done once its match has ended.
+Seat :: enum {
+	Unready,
+	Ready,
+	Done,
 }
 
 Lobby :: struct {
 	id, pack, mode, params, hash: string,
 	host:     ^Player,
 	players:  [dynamic]^Player,  // join order: side 0 first
-	playing:  bool,
-	token:    u32,
-	seed:     u64,
+	match:    Maybe(Match),
+}
+
+Match :: struct {
+	token: u32,  // never 0
+	seed:  u64,
 }
 
 open :: proc(port: u16) -> (server: Server, ok: bool) {
@@ -137,7 +146,7 @@ hello :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	for lobby in server.lobbies {
 		send_line(player, lobby_line(lobby))
 		for member in lobby.players do send_line(player, player_line(lobby, member))
-		if lobby.playing do send_line(player, match_line(lobby))
+		if match, running := lobby.match.?; running do send_line(player, match_line(lobby, match))
 	}
 	send(player, "welcome", {player.key})
 }
@@ -180,7 +189,7 @@ join :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 @(private = "file")
 enter :: proc(server: ^Server, player: ^Player, lobby: ^Lobby) {
 	player.lobby = lobby
-	player.ready, player.done = false, false
+	player.seat = .Unready
 	append(&lobby.players, player)
 	broadcast(server, player_line(lobby, player))
 }
@@ -190,7 +199,7 @@ enter :: proc(server: ^Server, player: ^Player, lobby: ^Lobby) {
 leave :: proc(server: ^Server, player: ^Player) {
 	lobby := player.lobby
 	if lobby == nil do return
-	if lobby.playing do end_match(server, lobby)
+	if lobby.match != nil do end_match(server, lobby)
 	for member, index in lobby.players do if member == player {
 		ordered_remove(&lobby.players, index)
 		break
@@ -218,14 +227,14 @@ ready :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	_, loadout_read := hex.decode(transmute([]byte)loadout, context.temp_allocator)
 	switch {
 	case lobby == nil:                               refuse(player, "READY", "badarg", "join a lobby first")
-	case lobby.playing:                              refuse(player, "READY", "badarg", "the match is running")
+	case lobby.match != nil:                         refuse(player, "READY", "badarg", "the match is running")
 	case !loadout_read || len(loadout) > 2 * online.LOADOUT_MAX: refuse(player, "READY", "badarg", "the loadout does not read")
 	case:
 		delete(player.loadout)
 		player.loadout = fmt.aprint(loadout)
-		player.ready = true
+		player.seat = .Ready
 		broadcast(server, player_line(lobby, player))
-		for member in lobby.players do if !member.ready do return
+		for member in lobby.players do if member.seat != .Ready do return
 		if len(lobby.players) == online.LOBBY_PLAYERS_MAX do start_match(server, lobby)
 	}
 }
@@ -234,28 +243,27 @@ ready :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 @(private = "file")
 done :: proc(server: ^Server, player: ^Player) {
 	lobby := player.lobby
-	if lobby == nil || !lobby.playing do return
-	player.done = true
-	for member in lobby.players do if !member.done do return
+	if lobby == nil || lobby.match == nil do return
+	player.seat = .Done
+	for member in lobby.players do if member.seat != .Done do return
 	end_match(server, lobby)
 }
 
 @(private = "file")
 start_match :: proc(server: ^Server, lobby: ^Lobby) {
-	lobby.playing = true
-	lobby.token = rand.uint32() | 1  // never 0
-	lobby.seed = rand.uint64()
-	broadcast(server, match_line(lobby))
-	fmt.eprintfln("lobbies: match %08x in lobby %s", lobby.token, lobby.id)
+	match := Match{token = rand.uint32() | 1, seed = rand.uint64()}
+	lobby.match = match
+	broadcast(server, match_line(lobby, match))
+	fmt.eprintfln("lobbies: match %08x in lobby %s", match.token, lobby.id)
 }
 
 // Every player is unready again.
 @(private = "file")
 end_match :: proc(server: ^Server, lobby: ^Lobby) {
-	lobby.playing = false
+	lobby.match = nil
 	broadcast(server, write("drop", {"match", lobby.id}))
 	for member in lobby.players {
-		member.ready, member.done = false, false
+		member.seat = .Unready
 		broadcast(server, player_line(lobby, member))
 	}
 }
@@ -264,8 +272,9 @@ end_match :: proc(server: ^Server, lobby: ^Lobby) {
 @(private = "file")
 forward :: proc(player: ^Player, packet: []byte) {
 	lobby := player.lobby
-	if lobby == nil || !lobby.playing do return
-	if token, ok := online.packet_token(packet); !ok || token != lobby.token do return
+	if lobby == nil do return
+	match, running := lobby.match.?
+	if token, ok := online.packet_token(packet); !running || !ok || token != match.token do return
 	for member in lobby.players do if member != player {
 		enet.peer_send(member.peer, online.CHANNEL_SESSION, enet.packet_create(raw_data(packet), len(packet), {.UNSEQUENCED}))
 	}
@@ -278,12 +287,12 @@ lobby_line :: proc(lobby: ^Lobby) -> string {
 
 @(private = "file")
 player_line :: proc(lobby: ^Lobby, player: ^Player) -> string {
-	return write("player", {lobby.id, player.key}, {"name", player.name}, {"ready", player.ready ? "1" : "0"}, {"loadout", player.loadout})
+	return write("player", {lobby.id, player.key}, {"name", player.name}, {"ready", player.seat == .Unready ? "0" : "1"}, {"loadout", player.loadout})
 }
 
 @(private = "file")
-match_line :: proc(lobby: ^Lobby) -> string {
-	return write("match", {lobby.id}, {"token", fmt.tprintf("%08x", lobby.token)}, {"seed", fmt.tprint(lobby.seed)},
+match_line :: proc(lobby: ^Lobby, match: Match) -> string {
+	return write("match", {lobby.id}, {"token", fmt.tprintf("%08x", match.token)}, {"seed", fmt.tprint(match.seed)},
 		{"delay_ms", fmt.tprint(online.START_DELAY_MS)}, {"side0", lobby.players[0].key}, {"side1", lobby.players[1].key})
 }
 
