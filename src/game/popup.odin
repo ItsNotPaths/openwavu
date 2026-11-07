@@ -6,7 +6,7 @@ import "../ui"
 
 // The screen-bottom popup: openwavu's own, the top bar's counterpart. Packs only open its fixed modes.
 // (hole settings-save :tags game :sev polish) settings live only until openwavu closes.
-// (hole store-versions :tags (game net) :needs store-list) install shows only the installed version; no older versions from the network's /versions.
+// (hole store-versions :tags (game net)) an installed pack's install popup shows only its installed version; no update or older versions from the network's /versions (a store pick lists them).
 Popup :: struct {
 	mode: Popup_Mode,
 	open: bool,
@@ -50,8 +50,8 @@ popup :: proc(l: ^Launcher, u: ^ui.Ui) -> (remove: bool) {
 	return
 }
 
-// (hole network-setting :tags (game net) :needs registry-verify) no network address (default openwavu.gg), no warning on a switch, no identity export or import.
-// (hole submit-line :tags (game net) :needs (identity-key https-client)) no submit line: typed text is not signed and sent to the network's /note.
+// (hole network-setting :tags (game net)) no network address (default openwavu.gg), no warning on a switch, no identity export or import.
+// (hole submit-line :tags (game net) :needs identity-key) no submit line: typed text is not signed and sent to the network's /note.
 @(private = "file")
 settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 	ui.label("Settings", ui.HEAD_SIZE, engraved = true, face = .Display)
@@ -68,6 +68,10 @@ settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 
 @(private = "file")
 install_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
+	if store_pick, is_store := l.selected.(Store_Pick); is_store {
+		store_install_popup(l, u, store_pick)
+		return
+	}
 	pick, is_pack := l.selected.(int)
 	if !is_pack {
 		ui.label("Install", ui.HEAD_SIZE, engraved = true, face = .Display)

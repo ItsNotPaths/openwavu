@@ -15,6 +15,7 @@ Launcher :: struct {
 		Install_Screen,
 		int,  // an installed pack
 		Front_Preview,
+		Store_Pick,
 	},
 	front:    Front_View,
 	popup:    Popup,
@@ -22,6 +23,8 @@ Launcher :: struct {
 	source:   Install_Source,
 	browser:  Browser,
 	importer: Import_Job,
+	store:    Store,
+	thumbs:   map[string]^sdl.Texture,  // slot art: installed by path@version, the store's by hash
 	url:      strings.Builder,
 	search_installed, search_store: strings.Builder,
 	play:     Maybe(int),
@@ -40,6 +43,12 @@ launcher_destroy :: proc(l: ^Launcher) {
 	front_close(&l.front)
 	browser_destroy(&l.browser)
 	import_destroy(&l.importer)
+	store_destroy(&l.store)
+	for key, texture in l.thumbs {
+		if texture != nil do sdl.DestroyTexture(texture)
+		delete(key)
+	}
+	delete(l.thumbs)
 	strings.builder_destroy(&l.url)
 	strings.builder_destroy(&l.search_installed)
 	strings.builder_destroy(&l.search_store)
@@ -60,6 +69,7 @@ launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 	case Front_Preview:
 		path, file = pick.path, pick.file
 		if front_changed(path, file) != l.front.changed do front_close(&l.front)
+	case Store_Pick: path = store_front(l, pick)
 	case Install_Screen:
 	}
 	if path != "" && path != l.front.path do front_open(&l.front, u, path, file)
@@ -90,7 +100,7 @@ installed_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 					continue
 				}
 				picked, is_pack := l.selected.(int)
-				if ui.slot(u, clay.ID("Pack", u32(i)), pack.id, nil, is_pack && picked == i) {
+				if ui.slot(u, clay.ID("Pack", u32(i)), pack.id, installed_thumb(l, u, pack), is_pack && picked == i) {
 					l.selected = i
 				}
 			}
@@ -99,14 +109,6 @@ installed_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 				l.selected = Install_Screen{}
 			}
 		}
-	}
-}
-
-// (hole store-list :tags (game net) :needs (registry-verify https-client)) the store column lists nothing; no pack listing from the network's /store.
-store_column :: proc(l: ^Launcher, u: ^ui.Ui) {
-	if clay.UI()(side_column()) {
-		column_head(u, "STORE", clay.ID("SearchStore"), &l.search_store)
-		if clay.UI()(slot_list(u, clay.ID("StoreList"))) {}
 	}
 }
 
@@ -119,6 +121,8 @@ center :: proc(l: ^Launcher, u: ^ui.Ui) {
 			pack_page(l, u, l.packs[pick].name, pick)
 		case Front_Preview:
 			pack_page(l, u, pick.path, nil)
+		case Store_Pick:
+			pack_page(l, u, l.store.packs[pick.index].id, nil)
 		}
 	}
 }
