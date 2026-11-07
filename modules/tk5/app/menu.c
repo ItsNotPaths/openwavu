@@ -246,7 +246,8 @@ static void draw(SDL_Renderer *renderer) {
     text(renderer, TOP, "TEKKEN 5 DARK RESURRECTION");
     SDL_SetRenderDrawColor(renderer, 150, 150, 160, 255);
     float bottom = (float)height / SCALE - 2 * LINE;
-    text(renderer, bottom - LINE, view.refused[0] ? view.refused : notice);
+    bool lobby_screen = screen == SCREEN_LOBBIES || screen == SCREEN_LOBBY;
+    text(renderer, bottom - LINE, lobby_screen && view.refused[0] ? view.refused : notice);
     if (screen == SCREEN_MODE) {
         const T5Cursor cursor = {.slot = mode};
         const T5Cursor *cursors[2] = {&cursor, NULL};
