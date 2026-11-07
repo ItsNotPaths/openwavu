@@ -9,7 +9,6 @@ import "../download"
 import "../titlepack"
 import "../ui"
 
-NETWORK :: "https://serve.openwavu.org"
 CACHE_DOWNLOADS_MAX :: 4  // cache files downloading at once
 
 // The network's packs. Every GET runs on its own thread; the launcher polls each frame.
@@ -101,7 +100,7 @@ store_poll :: proc(l: ^Launcher) {
 }
 
 store_column :: proc(l: ^Launcher, u: ^ui.Ui) {
-	if l.store.listing.job == nil do l.store.listing.job = download.start(NETWORK + "/store")
+	if l.store.listing.job == nil do l.store.listing.job = download.start(strings.concatenate({network_url(l.settings.network), "/store"}, context.temp_allocator))
 	err := listing_poll(&l.store.listing)
 	if clay.UI()(side_column()) {
 		column_head(u, "STORE", clay.ID("SearchStore"), &l.search_store)
@@ -140,7 +139,7 @@ installed_thumb :: proc(l: ^Launcher, u: ^ui.Ui, pack: titlepack.Title_Pack) -> 
 store_thumb :: proc(l: ^Launcher, u: ^ui.Ui, pack: titlepack.Listed) -> ^sdl.Texture {
 	if pack.thumb_sha256 == "" do return nil
 	if texture, known := l.thumbs[pack.thumb_sha256]; known do return texture
-	path, waiting := cached(&l.store, pack.thumb_sha256, ".png", fmt.tprintf("%s@%s.thumb.png", pack.id, pack.version))
+	path, waiting := cached(&l.store, l.settings.network, pack.thumb_sha256, ".png", fmt.tprintf("%s@%s.thumb.png", pack.id, pack.version))
 	if waiting do return nil
 	bytes, err := os.read_entire_file(path, context.temp_allocator)
 	return remember_thumb(l, u, pack.thumb_sha256, path != "" && err == nil ? bytes : nil)
@@ -149,7 +148,7 @@ store_thumb :: proc(l: ^Launcher, u: ^ui.Ui, pack: titlepack.Listed) -> ^sdl.Tex
 // A cached file named by its hash, downloaded first when missing. waiting while it downloads; path "" when it can
 // not be had.
 @(private = "file")
-cached :: proc(store: ^Store, sha256, suffix, name: string) -> (path: string, waiting: bool) {
+cached :: proc(store: ^Store, network, sha256, suffix, name: string) -> (path: string, waiting: bool) {
 	cache_dir := titlepack.join_path(titlepack.packs_dir(), "cache")  // fronts and thumbs by hash; they never change
 	path = titlepack.join_path(cache_dir, strings.concatenate({sha256, suffix}, context.temp_allocator))
 	if os.exists(path) do return path, false
@@ -157,7 +156,7 @@ cached :: proc(store: ^Store, sha256, suffix, name: string) -> (path: string, wa
 	if !started {
 		if cache_downloads(store) >= CACHE_DOWNLOADS_MAX do return "", true
 		os.make_directory_all(cache_dir)
-		store.cache[strings.clone(sha256)] = download.start(fmt.tprintf("%s/files/%s", NETWORK, name), sha256, path)
+		store.cache[strings.clone(sha256)] = download.start(fmt.tprintf("%s/files/%s", network_url(network), name), sha256, path)
 		return "", true
 	}
 	if !download.finished(job) do return "", true
@@ -173,7 +172,7 @@ cache_downloads :: proc(store: ^Store) -> (running: int) {
 // The picked store pack's front tar; "" until it is in the cache.
 store_front :: proc(l: ^Launcher, pick: Store_Pick) -> string {
 	pack := l.store.listing.packs[pick.index]
-	path, _ := cached(&l.store, pack.front_sha256, ".front.tar", fmt.tprintf("%s@%s.front.tar", pack.id, pack.version))
+	path, _ := cached(&l.store, l.settings.network, pack.front_sha256, ".front.tar", fmt.tprintf("%s@%s.front.tar", pack.id, pack.version))
 	return path
 }
 
@@ -185,7 +184,7 @@ store_install_popup :: proc(l: ^Launcher, u: ^ui.Ui, pick: Store_Pick) {
 		listing_destroy(&store.versions)
 		delete(store.versions_id)
 		store.versions_id = strings.clone(pack.id)
-		store.versions.job = download.start(fmt.tprintf("%s/versions/%s", NETWORK, pack.id))
+		store.versions.job = download.start(fmt.tprintf("%s/versions/%s", network_url(l.settings.network), pack.id))
 	}
 	ui.label(fmt.tprintf("Install %s", pack.id), ui.HEAD_SIZE, engraved = true, face = .Display)
 	if err := listing_poll(&store.versions); err != "" do ui.label(err, tint = ui.WARN)
@@ -207,11 +206,11 @@ store_install_popup :: proc(l: ^Launcher, u: ^ui.Ui, pick: Store_Pick) {
 }
 
 // The latest replaces the unlocked tile; an older version is a locked tile of its own.
-install_start :: proc(install: ^Install, versions: []titlepack.Listed, index: int) {
+install_start :: proc(install: ^Install, network: string, versions: []titlepack.Listed, index: int) {
 	install_destroy(install)
 	version := versions[index]
 	locked := index > 0
-	url := fmt.tprintf("%s/files/%s@%s.tar", NETWORK, version.id, version.version)
+	url := fmt.tprintf("%s/files/%s@%s.tar", network_url(network), version.id, version.version)
 	install^ = {
 		job      = download.start(url, version.sha256, titlepack.tile_path(version.id, version.version, locked)),
 		id       = strings.clone(version.id),

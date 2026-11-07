@@ -7,6 +7,7 @@ import "core:slice"
 import "core:strings"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
+import "../online"
 import "../render"
 import "../titlepack"
 import "../ui"
@@ -22,6 +23,9 @@ Launcher :: struct {
 	front:    Front_View,
 	popup:    Popup,
 	settings: Settings,
+	identity: online.Identity,
+	identity_err: string,
+	network_edit: strings.Builder,  // the network field; applied on Enter
 	source:   Install_Source,
 	browser:  Browser,
 	importer: Import_Job,
@@ -39,13 +43,27 @@ Change :: union {
 	Lock_Tile,
 	Remove_Picked,
 	Install_Version,
+	Switch_Network,
 }
 
 Lock_Tile :: distinct int  // index into packs
 Remove_Picked :: struct {}
 Install_Version :: distinct int  // index into the store's versions
+Switch_Network :: struct {}
 
 Install_Screen :: struct {}
+
+// Applies the network field: the store starts over on the new network.
+switch_network :: proc(l: ^Launcher) {
+	network := strings.trim_space(strings.to_string(l.network_edit))
+	if network == "" || network == l.settings.network do return
+	delete(l.settings.network)
+	l.settings.network = strings.clone(network)
+	settings_save(l.settings)
+	store_destroy(&l.store)
+	l.store = {}
+	if _, is_store := l.selected.(Store_Pick); is_store do l.selected = nil
+}
 
 // --front <tar or folder> [front file]: just that front, for creators. It reopens when its source changes.
 Front_Preview :: struct {
@@ -66,6 +84,7 @@ launcher_destroy :: proc(l: ^Launcher) {
 	strings.builder_destroy(&l.url)
 	strings.builder_destroy(&l.search_installed)
 	strings.builder_destroy(&l.search_store)
+	strings.builder_destroy(&l.network_edit)
 	settings_destroy(&l.settings)
 }
 
@@ -81,7 +100,8 @@ launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 	switch change in l.change {
 	case Lock_Tile: toggle_lock(l, l.packs[change])
 	case Remove_Picked: remove_pack(l)
-	case Install_Version: install_start(&l.store.install, l.store.versions.packs, int(change))
+	case Install_Version: install_start(&l.store.install, l.settings.network, l.store.versions.packs, int(change))
+	case Switch_Network: switch_network(l)
 	}
 	l.change = nil
 	store_poll(l)

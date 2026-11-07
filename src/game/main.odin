@@ -6,6 +6,7 @@ import "core:os"
 import "core:strings"
 import sdl "vendor:sdl3"
 import "../input"
+import "../online"
 import "../render"
 import "../titlepack"
 import "../ui"
@@ -41,6 +42,8 @@ main :: proc() {
 	defer ui.destroy(&u)
 	// (hole stock-rebuild :tags (game importer)) the stock pack is not rebuilt when its pack.toml version differs from this openwavu's importer; the [import] inputs are recorded for it.
 	l := Launcher{packs = titlepack.installed(), settings = settings_load(config)}
+	l.identity, l.identity_err = online.load_identity(titlepack.join_path(data, "identity.key"))
+	strings.write_string(&l.network_edit, l.settings.network)
 	if len(os.args) >= 3 && os.args[1] == "--front" {
 		l.selected = Front_Preview{os.args[2], len(os.args) > 3 ? os.args[3] : ""}
 	}

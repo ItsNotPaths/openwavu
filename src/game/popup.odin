@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:strings"
 import clay "../../vendor/clay"
 import "../ui"
 
@@ -23,6 +24,8 @@ Settings :: struct {
 	file:       string,
 	frame_cap:  int,
 	favourites: [dynamic]string,  // tile names
+	name:       strings.Builder,  // the player's name online; free text
+	network:    string,  // the files host's name, or a full URL
 }
 
 // The sim steps at 60; a higher cap draws frames in between.
@@ -51,8 +54,8 @@ popup :: proc(l: ^Launcher, u: ^ui.Ui) -> (remove: bool) {
 	return
 }
 
-// (hole network-setting :tags (game net)) no network address (default serve.openwavu.org), no warning on a switch, no identity export or import.
-// (hole submit-line :tags (game net) :needs identity-key) no submit line: typed text is not signed and sent to the network's /note.
+// (hole identity-export :tags (game net)) no export or import of identity.key in the settings.
+// (hole submit-line :tags (game net)) no submit line: typed text is not signed and sent to the network's /note.
 @(private = "file")
 settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 	ui.label("Settings", ui.HEAD_SIZE, engraved = true, face = .Display)
@@ -68,6 +71,33 @@ settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 			settings_save(l.settings)
 		}
 	}
+	if clay.UI()(ui.row(8)) {
+		ui.label("Name", tint = ui.TEXT_DIM)
+		ui.spacer()
+		before := strings.clone(strings.to_string(l.settings.name), context.temp_allocator)
+		settings_field(u, clay.ID("Name"), &l.settings.name, "Player")
+		if strings.to_string(l.settings.name) != before do settings_save(l.settings)
+	}
+	if clay.UI()(ui.row(8)) {
+		ui.label("Network", tint = ui.TEXT_DIM)
+		ui.spacer()
+		if settings_field(u, clay.ID("Network"), &l.network_edit, DEFAULT_NETWORK) do l.change = Switch_Network{}
+	}
+	if l.settings.network != DEFAULT_NETWORK {
+		ui.label(fmt.tprintf("Packs here are approved by %s, not %s.", l.settings.network, DEFAULT_NETWORK), tint = ui.WARN)
+	}
+	if l.identity_err != "" do ui.label(l.identity_err, tint = ui.WARN)
+}
+
+SETTINGS_FIELD_WIDTH :: 360
+
+// A text field of one width for every settings row.
+@(private = "file")
+settings_field :: proc(u: ^ui.Ui, id: clay.ElementId, text: ^strings.Builder, placeholder: string) -> (submitted: bool) {
+	if clay.UI()({layout = {sizing = {width = clay.SizingFixed(SETTINGS_FIELD_WIDTH)}}}) {
+		submitted = ui.field(u, id, text, placeholder)
+	}
+	return
 }
 
 @(private = "file")
