@@ -20,16 +20,21 @@ Tar_Entry :: struct {
 write_tar :: proc(dir, out_path: string) -> (err: string) {
 	paths: []string
 	if paths, err = files_under(dir, context.temp_allocator); err != "" do return
+	return write_tar_of({dir = dir}, paths, out_path)
+}
+
+// The given files of a pack, in that order, into one tar at out_path; pack.toml is moved first.
+write_tar_of :: proc(from: Pack_Files, paths: []string, out_path: string) -> (err: string) {
 	if i, found := slice.linear_search(paths, MANIFEST); found do slice.rotate_right(paths[:i + 1], 1)
 	part := strings.concatenate({out_path, ".part"}, context.temp_allocator)
 	out, open_err := os.open(part, {.Write, .Create, .Trunc}, os.Permissions_Read_All + {.Write_User})
 	if open_err != nil do return strings.concatenate({"cannot write ", part})
 	ok := true
 	for path in paths {
-		data, read_err := os.read_entire_file(join_path(dir, path), context.allocator)
+		data, read := tar_input(from, path)
 		header, fits := tar_header(path, len(data))
-		ok = read_err == nil && fits && write_block(out, header[:]) && write_block(out, data)
-		delete(data)
+		ok = read && fits && write_block(out, header[:]) && write_block(out, data)
+		if from.dir != "" do delete(data)
 		if !ok {
 			err = strings.concatenate({"cannot pack ", path})
 			break
@@ -41,6 +46,15 @@ write_tar :: proc(dir, out_path: string) -> (err: string) {
 	if ok && os.rename(part, out_path) != nil do err = strings.concatenate({"cannot write ", out_path})
 	if err != "" do os.remove(part)
 	return
+}
+
+// A folder's file is read whole (the caller deletes it); a tar's is a slice of the mapping.
+@(private = "file")
+tar_input :: proc(from: Pack_Files, path: string) -> (data: []byte, ok: bool) {
+	if from.dir == "" do return read_file(from, path)
+	read_err: os.Error
+	data, read_err = os.read_entire_file(join_path(from.dir, path), context.allocator)
+	return data, read_err == nil
 }
 
 // Path -> where its bytes sit in data. Regular files and folders; pax `path` and GNU `L` entries for long names.
