@@ -1,6 +1,6 @@
 // The lobbies role's wire (docs/network.md), shared by the lobby server and its clients: ENet channel 0 carries kipp
 // lines, one per reliable packet; channel 1 carries session packets, unsequenced, which the server forwards to the
-// other player of a running match.
+// other player of a running match; channel 2 carries the same packets to watchers, reliable, each after its side's byte.
 package wire
 
 import "core:crypto/ed25519"
@@ -9,10 +9,12 @@ import "core:encoding/endian"
 PORT :: 9288  // "wavu" on a phone keypad
 CHANNEL_CONTROL :: 0
 CHANNEL_SESSION :: 1
-CHANNELS :: 2
-PROTOCOL :: "1"
+CHANNEL_WATCH :: 2
+CHANNELS :: 3
+PROTOCOL :: "2"
 START_DELAY_MS :: 2000  // from the match fact to frame 0
-LOBBY_PLAYERS_MAX :: 2
+SIDES :: 2
+LOBBY_MEMBERS_MAX :: 8  // the two seats and six watchers
 LOADOUT_MAX :: 256  // bytes; sent as hex inside one line
 
 // A session packet's first four bytes are its match's token.

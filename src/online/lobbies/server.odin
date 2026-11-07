@@ -1,4 +1,4 @@
-// The lobbies role (docs/network.md): lobbies of two players, their match starts and the session relay. kipp lines on
+// The lobbies role (docs/network.md): lobbies of two seats and their watchers, their match starts and the session relay. kipp lines on
 // the control channel; runs no pack code and checks no params: each joiner compares the lobby hash itself.
 package lobbies
 
@@ -27,12 +27,14 @@ Player :: struct {
 	challenge: [32]u8,
 	key, name: string,  // "" until HELLO
 	lobby:     ^Lobby,
-	seat:      Seat,
+	side:      int,  // its seat, -1 when watching
+	queued:    u64,  // its place in line for a seat, 0 when not in line
+	readiness: Readiness,
 	loadout:   string,  // hex
 }
 
-// A player's place in its lobby's cycle: unready, ready, then done once its match has ended.
-Seat :: enum {
+// A seated player's place in its lobby's cycle: unready, ready, then done once its match has ended.
+Readiness :: enum {
 	Unready,
 	Ready,
 	Done,
@@ -41,7 +43,9 @@ Seat :: enum {
 Lobby :: struct {
 	id, pack, mode, params, hash: string,
 	host:     ^Player,
-	players:  [dynamic]^Player,  // join order: side 0 first
+	players:  [dynamic]^Player,  // join order
+	seats:    [wire.SIDES]^Player,
+	queued:   u64,  // places in line given so far
 	match:    Maybe(Match),
 }
 
@@ -113,6 +117,9 @@ obey :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	case "CREATE": create(server, player, line)
 	case "JOIN":   join(server, player, line)
 	case "LEAVE":  leave(server, player)
+	case "QUEUE":  queue(server, player)
+	case "WATCH":  watch(server, player)
+	case "PARAMS": change_params(server, player, line)
 	case "READY":  ready(server, player, line)
 	case "DONE":   done(server, player)
 	case:          refuse(player, line.kind, "badcmd", "unknown command")
@@ -181,31 +188,39 @@ join :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	switch {
 	case player.lobby != nil:                         refuse(player, "JOIN", "badarg", "leave the lobby first")
 	case lobby == nil:                                refuse(player, "JOIN", "badarg", "no such lobby")
-	case len(lobby.players) >= wire.LOBBY_PLAYERS_MAX: refuse(player, "JOIN", "badarg", "the lobby is full")
+	case len(lobby.players) >= wire.LOBBY_MEMBERS_MAX: refuse(player, "JOIN", "badarg", "the lobby is full")
 	case:                                             enter(server, player, lobby)
 	}
 }
 
+// A new member gets in line for a seat.
 @(private = "file")
 enter :: proc(server: ^Server, player: ^Player, lobby: ^Lobby) {
 	player.lobby = lobby
-	player.seat = .Unready
+	player.side = -1
+	player.readiness = .Unready
 	append(&lobby.players, player)
+	lobby.queued += 1
+	player.queued = lobby.queued
 	broadcast(server, player_line(lobby, player))
+	fill_seats(server, lobby)
 }
 
-// Out of its lobby: a running match ends, an empty lobby closes, and a host's leaving makes the next player host.
+// Out of its lobby: a seated player's running match ends and its seat goes to the next in line, an empty lobby closes,
+// and a host's leaving makes the next member host.
 @(private = "file")
 leave :: proc(server: ^Server, player: ^Player) {
 	lobby := player.lobby
 	if lobby == nil do return
-	if lobby.match != nil do end_match(server, lobby)
+	if player.side >= 0 && lobby.match != nil do end_match(server, lobby)
+	if player.side >= 0 do lobby.seats[player.side] = nil
 	for member, index in lobby.players do if member == player {
 		ordered_remove(&lobby.players, index)
 		break
 	}
 	player.lobby = nil
 	broadcast(server, write("drop", {"player", lobby.id, player.key}))
+	fill_seats(server, lobby)
 	if len(lobby.players) == 0 {
 		broadcast(server, write("drop", {"lobby", lobby.id}))
 		for candidate, index in server.lobbies do if candidate == lobby {
@@ -219,7 +234,65 @@ leave :: proc(server: ^Server, player: ^Player) {
 	}
 }
 
-// READY loadout=<hex>: when every seat is taken and ready, the match starts.
+// QUEUE: a watcher gets in line for a seat.
+@(private = "file")
+queue :: proc(server: ^Server, player: ^Player) {
+	lobby := player.lobby
+	switch {
+	case lobby == nil:                         refuse(player, "QUEUE", "badarg", "join a lobby first")
+	case player.side >= 0 || player.queued > 0: refuse(player, "QUEUE", "badarg", "seated or in line already")
+	case:
+		lobby.queued += 1
+		player.queued = lobby.queued
+		broadcast(server, player_line(lobby, player))
+		fill_seats(server, lobby)
+	}
+}
+
+// WATCH: a seated player outside a match, or one in line, goes back to watching; a freed seat goes to the next in line.
+@(private = "file")
+watch :: proc(server: ^Server, player: ^Player) {
+	lobby := player.lobby
+	switch {
+	case lobby == nil:                             refuse(player, "WATCH", "badarg", "join a lobby first")
+	case player.side >= 0 && lobby.match != nil: refuse(player, "WATCH", "badarg", "the match is running")
+	case:
+		if player.side >= 0 do lobby.seats[player.side] = nil
+		player.side, player.queued, player.readiness = -1, 0, .Unready
+		broadcast(server, player_line(lobby, player))
+		fill_seats(server, lobby)
+	}
+}
+
+// Free seats go to the members in line, first come first served.
+@(private = "file")
+fill_seats :: proc(server: ^Server, lobby: ^Lobby) {
+	for &seat, side in lobby.seats do if seat == nil {
+		for member in lobby.players do if member.queued > 0 && (seat == nil || member.queued < seat.queued) do seat = member
+		if seat == nil do return
+		seat.side, seat.queued, seat.readiness = side, 0, .Unready
+		broadcast(server, player_line(lobby, seat))
+	}
+}
+
+// PARAMS params= hash=: the host's new picks, outside a match; both seats are unready again.
+@(private = "file")
+change_params :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
+	lobby := player.lobby
+	switch {
+	case lobby == nil || lobby.host != player: refuse(player, "PARAMS", "badarg", "only the lobby's host changes its params")
+	case lobby.match != nil:                    refuse(player, "PARAMS", "badarg", "the match is running")
+	case:
+		delete(lobby.params)
+		delete(lobby.hash)
+		lobby.params = fmt.aprint(line.attributes["params"])
+		lobby.hash = fmt.aprint(line.attributes["hash"])
+		broadcast(server, lobby_line(lobby))
+		unready(server, lobby)
+	}
+}
+
+// READY loadout=<hex>: a seated player's; when both seats are ready, the match starts.
 @(private = "file")
 ready :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	lobby := player.lobby
@@ -227,25 +300,26 @@ ready :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	_, loadout_read := hex.decode(transmute([]byte)loadout, context.temp_allocator)
 	switch {
 	case lobby == nil:                               refuse(player, "READY", "badarg", "join a lobby first")
+	case player.side < 0:                            refuse(player, "READY", "badarg", "take a seat first")
 	case lobby.match != nil:                         refuse(player, "READY", "badarg", "the match is running")
 	case !loadout_read || len(loadout) > 2 * wire.LOADOUT_MAX: refuse(player, "READY", "badarg", "the loadout does not read")
 	case:
 		delete(player.loadout)
 		player.loadout = fmt.aprint(loadout)
-		player.seat = .Ready
+		player.readiness = .Ready
 		broadcast(server, player_line(lobby, player))
-		for member in lobby.players do if member.seat != .Ready do return
-		if len(lobby.players) == wire.LOBBY_PLAYERS_MAX do start_match(server, lobby)
+		for seat in lobby.seats do if seat == nil || seat.readiness != .Ready do return
+		start_match(server, lobby)
 	}
 }
 
-// DONE: this player's match has ended; when every player says so, the lobby is open for a rematch.
+// DONE: this seated player's match has ended; when both say so, the lobby is open for a rematch.
 @(private = "file")
 done :: proc(server: ^Server, player: ^Player) {
 	lobby := player.lobby
-	if lobby == nil || lobby.match == nil do return
-	player.seat = .Done
-	for member in lobby.players do if member.seat != .Done do return
+	if lobby == nil || lobby.match == nil || player.side < 0 do return
+	player.readiness = .Done
+	for seat in lobby.seats do if seat.readiness != .Done do return
 	end_match(server, lobby)
 }
 
@@ -257,26 +331,38 @@ start_match :: proc(server: ^Server, lobby: ^Lobby) {
 	fmt.eprintfln("lobbies: match %08x in lobby %s", match.token, lobby.id)
 }
 
-// Every player is unready again.
 @(private = "file")
 end_match :: proc(server: ^Server, lobby: ^Lobby) {
 	lobby.match = nil
 	broadcast(server, write("drop", {"match", lobby.id}))
-	for member in lobby.players {
-		member.seat = .Unready
-		broadcast(server, player_line(lobby, member))
+	unready(server, lobby)
+}
+
+// Both seats are unready again.
+@(private = "file")
+unready :: proc(server: ^Server, lobby: ^Lobby) {
+	for seat in lobby.seats do if seat != nil {
+		seat.readiness = .Unready
+		broadcast(server, player_line(lobby, seat))
 	}
 }
 
-// A session packet with the match's token goes to the other player.
+// A seated player's session packet with the match's token goes to the other seat, and to every watcher reliably after
+// its side's byte: a watcher steps only on pads it has, so it must miss none.
 @(private = "file")
 forward :: proc(player: ^Player, packet: []byte) {
 	lobby := player.lobby
-	if lobby == nil do return
+	if lobby == nil || player.side < 0 do return
 	match, running := lobby.match.?
 	if token, ok := wire.packet_token(packet); !running || !ok || token != match.token do return
-	for member in lobby.players do if member != player {
-		enet.peer_send(member.peer, wire.CHANNEL_SESSION, enet.packet_create(raw_data(packet), len(packet), {.UNSEQUENCED}))
+	if other := lobby.seats[1 - player.side]; other != nil {
+		enet.peer_send(other.peer, wire.CHANNEL_SESSION, enet.packet_create(raw_data(packet), len(packet), {.UNSEQUENCED}))
+	}
+	watched := make([]byte, 1 + len(packet), context.temp_allocator)
+	watched[0] = u8(player.side)
+	copy(watched[1:], packet)
+	for member in lobby.players do if member.side < 0 {
+		enet.peer_send(member.peer, wire.CHANNEL_WATCH, enet.packet_create(raw_data(watched), len(watched), {.RELIABLE}))
 	}
 }
 
@@ -287,13 +373,14 @@ lobby_line :: proc(lobby: ^Lobby) -> string {
 
 @(private = "file")
 player_line :: proc(lobby: ^Lobby, player: ^Player) -> string {
-	return write("player", {lobby.id, player.key}, {"name", player.name}, {"ready", player.seat == .Unready ? "0" : "1"}, {"loadout", player.loadout})
+	return write("player", {lobby.id, player.key}, {"name", player.name}, {"side", fmt.tprint(player.side)}, {"queued", fmt.tprint(player.queued)},
+		{"ready", player.readiness == .Unready ? "0" : "1"}, {"loadout", player.loadout})
 }
 
 @(private = "file")
 match_line :: proc(lobby: ^Lobby, match: Match) -> string {
 	return write("match", {lobby.id}, {"token", fmt.tprintf("%08x", match.token)}, {"seed", fmt.tprint(match.seed)},
-		{"delay_ms", fmt.tprint(wire.START_DELAY_MS)}, {"side0", lobby.players[0].key}, {"side1", lobby.players[1].key})
+		{"delay_ms", fmt.tprint(wire.START_DELAY_MS)}, {"side0", lobby.seats[0].key}, {"side1", lobby.seats[1].key})
 }
 
 // A line the server wrote; its fields are ids, keys and cleaned values, so it always fits.

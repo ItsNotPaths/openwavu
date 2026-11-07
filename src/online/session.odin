@@ -213,14 +213,14 @@ send_packet :: proc(s: ^Session) {
 	s.transport.send(s.transport.data, packet[:at])
 }
 
-@(private = "file")
+@(private)
 Reader :: struct {
 	bytes: []byte,
 	at:    int,
 	short: bool,  // the packet ended early
 }
 
-@(private = "file")
+@(private)
 take :: proc(reader: ^Reader, size: int) -> u32 {
 	if reader.at + size > len(reader.bytes) {
 		reader.short = true

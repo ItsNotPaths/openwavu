@@ -8,9 +8,9 @@ import "wire"
 // file read, a tar pack's a full hash of the tar.
 Lobby_Hashes :: map[string]string
 
-// This pack's, a free seat, no match, and the same lobby hash here.
+// This pack's, room for one more member, and the same lobby hash here. A member that joins during a match watches the next.
 lobby_joinable :: proc(hashes: ^Lobby_Hashes, tp: titlepack.Title_Pack, lobby: ^Lobby) -> bool {
-	if lobby.pack != titlepack.pack_name(tp.id, tp.version) || len(lobby.players) >= wire.LOBBY_PLAYERS_MAX || lobby.match != nil do return false
+	if lobby.pack != titlepack.pack_name(tp.id, tp.version) || len(lobby.players) >= wire.LOBBY_MEMBERS_MAX do return false
 	hash := picks_hash(hashes, tp, lobby.params)
 	return hash != "" && hash == lobby.hash
 }

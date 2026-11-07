@@ -23,3 +23,14 @@ OW_EXPORT(read_view) int32_t read_view(void) {
     return v.match * 10 + v.winner + 1;
 }
 OW_EXPORT(ask_bad_params) int32_t ask_bad_params(void) { return ask(OW_STR("versus"), OW_STR("stage=far rounds")); }
+
+// The exposed params as pack.toml declares them, by name: count * 100, 10 for rounds' kind and limits, 1 for stage's
+// default.
+OW_EXPORT(read_exposed) int32_t read_exposed(void) {
+    OwParamInfo params[4];
+    int32_t count = ow_exposed_params(params, 4);
+    if (count != 2) return count * 100;
+    bool rounds = strcmp(params[0].name, "rounds") == 0 && params[0].kind == OW_PARAM_NUMBER && params[0].min == 1 && params[0].max == 5;
+    bool stage = strcmp(params[1].name, "stage") == 0 && params[1].kind == OW_PARAM_TEXT && strcmp(params[1].fallback, "acid_rain") == 0;
+    return count * 100 + rounds * 10 + stage;
+}

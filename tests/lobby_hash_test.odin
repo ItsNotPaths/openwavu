@@ -4,6 +4,7 @@ import "core:os"
 import "core:slice"
 import "core:testing"
 import "../src/online"
+import "../src/online/wire"
 import "../src/titlepack"
 
 LOBBY_HASH_DIR :: "build/test_lobby_hash"
@@ -49,8 +50,8 @@ lobby_hash_covers_files_and_params :: proc(t: ^testing.T) {
 	testing.expect(t, first != lobby_of(t, stock, tp, params), "a file changes the hash")
 }
 
-// The lobby list shows only lobbies this pack can play: its own id@version, the same lobby hash, a free seat and no
-// match running. Picks the pack refuses are never joinable.
+// The lobby list shows only lobbies this pack can play: its own id@version, the same lobby hash and room for one more
+// member; a running match does not hide it (a new member watches the next). Picks the pack refuses are never joinable.
 @(test)
 lobby_joinable_needs_same_pack_and_hash :: proc(t: ^testing.T) {
 	os.remove_all(JOINABLE_DIR)
@@ -83,9 +84,9 @@ lobby_joinable_needs_same_pack_and_hash :: proc(t: ^testing.T) {
 	refused.params = "rounds=9"
 	testing.expect(t, !online.lobby_joinable(&hashes, tp, &refused), "picks this pack refuses")
 	full := open
-	full.players = slice.to_dynamic([]online.Lobby_Player{{key = "host"}, {key = "guest"}}, context.temp_allocator)
-	testing.expect(t, !online.lobby_joinable(&hashes, tp, &full), "no free seat")
+	full.players = make([dynamic]online.Lobby_Player, wire.LOBBY_MEMBERS_MAX, context.temp_allocator)
+	testing.expect(t, !online.lobby_joinable(&hashes, tp, &full), "no room")
 	playing := open
 	playing.match = online.Lobby_Match{token = 1}
-	testing.expect(t, !online.lobby_joinable(&hashes, tp, &playing), "a match running")
+	testing.expect(t, online.lobby_joinable(&hashes, tp, &playing), "a match running")
 }

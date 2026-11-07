@@ -92,6 +92,7 @@ tick :: proc(m: ^Match, pads: [2]sim.Input) -> (err: string) {
 		_, err = online.session_tick(m.online.session, pads[0], m.online.clock_ns)
 		return
 	}
+	if m.online.watch != nil do return online.watch_tick(m.online.watch, m.online.clock_ns)
 	pads := pads
 	for side in m.bot_sides do if pads[side], err = sim.bot_pad(m.world, side); err != "" do return
 	return sim.step(m.world, pads)
@@ -103,6 +104,11 @@ match_end :: proc(m: ^Match) -> (winner: i32, ended: bool) {
 	if session := m.online.session; session != nil {
 		if session.outcome == .Playing do return online.session_match_end(session)
 		fmt.eprintfln("openwavu: the online match ended: %v", session.outcome)
+		return -1, true
+	}
+	if watch := m.online.watch; watch != nil {
+		if watch.outcome == .Playing do return online.watch_match_end(watch)
+		fmt.eprintfln("openwavu: the watched match ended: %v", watch.outcome)
 		return -1, true
 	}
 	events := m.world.inputs.events[:]

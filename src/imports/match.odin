@@ -25,12 +25,18 @@ Host_View :: struct {
 	lobbies:       [LOBBIES_MAX]View_Lobby,
 	joined:        b32,
 	lobby:         View_Lobby,
-	seats:         [2]View_Seat,
+	seats:         [wire.SIDES]View_Seat,  // by side; a free seat's name is empty
 	seat:          u32,
 	refused:       [64]u8,
+	hosting:       b32,
+	watching:      b32,  // no seat: seat means nothing
+	queued:        b32,  // in line for a seat
+	watcher_count: u32,
+	watchers:      [WATCHERS_MAX]View_Watcher,  // the line first, in its order, then the others
 }
 
 LOBBIES_MAX :: 16
+WATCHERS_MAX :: wire.LOBBY_MEMBERS_MAX - wire.SIDES
 
 // Text fields NUL terminated (view_text).
 View_Lobby :: struct {
@@ -42,6 +48,11 @@ View_Lobby :: struct {
 View_Seat :: struct {
 	name:  [32]u8,
 	ready: b32,
+}
+
+View_Watcher :: struct {
+	name:   [32]u8,
+	queued: b32,
 }
 
 Connection :: enum u32 {
@@ -68,7 +79,7 @@ Entry :: struct {
 	intents:   [dynamic]Lobby_Intent, // online asks, in order, until the host applies them
 }
 
-HOST_VIEW_VERSION :: 2
+HOST_VIEW_VERSION :: 3
 
 entry_create :: proc(tp: titlepack.Title_Pack) -> Entry {
 	return {view = {version = HOST_VIEW_VERSION, size = size_of(Host_View)}, modes = tp.modes, params = tp.params, allocator = context.allocator}

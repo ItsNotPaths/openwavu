@@ -34,7 +34,7 @@ kind = "number"
 default = 60
 `
 
-// The entry module asks for a versus match of two bots: bad asks are refused (a locked param, a value out of range or not a number), a
+// The entry module reads the params a lobby host may change as pack.toml declares them. It asks for a versus match of two bots: bad asks are refused (a locked param, a value out of range or not a number), a
 // good one is copied for the host with every param the pack declares, and the host view shows the phase and winner the
 // host sets.
 // The host plays it through match.frame on the stock pack to the sim's match end, and the presenter gets the sim
@@ -75,6 +75,7 @@ entry_module_starts_a_bot_match :: proc(t: ^testing.T) {
 		return result[0].of.i32
 	}
 	testing.expect_value(t, ask(t, entry, "read_view"), 0 * 10 + 0 + 1)  // no match yet
+	testing.expect_value(t, ask(t, entry, "read_exposed"), 2 * 100 + 10 + 1)  // rounds and stage; time is not exposed
 	testing.expect_value(t, ask(t, entry, "ask_unknown_mode"), -1)
 	testing.expect_value(t, ask(t, entry, "ask_bad_params"), -1)
 	testing.expect_value(t, ask(t, entry, "ask_locked"), -1)

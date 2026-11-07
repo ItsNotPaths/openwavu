@@ -84,6 +84,7 @@ enum {
 	OW_PAD_BUTTON_SHIFT = 4,  // game button n is bit OW_PAD_BUTTON_SHIFT + n - 1
 	OW_PAD_BUTTON_1 = 1 << 4, OW_PAD_BUTTON_2 = 1 << 5, OW_PAD_BUTTON_3 = 1 << 6, OW_PAD_BUTTON_4 = 1 << 7,
 	OW_PAD_START = 1 << 8,
+	OW_PAD_BACK = 1 << 9,  // a gamepad's Back or Select; menus only, sims ignore it
 };
 
 // Sim exports. Inside rollback: the host snapshots [ow_sim_state, + ow_sim_state_size). Outside it, ow_sim_step may
@@ -105,22 +106,26 @@ OW_EXPORT(ow_bot_pad) uint32_t ow_bot_pad(uint32_t side);
 
 // The host's state, read any time; returns its length and copies as much as fits. Fields are only added at the end:
 // size says how many bytes this host fills.
-#define OW_HOST_VIEW_VERSION 2
+#define OW_HOST_VIEW_VERSION 3
 enum { OW_CONNECTION_OFFLINE = 0, OW_CONNECTION_CONNECTING = 1, OW_CONNECTION_ONLINE = 2, OW_CONNECTION_FAILED = 3 };
 enum { OW_MATCH_NONE = 0, OW_MATCH_RUNNING = 1, OW_MATCH_ENDED = 2 };
-enum { OW_LOBBIES_MAX = 16, OW_NAME_MAX = 32, OW_PARAMS_MAX = 128, OW_REFUSED_MAX = 64 };
+enum { OW_LOBBIES_MAX = 16, OW_NAME_MAX = 32, OW_PARAMS_MAX = 128, OW_REFUSED_MAX = 64, OW_WATCHERS_MAX = 6 };
 // Text fields are NUL terminated, cut to fit.
 typedef struct {
 	uint32_t id;                  // for ow_lobby_join
-	uint32_t players;
+	uint32_t players;             // members: the two seats and the watchers
 	char host[OW_NAME_MAX];       // the host's name
 	char mode[OW_NAME_MAX];
 	char params[OW_PARAMS_MAX];   // the host's picks, like ow_match_local's params
 } OwLobby;
 typedef struct {
-	char name[OW_NAME_MAX];
+	char name[OW_NAME_MAX];       // empty: the seat is free
 	uint32_t ready;
 } OwSeat;
+typedef struct {
+	char name[OW_NAME_MAX];
+	uint32_t queued;              // in line for a seat
+} OwWatcher;
 typedef struct {
 	uint32_t version;     // OW_HOST_VIEW_VERSION
 	uint32_t size;        // sizeof(OwHostView) as the host builds it
@@ -133,9 +138,15 @@ typedef struct {
 	OwLobby lobbies[OW_LOBBIES_MAX];
 	uint32_t joined;      // 1 while in a lobby: the fields below
 	OwLobby lobby;
-	OwSeat seats[2];      // join order; a missing player's name is empty
-	uint32_t seat;        // this player's
+	OwSeat seats[2];      // by side
+	uint32_t seat;        // this player's, unless watching
 	char refused[OW_REFUSED_MAX];  // the server's last refusal, or why the connection failed
+	// Version 3.
+	uint32_t hosting;     // 1 when this player hosts its lobby: ow_lobby_params
+	uint32_t watching;    // 1 when this player has no seat
+	uint32_t queued;      // 1 when this player is in line for a seat
+	uint32_t watcher_count;
+	OwWatcher watchers[OW_WATCHERS_MAX];  // the members without a seat: the line first, in its order, then the others
 } OwHostView;
 // (hole lobby-regions-view :tags (sdk net) :needs lobby-regions) the lobby list has no region or ping.
 OW_IMPORT(host_view) int32_t ow_host_view(OwHostView *view, uint32_t cap);
@@ -148,14 +159,35 @@ OW_IMPORT(match_local) int32_t ow_match_local(const char *mode, uint32_t mode_le
 	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len, const char *params, uint32_t params_len);
 // (hole app-modules :tags (sdk game wasm)) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.
 // Online intents; the host view shows what came of them. ow_online(1) connects to the network's lobby server,
-// ow_online(0) leaves it. A lobby match starts by itself once both seats are ready, like an asked match.
+// ow_online(0) leaves it. A lobby has two seats and up to six watchers; a joiner gets in line for a seat, a free seat goes
+// to the first in line. A lobby match starts by itself once both seats are ready, like an asked match; watchers see the
+// next match that starts after they join.
 OW_IMPORT(online) void ow_online(uint32_t on);
 // Hosts a lobby of a pack.toml mode with these picks (as ow_match_local's params); -1 when refused (offline, already in
 // a lobby, an unknown mode, picks the pack does not allow).
 OW_IMPORT(lobby_create) int32_t ow_lobby_create(const char *mode, uint32_t mode_len, const char *params, uint32_t params_len);
 OW_IMPORT(lobby_join) void ow_lobby_join(uint32_t id);
 OW_IMPORT(lobby_leave) void ow_lobby_leave(void);
-// This player's loadout for the next match of its lobby; -1 when too big.
+// 1: into line for a seat. 0: back to watching, from a seat (outside a match) or the line.
+OW_IMPORT(lobby_queue) void ow_lobby_queue(uint32_t on);
+// The host's new picks (as ow_lobby_create's) for the next match; both seats are unready again. -1 when not hosting, a
+// match is running, or picks the pack does not allow.
+OW_IMPORT(lobby_params) int32_t ow_lobby_params(const char *params, uint32_t params_len);
+// The pack.toml params a lobby host may change (expose = true), in pack.toml's order (sorted by name). Text fields are
+// NUL terminated, cut to fit.
+enum { OW_PARAM_NUMBER = 0, OW_PARAM_TEXT = 1 };
+typedef struct {
+	char name[OW_NAME_MAX];
+	uint32_t kind;          // OW_PARAM_*
+	uint32_t value_count;   // the only values allowed (ow_exposed_param_value); 0 allows any
+	double min, max;        // numbers
+	char fallback[OW_NAME_MAX];  // the default, as text
+} OwParamInfo;
+// Returns how many there are; copies as many as fit in cap.
+OW_IMPORT(exposed_params) int32_t ow_exposed_params(OwParamInfo *params, uint32_t cap);
+// An allowed value of exposed param `param`; returns its length, or -1. No NUL; copies as much as fits.
+OW_IMPORT(exposed_param_value) int32_t ow_exposed_param_value(uint32_t param, uint32_t value, char *buf, uint32_t buf_len);
+// A seated player's loadout for the next match of its lobby; -1 when too big.
 OW_IMPORT(ready) int32_t ow_ready(const void *loadout, uint32_t loadout_len);
 // (hole save-imports :tags (sdk game saves)) no ow_save_read or ow_save_write on the pack save, and no save header stamped with the pack id and version (docs/packs.md).
 

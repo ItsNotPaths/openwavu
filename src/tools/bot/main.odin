@@ -66,8 +66,10 @@ stay :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack,
 		switch {
 		case lobby == nil:
 			if open := open_lobby(client, tp, &hashes); open != "" do online.lobby_join(client, open)
-		case len(lobby.players) < wire.LOBBY_PLAYERS_MAX:
-			online.lobby_leave(client)  // the host left: wait for the next lobby
+		case len(lobby.players) == 1:
+			online.lobby_leave(client)  // everyone else left: wait for the next lobby
+		case online.lobby_player(lobby, client.key).side < 0 || seated(lobby) < wire.SIDES:
+			// in line for a seat, or waiting for an opponent to take the other
 		case lobby.match != nil:
 			if lobby.match.?.token == played do break
 			played = lobby.match.?.token
@@ -78,6 +80,11 @@ stay :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack,
 		free_all(context.temp_allocator)
 	}
 	return "the lobby server hung up"
+}
+
+seated :: proc(lobby: ^online.Lobby) -> (count: int) {
+	for player in lobby.players do if player.side >= 0 do count += 1
+	return
 }
 
 // A lobby this pack can join; "" when there is none.

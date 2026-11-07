@@ -9,7 +9,7 @@ import "core:thread"
 import "../online/wire"
 import "../online/lobbies"
 
-// (hole lobby-regions :tags server) no region check-in to the files host, no spectator feed and no network.toml: one lobbies role on the files box.
+// (hole lobby-regions :tags server) no region check-in to the files host and no network.toml: one lobbies role on the files box.
 // (hole orphan-refuse :tags (server saves)) the server does not refuse a pack version that is not the latest approved one (an orphaned tile) at lobby join.
 // (hole server-authority :tags server) no authority mode: the server does not run the mode's sim on confirmed inputs, compare the clients' hashes with its own, or send a client its snapshot.
 // (hole hosting-guide :tags server :sev polish) no hosting guide: DNS (serve.<domain> for files, region names for lobbies, grey records), TLS proxy, install-server.sh, firewall ports, network.toml.

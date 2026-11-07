@@ -21,6 +21,8 @@ Lobby :: struct {
 
 Lobby_Player :: struct {
 	key, name: string,
+	side:      int,  // its seat, -1 when watching
+	queued:    u64,  // its place in line for a seat, 0 when not in line
 	ready:     bool,
 	loadout:   []byte,
 }
@@ -43,6 +45,8 @@ Lobby_Client :: struct {
 	lobbies:         [dynamic]Lobby,
 	refused:         string,  // the last error line's message
 	session_packets: [dynamic][]byte,
+	watch_packets:   [dynamic][]byte,  // a side's byte, then its session packet; only the watched match's are kept
+	watch_token:     u32,              // the match this player watches, 0 for none
 }
 
 // On err the client is freed already.
@@ -78,6 +82,8 @@ lobby_disconnect :: proc(client: ^Lobby_Client) {
 	delete(client.lobbies)
 	for packet in client.session_packets do delete(packet)
 	delete(client.session_packets)
+	for packet in client.watch_packets do delete(packet)
+	delete(client.watch_packets)
 	delete(client.key)
 	delete(client.name)
 	delete(client.refused)
@@ -94,11 +100,19 @@ lobby_pump :: proc(client: ^Lobby_Client, timeout_ms: u32 = 0) -> (connected: bo
 		case .RECEIVE:
 			bytes := event.packet.data[:event.packet.dataLength]
 			if event.channelID == wire.CHANNEL_SESSION do append(&client.session_packets, slice.clone(bytes))
+			else if event.channelID == wire.CHANNEL_WATCH && watched(client, bytes) do append(&client.watch_packets, slice.clone(bytes))
 			else if line, read := kipp.parse(string(bytes)); read do apply(client, line)
 			enet.packet_destroy(event.packet)
 		}
 	}
 	return true
+}
+
+@(private = "file")
+watched :: proc(client: ^Lobby_Client, packet: []byte) -> bool {
+	if len(packet) < 1 do return false
+	token, read := wire.packet_token(packet[1:])
+	return read && client.watch_token != 0 && token == client.watch_token
 }
 
 // The lobby this player is in, or nil.
@@ -138,6 +152,16 @@ lobby_leave :: proc(client: ^Lobby_Client) {
 	command(client, "LEAVE", nil)
 }
 
+// Into line for a seat, or back to watching from a seat or the line.
+lobby_queue :: proc(client: ^Lobby_Client, on: bool) {
+	command(client, on ? "QUEUE" : "WATCH", nil)
+}
+
+// The host's new picks; both seats are unready again.
+lobby_params :: proc(client: ^Lobby_Client, params, hash: string) {
+	command(client, "PARAMS", nil, {"params", params}, {"hash", hash})
+}
+
 lobby_ready :: proc(client: ^Lobby_Client, loadout: []byte) {
 	command(client, "READY", nil, {"loadout", string(hex.encode(loadout, context.temp_allocator))})
 }
@@ -149,7 +173,7 @@ lobby_done :: proc(client: ^Lobby_Client) {
 
 // What a player's sim and session start from, out of its lobby's match fact.
 Match_Start :: struct {
-	side:     int,
+	side:     int,  // -1: this player watches
 	seed:     u64,
 	token:    u32,
 	loadouts: [2][]byte,  // views into the lobby's players
@@ -159,7 +183,6 @@ Match_Start :: struct {
 match_start :: proc(client: ^Lobby_Client, lobby: ^Lobby) -> (start: Match_Start, ok: bool) {
 	match := lobby.match.? or_return
 	start = {side = match_side(client, match), seed = match.seed, token = match.token}
-	if start.side < 0 do return
 	for key, side in match.sides {
 		player := lobby_player(lobby, key)
 		if player == nil do return
@@ -247,6 +270,9 @@ apply_player :: proc(client: ^Lobby_Client, line: kipp.Line) {
 		player = &lobby.players[len(lobby.players) - 1]
 	}
 	replace(&player.name, line.attributes["name"])
+	side, side_read := strconv.parse_int(line.attributes["side"])
+	player.side = side_read && (side == 0 || side == 1) ? side : -1
+	player.queued, _ = strconv.parse_u64(line.attributes["queued"])
 	player.ready = line.attributes["ready"] == "1"
 	delete(player.loadout)
 	player.loadout = hex.decode(transmute([]byte)line.attributes["loadout"]) or_else nil

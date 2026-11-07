@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:slice"
 import "core:strconv"
 import "../imports"
 import "../online"
@@ -17,10 +18,12 @@ Lobbies :: struct {
 	failed:     string,                // only while Failed: why
 	hashes:     online.Lobby_Hashes,
 	played:   u32,                   // the token of the last match started here
+	joined:   string,                // the id of the lobby this player is in; "" for none
 }
 
 lobbies_close :: proc(l: ^Lobbies) {
 	go_offline(l)
+	delete(l.joined)
 	online.lobby_hashes_destroy(&l.hashes)
 }
 
@@ -41,6 +44,8 @@ lobbies_apply :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, entry: ^imports.Ent
 		case imports.Create_Lobby: online.lobby_create(l.client, titlepack.pack_name(tp.id, tp.version), asked.mode, asked.picks, online.picks_hash(&l.hashes, tp, asked.picks))
 		case imports.Join_Lobby:   online.lobby_join(l.client, fmt.tprintf("%08x", asked.id))
 		case imports.Leave_Lobby:  online.lobby_leave(l.client)
+		case imports.Queue:        online.lobby_queue(l.client, asked.on)
+		case imports.Set_Params:   online.lobby_params(l.client, asked.picks, online.picks_hash(&l.hashes, tp, asked.picks))
 		case imports.Ready:        online.lobby_ready(l.client, asked.loadout)
 		}
 	}
@@ -51,12 +56,21 @@ lobbies_pump :: proc(l: ^Lobbies) {
 	if l.connection == .Online && !online.lobby_pump(l.client) do hang_up(l, "the lobby server hung up")
 }
 
-// The lobby of a match fact not started yet, or nil.
+// The lobby of a match fact not started yet, or nil. A match already running when this player joined is not watched.
 lobbies_new_match :: proc(l: ^Lobbies) -> ^online.Lobby {
 	if l.connection != .Online do return nil
 	lobby := online.lobby_joined(l.client)
-	if lobby == nil do return nil
+	if lobby == nil {
+		delete(l.joined)
+		l.joined = ""
+		return nil
+	}
 	match, running := lobby.match.?
+	if lobby.id != l.joined {
+		delete(l.joined)
+		l.joined = fmt.aprint(lobby.id)
+		if running do l.played = match.token
+	}
 	if !running || match.token == l.played do return nil
 	l.played = match.token
 	return lobby
@@ -64,7 +78,7 @@ lobbies_new_match :: proc(l: ^Lobbies) -> ^online.Lobby {
 
 lobbies_view :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, view: ^imports.Host_View) {
 	view.connection = l.connection
-	view.lobby_count, view.joined, view.seat = 0, false, 0
+	view.lobby_count, view.joined, view.seat, view.hosting, view.watching, view.queued, view.watcher_count = 0, false, 0, false, false, false, 0
 	imports.view_text(view.refused[:], l.failed)
 	if l.connection != .Online do return
 	imports.view_text(view.refused[:], l.client.refused)
@@ -78,13 +92,24 @@ lobbies_view :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, view: ^imports.Host_
 	if joined == nil do return
 	view.joined = true
 	view_lobby(l, joined, &view.lobby)
-	for &seat, index in view.seats {
-		seat = {}
-		if index >= len(joined.players) do continue
-		player := joined.players[index]
-		imports.view_text(seat.name[:], player.name)
-		seat.ready = b32(player.ready)
-		if player.key == l.client.key do view.seat = u32(index)
+	view.hosting = joined.host == l.client.key
+	view.seats = {}
+	for player in joined.players do if player.side >= 0 {
+		imports.view_text(view.seats[player.side].name[:], player.name)
+		view.seats[player.side].ready = b32(player.ready)
+	}
+	me := online.lobby_player(joined, l.client.key)
+	view.seat, view.watching, view.queued = u32(max(me.side, 0)), me.side < 0, me.queued > 0
+	watchers := make([dynamic]online.Lobby_Player, context.temp_allocator)
+	for player in joined.players do if player.side < 0 do append(&watchers, player)
+	slice.stable_sort_by(watchers[:], proc(a, b: online.Lobby_Player) -> bool {
+		return a.queued != 0 && (b.queued == 0 || a.queued < b.queued)
+	})
+	for player in watchers[:min(len(watchers), imports.WATCHERS_MAX)] {
+		watcher := &view.watchers[view.watcher_count]
+		imports.view_text(watcher.name[:], player.name)
+		watcher.queued = player.queued > 0
+		view.watcher_count += 1
 	}
 }
 
