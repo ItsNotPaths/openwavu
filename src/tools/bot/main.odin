@@ -64,6 +64,8 @@ stay :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack,
 		switch {
 		case lobby == nil:
 			if open := open_lobby(client, tp); open != "" do online.lobby_join(client, open)
+		case len(lobby.players) < online.LOBBY_PLAYERS_MAX:
+			online.lobby_leave(client)  // the host left: wait for the next lobby
 		case lobby.match != nil:
 			if lobby.match.?.token == played do break
 			played = lobby.match.?.token
