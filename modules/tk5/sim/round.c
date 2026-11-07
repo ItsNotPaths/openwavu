@@ -317,8 +317,9 @@ static T5Line result_line(uint32_t result) {
 
 // The round's winner by name, or a draw.
 static void announce_winner(T5World *w) {
-    for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
-        if ((w->round.result & T5_RESULT_DRAW) == 0 && w->fighters[side]->last_round == T5_ROUND_WON) {
+    bool draw = (w->round.result & T5_RESULT_DRAW) != 0;
+    for (int side = 0; !draw && side < T5_FIGHTER_COUNT; side++) {
+        if (w->fighters[side]->last_round == T5_ROUND_WON) {
             send(w, T5_CUE_ANNOUNCE, T5_LINE_WINNER, 0, side == 0 ? T5_SIDE_1 : T5_SIDE_2);
             return;
         }
