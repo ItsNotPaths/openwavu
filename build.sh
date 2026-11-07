@@ -99,8 +99,9 @@ if [ -n "$(find src/imports/sdl_allow.txt src/tools/sdlglue vendor/sdl3/dynapi v
 	odin run src/tools/sdlglue -vet -strict-style
 fi
 odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict-style
-# vendor:sdl3 and vendor:ENet link "system:SDL3" and "system:enet": the -L dirs make those the vendored static libs.
-sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf -Lvendor/enet"
+# vendor:sdl3, vendor:ENet and vendor:curl link "system:SDL3", "system:enet", "system:curl" and "system:z": the -L dirs
+# make those the vendored static libs.
+sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf -Lvendor/enet -Lvendor/curl"
 odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style "$sdl_libs"
 odin build src/server -out:build/openwavu-server "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
 odin check src/tools/animconv -vet -strict-style

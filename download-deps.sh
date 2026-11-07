@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dependencies into vendor/: zig (the C compiler for pack modules, pinned so ow build is reproducible), wasmtime's C API, the SQLite amalgamation, Clay (UI layout) with its Odin binding, cgltf, tomlc17, jsmn, dr_flac,
-# SDL3 and SDL3_ttf built static (FreeType) with their headers for pack modules, ffmpeg's audio codecs for the importer, ENet, and the UI font. Delete a vendor/ folder to refetch it.
+# SDL3 and SDL3_ttf built static (FreeType) with their headers for pack modules, ffmpeg's audio codecs for the importer, ENet, curl with mbedTLS, and the UI font. Delete a vendor/ folder to refetch it.
 set -euo pipefail
 cd "$(dirname "$0")"
 ZIG=0.16.0
@@ -21,6 +21,12 @@ JSMN_SHA256=1ed6154dedf009212a08a397e9c4ed50a0ce31d5a8301bb294e137ae3188c13b
 TOMLC17=R261003
 TOMLC17_SHA256=48876f14bd7a123f95f16074dd0d5681f75c397c1bce61f1a52f42201f90eacc
 ENET=1.3.18
+ZLIB=1.3.1
+ZLIB_SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+MBEDTLS=3.6.5
+MBEDTLS_SHA256=4a11f1777bb95bf4ad96721cac945a26e04bf19f57d905f241fe77ebeddf46d8
+CURL=8.17.0  # what Odin's vendor:curl binds
+CURL_SHA256=955f6e729ad6b3566260e8fef68620e76ba3c31acf0a18524416a185acf77992
 ENET_SHA256=28603c895f9ed24a846478180ee72c7376b39b4bb1287b73877e5eae7d96b0dd
 GLSLANG=16.5.0
 GLSLANG_SHA256=01af17195fbeb59e39e31e9506de35bb39dfd35807ea0c9a1a99d7d1183ddd45
@@ -179,6 +185,50 @@ if [ ! -f vendor/enet/libenet.a ]; then
 	cp "$enet_dir/LICENSE" vendor/enet/
 	rm -rf "$enet_dir"
 	echo "vendor/enet: $ENET"
+fi
+
+# HTTPS for the network's files host: zlib and mbedTLS compiled as they are, curl through cmake with only HTTP(S).
+# vendor:curl links "system:curl" and "system:z": libcurl.a holds mbedTLS too, so link order can not lose it.
+# No CA bundle path is built in; the game finds the system's at run time.
+if [ ! -f vendor/curl/libcurl.a ]; then
+	curl_dir=$(mktemp -d)
+	mkdir -p vendor/curl "$curl_dir/zlib" "$curl_dir/mbedtls" "$curl_dir/curl"
+	fetch "https://github.com/madler/zlib/releases/download/v$ZLIB/zlib-$ZLIB.tar.gz" "$curl_dir/zlib.tar.gz" "$ZLIB_SHA256"
+	fetch "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-$MBEDTLS/mbedtls-$MBEDTLS.tar.bz2" "$curl_dir/mbedtls.tar.bz2" "$MBEDTLS_SHA256"
+	fetch "https://curl.se/download/curl-$CURL.tar.xz" "$curl_dir/curl.tar.xz" "$CURL_SHA256"
+	tar xzf "$curl_dir/zlib.tar.gz" -C "$curl_dir/zlib" --strip-components=1
+	tar xjf "$curl_dir/mbedtls.tar.bz2" -C "$curl_dir/mbedtls" --strip-components=1
+	tar xJf "$curl_dir/curl.tar.xz" -C "$curl_dir/curl" --strip-components=1
+	zig="$PWD/vendor/zig/zig"
+	for dir in zlib mbedtls; do
+		mkdir -p "$curl_dir/$dir-objects"
+		sources=("$curl_dir/$dir"/*.c)
+		[ "$dir" = mbedtls ] && sources=("$curl_dir/mbedtls/library"/*.c)
+		for source in "${sources[@]}"; do
+			"$zig" cc -O2 -fPIC -DHAVE_UNISTD_H -I"$curl_dir/zlib" -I"$curl_dir/mbedtls/include" -I"$curl_dir/mbedtls/library" \
+				-c "$source" -o "$curl_dir/$dir-objects/$(basename "$source" .c).o"
+		done
+	done
+	"$zig" ar rcs vendor/curl/libz.a "$curl_dir"/zlib-objects/*.o
+	"$zig" ar rcs "$curl_dir/libmbedtls.a" "$curl_dir"/mbedtls-objects/*.o
+	cmake -S "$curl_dir/curl" -B "$curl_dir/build" -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_C_COMPILER="$zig" -DCMAKE_C_COMPILER_ARG1=cc -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+		-DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DBUILD_CURL_EXE=OFF -DBUILD_TESTING=OFF \
+		-DBUILD_EXAMPLES=OFF -DBUILD_LIBCURL_DOCS=OFF -DBUILD_MISC_DOCS=OFF -DENABLE_CURL_MANUAL=OFF \
+		-DHTTP_ONLY=ON -DENABLE_ARES=OFF -DCURL_DISABLE_LDAP=ON -DCURL_USE_LIBPSL=OFF -DCURL_USE_LIBSSH2=OFF \
+		-DUSE_NGHTTP2=OFF -DUSE_LIBIDN2=OFF -DCURL_BROTLI=OFF -DCURL_ZSTD=OFF \
+		-DCURL_USE_OPENSSL=OFF -DCURL_USE_MBEDTLS=ON -DCURL_CA_BUNDLE=none -DCURL_CA_PATH=none \
+		-DMBEDTLS_INCLUDE_DIR="$curl_dir/mbedtls/include" -DMBEDTLS_LIBRARY="$curl_dir/libmbedtls.a" \
+		-DMBEDX509_LIBRARY="$curl_dir/libmbedtls.a" -DMBEDCRYPTO_LIBRARY="$curl_dir/libmbedtls.a" \
+		-DCURL_ZLIB=ON -DZLIB_INCLUDE_DIR="$curl_dir/zlib" -DZLIB_LIBRARY="$PWD/vendor/curl/libz.a" > "$curl_dir/cmake.log"
+	cmake --build "$curl_dir/build" --target libcurl_static -j"$(nproc)" > "$curl_dir/build.log"
+	mkdir -p "$curl_dir/curl-objects" && (cd "$curl_dir/curl-objects" && "$zig" ar x "$curl_dir/build/lib/libcurl.a")
+	"$zig" ar rcs vendor/curl/libcurl.a "$curl_dir"/curl-objects/*.o "$curl_dir"/mbedtls-objects/*.o
+	cp "$curl_dir/curl/COPYING" vendor/curl/COPYING.curl
+	cp "$curl_dir/mbedtls/LICENSE" vendor/curl/LICENSE.mbedtls
+	cp "$curl_dir/zlib/LICENSE" vendor/curl/LICENSE.zlib
+	rm -rf "$curl_dir"
+	echo "vendor/curl: curl $CURL, mbedTLS $MBEDTLS, zlib $ZLIB"
 fi
 
 # glb reading: the cgltf binding and C source that ship with the installed Odin, so the two always match.
