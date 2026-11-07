@@ -3,7 +3,6 @@ package titlepack
 import "core:mem"
 import "core:mem/virtual"
 import "core:os"
-import "core:path/filepath"
 import "core:strings"
 import "core:sync"
 
@@ -75,8 +74,8 @@ close_files :: proc(p: ^Pack_Files) {
 read_file :: proc(p: Pack_Files, path: string) -> (data: []byte, ok: bool) {
 	if p.folder != nil {
 		if data, ok = read_folder_file(p, path); ok do return
-	} else if e, has := p.files[path]; has {
-		return p.data[e.offset:][:e.size], true
+	} else if entry, has := p.files[path]; has {
+		return p.data[entry.offset:][:entry.size], true
 	}
 	if p.below != nil do return read_file(p.below^, path)
 	return
@@ -87,7 +86,7 @@ read_folder_file :: proc(p: Pack_Files, path: string) -> (data: []byte, ok: bool
 	if !(path in p.files) do return
 	sync.guard(&p.folder.lock)
 	if file, known := p.folder.mapped[path]; known do return file.data, true
-	full, _ := filepath.join({p.dir, path}, context.temp_allocator)
+	full := join_path(p.dir, path)
 	file: Folder_File
 	map_err: virtual.Map_File_Error
 	file.data, map_err = virtual.map_file_from_path(full, {.Read})
