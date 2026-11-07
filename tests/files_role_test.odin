@@ -1,8 +1,12 @@
 package tests
 
+import "base:runtime"
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import "core:testing"
+import "core:thread"
+import "core:time"
 import "../src/content"
 import "../src/server"
 import "../src/titlepack"
@@ -10,7 +14,7 @@ import "../src/titlepack"
 FILES_DIR :: "build/files_role_test"
 
 // A tar dropped under any name is incorporated, and its store line reads back on the client with hashes that check
-// the files the server sends; the front holds pack.toml.
+// the files the server sends; the front holds pack.toml. Over HTTP, a download lands only when its hash matches.
 @(test)
 dropped_pack_lists_and_checks :: proc(t: ^testing.T) {
 	os.remove_all(FILES_DIR)
@@ -37,4 +41,31 @@ dropped_pack_lists_and_checks :: proc(t: ^testing.T) {
 	}
 	manifest, read := titlepack.read_manifest(FILES_DIR + "/store/drop@1.2.front.tar", context.temp_allocator)
 	testing.expect(t, read && manifest != "", "the front has no pack.toml")
+
+	{
+		context.allocator = runtime.heap_allocator()  // the server thread lives until the test run ends
+		thread.create_and_start_with_poly_data(FILES_DIR + "/store", proc(dir: string) {server.serve_files(dir)})
+	}
+	for _ in 0 ..< 50 {
+		if wait_download(fmt.tprintf("http://%s/store", server.FILES_ENDPOINT), "", "") == "" do break
+		time.sleep(20 * time.Millisecond)
+	}
+	url := fmt.tprintf("http://%s/files/drop@1.2.tar", server.FILES_ENDPOINT)
+	installed := FILES_DIR + "/installed.tar"
+	_ = os.write_entire_file(installed, transmute([]byte)string("old pack"))
+	damaged := wait_download(url, pack.front_sha256, installed)
+	testing.expect(t, damaged != "", "a download with the wrong hash reported no error")
+	text, _ := os.read_entire_file(installed, context.temp_allocator)
+	testing.expect_value(t, string(text), "old pack")
+	testing.expect_value(t, wait_download(url, pack.sha256, installed), "")
+	text, _ = os.read_entire_file(installed, context.temp_allocator)
+	testing.expect(t, content.verify_download(text, pack.sha256), "the landed pack is not the listed one")
+}
+
+// The download's error, once it finishes.
+wait_download :: proc(url, sha256, path: string) -> (err: string) {
+	job := content.download_start(url, sha256, path)
+	defer content.download_destroy(job)
+	for !content.download_finished(job) do time.sleep(time.Millisecond)
+	return strings.clone(job.err, context.temp_allocator)
 }
