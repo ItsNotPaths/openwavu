@@ -20,6 +20,7 @@ Paint :: union {
 	Backdrop,
 	Front_Button,
 	Progress,
+	Badge,
 }
 
 // A raised or recessed steel face. lit adds the LED glow of a hovered or focused button.
@@ -48,6 +49,17 @@ Bar :: struct {}
 // A slot's LED strip as a bar, lit up to fraction.
 Progress :: struct {
 	fraction: f32,
+}
+
+// A slot's corner button with an engraved icon; on lights the icon.
+Badge :: struct {
+	icon:        Icon,
+	on, hovered: bool,
+}
+
+Icon :: enum u8 {
+	Star,
+	Lock,
 }
 
 // The screen-bottom popup, the top bar's counterpart: its light line sits under its top edge.
@@ -112,6 +124,8 @@ paint :: proc(ui: ^Ui, rect: sdl.FRect, p: Paint) {
 		strip := sdl.FRect{rect.x + 1, rect.y + rect.h / 2 - 1, rect.w - 2, 2}
 		led_strip(ui.renderer, strip, false)
 		if p.fraction > 0 do led_strip(ui.renderer, {strip.x, strip.y, strip.w * min(p.fraction, 1), strip.h}, true)
+	case Badge:
+		badge(ui, rect, p)
 	}
 }
 
@@ -214,6 +228,46 @@ plate_led :: proc(ui: ^Ui, rect: sdl.FRect, lit: bool) {
 	}
 	dot(ui, center + {0, 0.5}, 3, color(0xffffff1c))
 	dot(ui, center, 3, lit ? color(LED) : color(LED_OFF))
+}
+
+@(private)
+badge :: proc(ui: ^Ui, rect: sdl.FRect, b: Badge) {
+	r := ui.renderer
+	steel(ui, rect, {face = .Raised})
+	icon := sdl.FRect{rect.x + (rect.w - BADGE_ICON) / 2, rect.y + (rect.h - BADGE_ICON) / 2, BADGE_ICON, BADGE_ICON}
+	if b.on do soft(r, icon, 14, lit_color(0.15))
+	c := color(b.on ? LED : b.hovered ? BADGE_HOVER : BADGE_OFF)
+	switch b.icon {
+	case .Star: star(r, icon, c)
+	case .Lock: lock(r, icon, c)
+	}
+}
+
+// A five-pointed star filling rect, as a fan from its centre.
+@(private)
+star :: proc(r: ^sdl.Renderer, rect: sdl.FRect, c: [4]f32) {
+	center := sdl.FPoint{rect.x + rect.w / 2, rect.y + rect.h * 0.55}
+	vertices: [11]sdl.Vertex
+	vertices[0] = {position = center, color = sdl.FColor(c)}
+	for i in 0 ..< 10 {
+		radius := (i % 2 == 0 ? 0.5 : 0.21) * rect.w
+		angle := math.PI * f32(i) / 5 - math.PI / 2
+		vertices[i + 1] = {position = center + radius * sdl.FPoint{math.cos(angle), math.sin(angle)}, color = sdl.FColor(c)}
+	}
+	indices: [30]i32
+	for i in 0 ..< 10 do indices[3 * i], indices[3 * i + 1], indices[3 * i + 2] = 0, i32(i + 1), i32((i + 1) % 10 + 1)
+	sdl.RenderGeometry(r, nil, raw_data(vertices[:]), len(vertices), raw_data(indices[:]), len(indices))
+}
+
+// A padlock filling rect: the body in the lower half, the shackle as three bars above it.
+@(private)
+lock :: proc(r: ^sdl.Renderer, rect: sdl.FRect, c: [4]f32) {
+	body := sdl.FRect{rect.x, rect.y + rect.h * 0.45, rect.w, rect.h * 0.55}
+	bar := rect.w * 0.16
+	fill(r, body, c)
+	fill(r, {rect.x + rect.w * 0.18, rect.y, bar, body.y - rect.y}, c)
+	fill(r, {rect.x + rect.w * 0.82 - bar, rect.y, bar, body.y - rect.y}, c)
+	fill(r, {rect.x + rect.w * 0.18, rect.y, rect.w * 0.64, bar}, c)
 }
 
 // The thin bottom face under a slot, narrowing inward: the box seen from slightly above.

@@ -24,9 +24,8 @@ main :: proc() {
 	}
 	defer delete(data)
 	defer delete(config)
-	titlepack.packs_dir = strings.concatenate({data, "/packs"})
-	defer delete(titlepack.packs_dir)
-	os.make_directory_all(titlepack.packs_dir)
+	titlepack.data_dir = data
+	os.make_directory_all(titlepack.packs_dir())
 	r, ok := render.init("openwavu", 1280, 720)
 	if !ok {
 		fmt.eprintln("openwavu:", sdl.GetError())

@@ -2,6 +2,8 @@ package game
 
 import "core:fmt"
 import "core:os"
+import "core:path/filepath"
+import "core:slice"
 import "core:strings"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
@@ -28,8 +30,20 @@ Launcher :: struct {
 	url:      strings.Builder,
 	search_installed, search_store: strings.Builder,
 	play:     Maybe(int),
+	change:   Change,
 	quit:     bool,
 }
+
+// A click that frees strings waits for the next frame: Clay reads them until the frame is drawn.
+Change :: union {
+	Lock_Tile,
+	Remove_Picked,
+	Install_Version,
+}
+
+Lock_Tile :: distinct int  // index into packs
+Remove_Picked :: struct {}
+Install_Version :: distinct int  // index into the store's versions
 
 Install_Screen :: struct {}
 
@@ -52,7 +66,7 @@ launcher_destroy :: proc(l: ^Launcher) {
 	strings.builder_destroy(&l.url)
 	strings.builder_destroy(&l.search_installed)
 	strings.builder_destroy(&l.search_store)
-	delete(l.settings.file)
+	settings_destroy(&l.settings)
 }
 
 Install_Source :: enum u8 {
@@ -64,6 +78,12 @@ Install_Source :: enum u8 {
 // Installed packs left, the store right, whatever is selected in the middle; columns have no panel.
 // A front replaces the spotlight with its own backgrounds.
 launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
+	switch change in l.change {
+	case Lock_Tile: toggle_lock(l, l.packs[change])
+	case Remove_Picked: remove_pack(l)
+	case Install_Version: install_start(&l.store.install, l.store.versions.packs, int(change))
+	}
+	l.change = nil
 	store_poll(l)
 	path, file := "", ""
 	switch pick in l.selected {
@@ -89,7 +109,7 @@ launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 		center(l, u)
 		store_column(l, u)
 		top_bar(l, u, r)
-		if popup(l, u) do remove_pack(l)
+		if popup(l, u) do l.change = Remove_Picked{}
 	}
 }
 
@@ -97,18 +117,29 @@ installed_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 	if clay.UI()(side_column()) {
 		column_head(u, "INSTALLED", clay.ID("SearchInstalled"), &l.search_installed)
 		if clay.UI()(slot_list(u, clay.ID("InstalledList"))) {
-			for pack, i in l.packs {
-				if !matches(pack.id, strings.to_string(l.search_installed)) {
-					continue
-				}
-				picked, is_pack := l.selected.(int)
-				if ui.slot(u, clay.ID("Pack", u32(i)), pack.id, installed_thumb(l, u, pack), is_pack && picked == i) {
-					l.selected = i
+			clicked, clicked_pack := ui.Slot_Click.None, 0  // applied after the list: a star moves its slot
+			for favourites in ([2]bool{true, false}) {
+				for pack, i in l.packs {
+					tile := filepath.stem(pack.path)
+					if slice.contains(l.settings.favourites[:], tile) != favourites || !matches(pack.id, strings.to_string(l.search_installed)) {
+						continue
+					}
+					picked, is_pack := l.selected.(int)
+					lock: Maybe(bool) = strings.has_suffix(pack.path, ".tar") ? pack.locked : nil  // stock folders do not lock
+					if click := ui.installed_slot(u, clay.ID("Pack", u32(i)), tile, installed_thumb(l, u, pack), is_pack && picked == i, favourites, lock); click != .None {
+						clicked, clicked_pack = click, i
+					}
 				}
 			}
 			_, installing := l.selected.(Install_Screen)
 			if ui.add_slot(u, clay.ID("Add"), installing) {
 				l.selected = Install_Screen{}
+			}
+			switch clicked {
+			case .None:
+			case .Slot: l.selected = clicked_pack
+			case .Star: toggle_favourite(&l.settings, filepath.stem(l.packs[clicked_pack].path))
+			case .Lock: l.change = Lock_Tile(clicked_pack)
 			}
 		}
 	}
@@ -247,10 +278,33 @@ remove_pack :: proc(l: ^Launcher) {
 	path := strings.clone(l.packs[pick].path, context.temp_allocator)
 	front_close(&l.front)
 	_ = os.remove_all(path)  // a tar, or a stock pack's folder
-	titlepack.destroy_installed(l.packs)
-	l.packs = titlepack.installed()
+	reload_packs(l)
 	l.selected = nil
 	l.popup.open = false
+}
+
+reload_packs :: proc(l: ^Launcher) {
+	titlepack.destroy_installed(l.packs)
+	l.packs = titlepack.installed()
+}
+
+select_tile :: proc(l: ^Launcher, tile: string) {
+	for pack, index in l.packs do if filepath.stem(pack.path) == tile do l.selected = index
+}
+
+// Locks or unlocks the tile; its star moves with it. Its front is closed first, since it maps the tar.
+toggle_lock :: proc(l: ^Launcher, pack: titlepack.Title_Pack) {
+	from := strings.clone(filepath.stem(pack.path), context.temp_allocator)  // reload_packs frees pack
+	to := strings.clone(titlepack.tile_name(pack.id, pack.version, !pack.locked), context.temp_allocator)
+	front_close(&l.front)
+	if !titlepack.set_locked(pack, !pack.locked) do return
+	if index, starred := slice.linear_search(l.settings.favourites[:], from); starred {
+		delete(l.settings.favourites[index])
+		l.settings.favourites[index] = strings.clone(to)
+		settings_save(l.settings)
+	}
+	reload_packs(l)
+	select_tile(l, to)
 }
 
 // (hole titlepack-install :tags (titlepack game)) install does nothing: no file picker, no URL download, no verify, no copy into the packs folder.

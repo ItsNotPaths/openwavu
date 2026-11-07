@@ -28,12 +28,14 @@ Listing :: struct {
 	read:  bool,
 }
 
-// The one running install, and the error of the last one.
+// The one running install, and the error of the last one. previous: the version just before it on the network.
 Install :: struct {
-	job:     ^download.Job,
-	id:      string,
-	version: string,
-	err:     string,
+	job:      ^download.Job,
+	id:       string,
+	version:  string,
+	previous: string,
+	locked:   bool,
+	err:      string,
 }
 
 Store_Pick :: struct {
@@ -64,6 +66,7 @@ install_destroy :: proc(install: ^Install) {
 	if install.job != nil do download.destroy(install.job)
 	delete(install.id)
 	delete(install.version)
+	delete(install.previous)
 	delete(install.err)
 	install^ = {}
 }
@@ -78,7 +81,7 @@ listing_poll :: proc(listing: ^Listing) -> (err: string) {
 	return
 }
 
-// Each frame: a finished install replaces the installed pack and picks it.
+// Each frame: a finished install copies the saves of the version just before it, if installed, and picks it.
 store_poll :: proc(l: ^Launcher) {
 	install := &l.store.install
 	if install.job == nil || !download.finished(install.job) do return
@@ -90,9 +93,10 @@ store_poll :: proc(l: ^Launcher) {
 		install.err = strings.clone(install.job.err)
 		return
 	}
-	titlepack.destroy_installed(l.packs)
-	l.packs = titlepack.installed()
-	for pack, index in l.packs do if pack.id == install.id do l.selected = index
+	tile := titlepack.tile_name(install.id, install.version, install.locked)
+	for pack in l.packs do if pack.id == install.id && pack.version == install.previous do titlepack.copy_saves(pack, tile)
+	reload_packs(l)
+	select_tile(l, tile)
 	l.popup.open = false
 }
 
@@ -146,7 +150,7 @@ store_thumb :: proc(l: ^Launcher, u: ^ui.Ui, pack: titlepack.Listed) -> ^sdl.Tex
 // not be had.
 @(private = "file")
 cached :: proc(store: ^Store, sha256, suffix, name: string) -> (path: string, waiting: bool) {
-	cache_dir := titlepack.join_path(titlepack.packs_dir, "cache")  // fronts and thumbs by hash; they never change
+	cache_dir := titlepack.join_path(titlepack.packs_dir(), "cache")  // fronts and thumbs by hash; they never change
 	path = titlepack.join_path(cache_dir, strings.concatenate({sha256, suffix}, context.temp_allocator))
 	if os.exists(path) do return path, false
 	job, started := store.cache[sha256]
@@ -173,7 +177,7 @@ store_front :: proc(l: ^Launcher, pick: Store_Pick) -> string {
 	return path
 }
 
-// Every version, newest first; Install downloads it over the installed one and picks it. While it runs, its bar.
+// Every version, newest first; Install downloads it and picks it. While it runs, its bar.
 store_install_popup :: proc(l: ^Launcher, u: ^ui.Ui, pick: Store_Pick) {
 	pack := l.store.listing.packs[pick.index]
 	store := &l.store
@@ -196,17 +200,23 @@ store_install_popup :: proc(l: ^Launcher, u: ^ui.Ui, pick: Store_Pick) {
 			ui.label(index == 0 ? fmt.tprintf("Latest  %s", version.version) : version.version)
 			ui.spacer()
 			if ui.button(u, clay.ID("InstallVersion", u32(index)), fmt.tprintf("Install  %.1f MB", f64(version.size) / 1e6)) {
-				install_start(&store.install, version)
+				l.change = Install_Version(index)
 			}
 		}
 	}
 }
 
-// (hole orphaned-packs :tags (game titlepack saves) :needs slot-badges) an older version installs over the latest: no lock button below the favourite star, no packs/<id>@<version>.tar as its own locked tile with its own saves, and an update does not download as a new tile when the installed one is locked; a non-latest download should start locked.
-@(private = "file")
-install_start :: proc(install: ^Install, version: titlepack.Listed) {
+// The latest replaces the unlocked tile; an older version is a locked tile of its own.
+install_start :: proc(install: ^Install, versions: []titlepack.Listed, index: int) {
 	install_destroy(install)
-	path := titlepack.join_path(titlepack.packs_dir, strings.concatenate({version.id, ".tar"}, context.temp_allocator))
+	version := versions[index]
+	locked := index > 0
 	url := fmt.tprintf("%s/files/%s@%s.tar", NETWORK, version.id, version.version)
-	install^ = {job = download.start(url, version.sha256, path), id = strings.clone(version.id), version = strings.clone(version.version)}
+	install^ = {
+		job      = download.start(url, version.sha256, titlepack.tile_path(version.id, version.version, locked)),
+		id       = strings.clone(version.id),
+		version  = strings.clone(version.version),
+		previous = index + 1 < len(versions) ? strings.clone(versions[index + 1].version) : "",
+		locked   = locked,
+	}
 }

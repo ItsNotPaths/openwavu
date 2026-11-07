@@ -24,7 +24,7 @@ import_start :: proc(job: ^Import_Job, paths: []string) {
 	job.inputs = make([]string, len(paths))
 	for path, i in paths do job.inputs[i] = strings.clone(path)
 	job.thread = thread.create_and_start_with_poly_data(job, proc(job: ^Import_Job) {
-		job.err = strings.clone(tk5.build_pack(job.inputs, titlepack.packs_dir, progress = &job.progress))
+		job.err = strings.clone(tk5.build_pack(job.inputs, titlepack.packs_dir(), progress = &job.progress))
 		sync.atomic_store(&job.finished, true)
 	})
 }
@@ -48,13 +48,12 @@ import_status :: proc(l: ^Launcher, u: ^ui.Ui) {
 		return
 	}
 	if job.err == "" {
-		ui.label(fmt.tprintf("Built %s/%s", titlepack.packs_dir, tk5.STOCK_PACK), tint = ui.LED)
+		ui.label(fmt.tprintf("Built %s/%s", titlepack.packs_dir(), tk5.STOCK_PACK), tint = ui.LED)
 	} else {
 		ui.label(job.err, tint = ui.WARN)
 	}
 	if ui.button(u, clay.ID("ImportDone"), "OK") {
 		import_destroy(job)
-		titlepack.destroy_installed(l.packs)
-		l.packs = titlepack.installed()
+		reload_packs(l)
 	}
 }

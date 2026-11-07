@@ -20,8 +20,9 @@ Popup_Mode :: enum u8 {
 
 // (hole volume-settings :tags (game audio)) no volume settings (master, music, effects, voices); the music plays a little loud against the rest. The host could set each pack stream's gain by a channel kind the SDK names.
 Settings :: struct {
-	file:      string,
-	frame_cap: int,
+	file:       string,
+	frame_cap:  int,
+	favourites: [dynamic]string,  // tile names
 }
 
 // The sim steps at 60; a higher cap draws frames in between.

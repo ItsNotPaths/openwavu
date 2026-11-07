@@ -60,6 +60,12 @@ SLOT_LIFT  :: 3
 LIFT_RATE  :: 21
 UNDERSIDE  :: 5
 PLATE_PAD  :: 18  // plate edge to name, clears the LED
+BADGE       :: 26
+BADGE_ICON  :: 15
+BADGE_GAP   :: 6
+BADGE_INSET :: 20 - SLOT_FRAME  // 20 from the slot's top and side
+BADGE_OFF   :: 0x2c2d31ff
+BADGE_HOVER :: 0x55575dff
 
 MARQUEE_SPEED :: 30  // px per second
 MARQUEE_PAUSE :: 1.2  // seconds at each end

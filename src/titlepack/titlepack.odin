@@ -31,6 +31,7 @@ Mode :: struct {
 Title_Pack :: struct {
 	path:              string,  // the tar
 	id, name, version: string,
+	locked:            bool,  // an orphaned tile: its tar is <id>@<version>.tar and never updates
 	main:              string,  // the entry module; "" for a pack without code (a db mod)
 	modes:             []Mode,    // sorted by name
 	bases:             []string,  // pack ids, bottom first; a stock pack has none
@@ -101,12 +102,16 @@ destroy_titlepack :: proc(tp: Title_Pack, allocator := context.allocator) {
 	delete(tp.bases, allocator)
 }
 
-// The game points it into the user's data folder at startup.
-packs_dir := "packs"
+// The user's data folder: packs/ and saves/. The game sets it at startup.
+data_dir := "."
+
+packs_dir :: proc() -> string {
+	return join_path(data_dir, "packs")
+}
 
 // Where a base lives: a stock pack's folder in packs/.
 base_path :: proc(id: string) -> string {
-	return join_path(packs_dir, id)
+	return join_path(packs_dir(), id)
 }
 
 // The first base of tp that is not installed as a stock folder; "" when all are.
@@ -133,7 +138,7 @@ inherit_from_bases :: proc(tp: ^Title_Pack, allocator := context.allocator) {
 // Every packs/*.tar and stock packs/<id>/ folder whose pack.toml reads, sorted by name. Others are skipped, and so is
 // a folder with bases: only stock packs, built on this machine, are folders.
 installed :: proc(allocator := context.allocator) -> []Title_Pack {
-	paths, _ := filepath.glob(join_path(packs_dir, "*"), context.temp_allocator)
+	paths, _ := filepath.glob(join_path(packs_dir(), "*"), context.temp_allocator)
 	packs := make([dynamic]Title_Pack, allocator)
 	for path in paths {
 		folder := os.is_dir(path)
@@ -145,10 +150,11 @@ installed :: proc(allocator := context.allocator) -> []Title_Pack {
 			continue
 		}
 		tp.path = strings.clone(path, allocator)
+		tp.locked = !folder && filepath.stem(path) == tile_name(tp.id, tp.version, true)
 		inherit_from_bases(&tp, allocator)
 		append(&packs, tp)
 	}
-	slice.sort_by(packs[:], proc(a, b: Title_Pack) -> bool {return a.name < b.name})
+	slice.sort_by(packs[:], proc(a, b: Title_Pack) -> bool {return a.name < b.name || (a.name == b.name && a.path < b.path)})
 	return packs[:]
 }
 

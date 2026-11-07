@@ -75,14 +75,27 @@ progress :: proc(fraction: f32) {
 }
 
 // A pack slot: a steel box, a glass window over the pack's art, an engraved name plate.
-// (hole slot-badges :tags game) no favourite star on installed slots, no size or installed badge on store slots.
+// (hole slot-badges :tags game) no size or installed badge on store slots.
 slot :: proc(ui: ^Ui, id: clay.ElementId, name: string, art: ^sdl.Texture, selected: bool) -> bool {
-	return slot_box_ui(ui, id, name, art, "", selected)
+	return slot_box_ui(ui, id, name, art, "", selected, nil) == .Slot
+}
+
+Slot_Click :: enum u8 {
+	None,
+	Slot,
+	Star,
+	Lock,
+}
+
+// An installed pack's slot: the star top right, the lock below it; lock nil for a pack that can not lock.
+installed_slot :: proc(ui: ^Ui, id: clay.ElementId, name: string, art: ^sdl.Texture, selected, favourite: bool, lock: Maybe(bool)) -> Slot_Click {
+	badges := [2]Badge{{icon = .Star, on = favourite}, {icon = .Lock, on = lock.? or_else false}}
+	return slot_box_ui(ui, id, name, art, "", selected, badges[:lock == nil ? 1 : 2])
 }
 
 // The empty slot at the end of the installed list; picking it opens the install screen.
 add_slot :: proc(ui: ^Ui, id: clay.ElementId, selected: bool) -> bool {
-	return slot_box_ui(ui, id, "Install", nil, "+", selected)
+	return slot_box_ui(ui, id, "Install", nil, "+", selected, nil) == .Slot
 }
 
 // Layout pieces: pass to clay.UI()(...) and put children in the block.
@@ -121,7 +134,7 @@ scroll_offset :: proc(ui: ^Ui, id: clay.ElementId) -> clay.Vector2 {
 }
 
 @(private)
-slot_box_ui :: proc(ui: ^Ui, id: clay.ElementId, name: string, art: ^sdl.Texture, glyph: string, selected: bool) -> bool {
+slot_box_ui :: proc(ui: ^Ui, id: clay.ElementId, name: string, art: ^sdl.Texture, glyph: string, selected: bool, badges: []Badge) -> (clicked: Slot_Click) {
 	s := interact(ui, id)
 	active := s.hovered || s.focused
 	lift := ease(ui, id, active ? SLOT_LIFT : 0, LIFT_RATE)
@@ -143,6 +156,7 @@ slot_box_ui :: proc(ui: ^Ui, id: clay.ElementId, name: string, art: ^sdl.Texture
 				if glyph != "" {
 					label(glyph, PLUS_SIZE, selected ? LED : PLUS, engraved = true, face = .Display)
 				}
+				if len(badges) > 0 do clicked = badge_column(ui, id, badges)
 			}
 			if clay.UI()({
 				layout = {sizing = {clay.SizingGrow({}), clay.SizingFixed(PLATE_H)}, padding = {PLATE_PAD, PLATE_PAD, 0, 0}},
@@ -152,7 +166,25 @@ slot_box_ui :: proc(ui: ^Ui, id: clay.ElementId, name: string, art: ^sdl.Texture
 			}
 		}
 	}
-	return s.clicked
+	if clicked == .None && s.clicked do clicked = .Slot
+	return
+}
+
+// The badge buttons, stacked down the window's top right corner.
+@(private)
+badge_column :: proc(ui: ^Ui, slot: clay.ElementId, badges: []Badge) -> (clicked: Slot_Click) {
+	if clay.UI()({
+		layout = {childGap = BADGE_GAP, layoutDirection = .TopToBottom},
+		floating = {attachTo = .Parent, attachment = {.RightTop, .RightTop}, offset = {-BADGE_INSET, BADGE_INSET}},
+	}) {
+		for badge in badges {
+			badge_id := clay.ID(badge.icon == .Star ? "Star" : "Lock", slot.id)
+			s := interact(ui, badge_id, nav = false)
+			if clay.UI()({id = badge_id, layout = {sizing = {clay.SizingFixed(BADGE), clay.SizingFixed(BADGE)}}, custom = painted(Badge{badge.icon, badge.on, s.hovered})}) {}
+			if s.clicked do clicked = badge.icon == .Star ? .Star : .Lock
+		}
+	}
+	return
 }
 
 @(private)
