@@ -64,11 +64,11 @@ Two_Machines :: struct {
 	pause:    time.Duration,  // real time per tick, for transports that need it
 }
 
-two_machines_create :: proc(t: ^testing.T, stock: ^Stock_Sim, lag, jitter, loss_percent: int) -> (machines: ^Two_Machines, ok: bool) {
+two_machines_create :: proc(t: ^testing.T, stock: ^Stock_Sim, lag, jitter, loss_percent: int, seeds := [2]u64{7, 7}) -> (machines: ^Two_Machines, ok: bool) {
 	machines = new(Two_Machines)
 	for side in 0 ..< 2 {
 		machines.pipes[side] = {tick = &machines.tick, lag = lag, jitter = jitter, loss_percent = loss_percent, random = u64(side) + 11}
-		if machines.worlds[side], ok = stock_world(t, stock); !ok do return
+		if machines.worlds[side], ok = stock_world(t, stock, seeds[side]); !ok do return
 	}
 	for side in 0 ..< 2 {
 		machines.links[side] = {&machines.pipes[side], &machines.pipes[1 - side]}
@@ -159,18 +159,9 @@ session_reports_a_lasting_desync :: proc(t: ^testing.T) {
 	stock, opened := stock_sim_open(t)
 	if !opened do return
 	defer stock_sim_close(stock)
-	machines := new(Two_Machines)
+	machines, created := two_machines_create(t, stock, lag = 2, jitter = 0, loss_percent = 0, seeds = {7, 8})
 	defer two_machines_destroy(machines)
-	for side in 0 ..< 2 {
-		machines.pipes[side] = {tick = &machines.tick, lag = 2, random = u64(side) + 11}
-		err: string
-		machines.worlds[side], err = sim.create(stock.engine, stock.module, &stock.pack, stage_params(), {loadout_bytes("paul"), loadout_bytes("kazuya")}, u64(side) + 7)  // other seeds
-		if !testing.expect_value(t, err, "") do return
-	}
-	for side in 0 ..< 2 {
-		machines.links[side] = {&machines.pipes[side], &machines.pipes[1 - side]}
-		machines.sessions[side] = online.session_create(machines.worlds[side], link_transport(&machines.links[side]), side, 77, 0)
-	}
+	if !created do return
 	testing.expect(t, !two_machines_play(t, machines, 300), "the sessions finished")
 	for _ in 0 ..< 60 {  // the other machine hears the last hashes
 		machines.tick += 1

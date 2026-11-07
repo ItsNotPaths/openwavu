@@ -19,15 +19,15 @@ main :: proc() {
 	incorporate_all(dir)
 	if prep do return
 	thread.create_and_start_with_poly_data(dir, proc(dir: string) {serve_files(dir)})
-	r, ok := relay.open(relay.PORT)
+	relay_server, ok := relay.open(relay.PORT)
 	if !ok {
 		fmt.eprintfln("openwavu-server: can not listen on udp %d", relay.PORT)
 		os.exit(1)
 	}
-	defer relay.close(&r)
+	defer relay.close(&relay_server)
 	fmt.eprintfln("openwavu-server: relay on udp %d", relay.PORT)
 	stop: bool
-	relay.serve(&r, &stop)
+	relay.serve(&relay_server, &stop)
 }
 
 Rotation :: enum {

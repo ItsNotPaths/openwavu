@@ -18,21 +18,21 @@ sessions_agree_through_the_relay :: proc(t: ^testing.T) {
 	if !opened do return
 	defer stock_sim_close(stock)
 	host, port := RELAY_HOST, u16(relay.PORT)
-	r: relay.Server
+	relay_server: relay.Server
 	stop: bool
 	serving: ^thread.Thread
 	defer if serving != nil {
 		sync.atomic_store(&stop, true)
 		thread.join(serving)
 		thread.destroy(serving)
-		relay.close(&r)
+		relay.close(&relay_server)
 	}
 	if host == "" {
 		host, port = "127.0.0.1", RELAY_TEST_PORT
 		listening: bool
-		r, listening = relay.open(port)
+		relay_server, listening = relay.open(port)
 		if !testing.expect(t, listening, "the relay can not listen") do return
-		serving = thread.create_and_start_with_poly_data2(&r, &stop, relay.serve)
+		serving = thread.create_and_start_with_poly_data2(&relay_server, &stop, relay.serve)
 	}
 
 	clients: [2]^online.Relay_Client
@@ -50,9 +50,8 @@ sessions_agree_through_the_relay :: proc(t: ^testing.T) {
 		start, start_in_ns, started := online.relay_wait_start(client, 5000)
 		if !testing.expect(t, started, "a client was not paired") do return
 		testing.expect(t, start_in_ns <= u64(relay.START_DELAY_MS) * 1_000_000)
-		err: string
-		machines.worlds[start.side], err = sim.create(stock.engine, stock.module, &stock.pack, stage_params(), {loadout_bytes("paul"), loadout_bytes("kazuya")}, start.seed)
-		if !testing.expect_value(t, err, "") do return
+		created: bool
+		if machines.worlds[start.side], created = stock_world(t, stock, start.seed); !created do return
 		machines.sessions[start.side] = online.session_create(machines.worlds[start.side], online.relay_transport(client), start.side, start.token, 0)
 		seeds[start.side] = start.seed
 	}

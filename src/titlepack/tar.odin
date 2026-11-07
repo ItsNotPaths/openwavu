@@ -25,7 +25,7 @@ write_tar :: proc(dir, out_path: string) -> (err: string) {
 
 // The given files of a pack, in that order, into one tar at out_path; pack.toml is moved first.
 write_tar_of :: proc(from: Pack_Files, paths: []string, out_path: string) -> (err: string) {
-	if i, found := slice.linear_search(paths, MANIFEST); found do slice.rotate_right(paths[:i + 1], 1)
+	if index, found := slice.linear_search(paths, MANIFEST); found do slice.rotate_right(paths[:index + 1], 1)
 	part := strings.concatenate({out_path, ".part"}, context.temp_allocator)
 	out, open_err := os.open(part, {.Write, .Create, .Trunc}, os.Permissions_Read_All + {.Write_User})
 	if open_err != nil do return strings.concatenate({"cannot write ", part})

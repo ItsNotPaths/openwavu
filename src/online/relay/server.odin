@@ -20,39 +20,39 @@ Pair :: struct {
 
 PEERS_MAX :: 64
 
-open :: proc(port: u16) -> (r: Server, ok: bool) {
+open :: proc(port: u16) -> (server: Server, ok: bool) {
 	if enet.initialize() != 0 do return
 	address := enet.Address{host = enet.HOST_ANY, port = port}
-	r.host = enet.host_create(&address, PEERS_MAX, CHANNELS, 0, 0)
-	return r, r.host != nil
+	server.host = enet.host_create(&address, PEERS_MAX, CHANNELS, 0, 0)
+	return server, server.host != nil
 }
 
-close :: proc(r: ^Server) {
-	enet.host_destroy(r.host)
+close :: proc(server: ^Server) {
+	enet.host_destroy(server.host)
 	enet.deinitialize()
 }
 
 // Serves until stop is set.
-serve :: proc(r: ^Server, stop: ^bool) {
+serve :: proc(server: ^Server, stop: ^bool) {
 	event: enet.Event
 	for !sync.atomic_load(stop) {
-		if enet.host_service(r.host, &event, 100) <= 0 do continue
+		if enet.host_service(server.host, &event, 100) <= 0 do continue
 		#partial switch event.type {
-		case .CONNECT:    arrive(r, event.peer)
+		case .CONNECT:    arrive(server, event.peer)
 		case .RECEIVE:    forward(event.peer, event.packet, event.channelID)
-		case .DISCONNECT: leave(r, event.peer)
+		case .DISCONNECT: leave(server, event.peer)
 		}
 	}
 }
 
 @(private = "file")
-arrive :: proc(r: ^Server, peer: ^enet.Peer) {
-	if r.waiting == nil {
-		r.waiting = peer
+arrive :: proc(server: ^Server, peer: ^enet.Peer) {
+	if server.waiting == nil {
+		server.waiting = peer
 		return
 	}
-	pair_players(r.waiting, peer)
-	r.waiting = nil
+	pair_players(server.waiting, peer)
+	server.waiting = nil
 }
 
 @(private = "file")
@@ -81,8 +81,8 @@ forward :: proc(from: ^enet.Peer, packet: ^enet.Packet, channel: u8) {
 
 // The other player's session ends on its own after the session timeout.
 @(private = "file")
-leave :: proc(r: ^Server, peer: ^enet.Peer) {
-	if r.waiting == peer do r.waiting = nil
+leave :: proc(server: ^Server, peer: ^enet.Peer) {
+	if server.waiting == peer do server.waiting = nil
 	pair := (^Pair)(peer.data)
 	if pair == nil do return
 	for player in pair.players do player.data = nil

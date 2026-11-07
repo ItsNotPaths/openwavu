@@ -122,5 +122,5 @@ check_stock_pack :: proc(t: ^testing.T) {
 	if !testing.expect(t, has_front, "no front") do return
 	front, front_err := titlepack.read_front(string(front_text), context.temp_allocator)
 	testing.expect_value(t, front_err, "")
-	for e in front.elements do if e.file != "" do testing.expect(t, e.file in files.files, e.file)
+	for element in front.elements do if element.file != "" do testing.expect(t, element.file in files.files, element.file)
 }

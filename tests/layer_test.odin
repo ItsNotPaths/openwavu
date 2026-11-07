@@ -2,6 +2,7 @@ package tests
 
 import "core:fmt"
 import "core:os"
+import "core:strconv"
 import "core:strings"
 import "core:testing"
 import "../src/content"
@@ -83,7 +84,9 @@ pack_layers_over_its_stock_base :: proc(t: ^testing.T) {
 	testing.expect_value(t, cell(patched, fmt.tprintf("SELECT attack_kind FROM move WHERE key = '%s'", move)), "mid_unblockable")
 	testing.expect_value(t, cell(patched, fmt.tprintf("SELECT rowid FROM move WHERE key = '%s'", move)), move_spot)
 	testing.expect_value(t, cell(patched, fmt.tprintf("SELECT group_concat(value) FROM pushback_curve WHERE list = '%s'", list)), "999")
-	expected_rows := fmt.tprintf("%d", parse_count(rows_before) - parse_count(list_before) + 1)
+	rows, _ := strconv.parse_int(rows_before)
+	list_rows, _ := strconv.parse_int(list_before)
+	expected_rows := fmt.tprintf("%d", rows - list_rows + 1)
 	testing.expect_value(t, cell(patched, "SELECT count(*) FROM pushback_curve"), expected_rows)
 
 	outsider := fmt.tprintf("%s DELETE FROM move WHERE key != '%s'; UPDATE move SET key = 'someone_else/new_move';", empty_tables_except(stock_db, "move"), move)
@@ -92,10 +95,4 @@ pack_layers_over_its_stock_base :: proc(t: ^testing.T) {
 	refused, refused_opened := content.open_pack(foreign_tar)
 	if refused_opened do content.close_pack(&refused)
 	testing.expect(t, !refused_opened, "a patch adding a key outside its namespace opened")
-}
-
-parse_count :: proc(text: string) -> int {
-	count := 0
-	for character in text do count = count * 10 + int(character - '0')
-	return count
 }

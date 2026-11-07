@@ -63,10 +63,10 @@ stock_sim_close :: proc(stock: ^Stock_Sim) {
 	free(stock)
 }
 
-// Paul vs Kazuya on Dragon's Nest, seed 7.
-stock_world :: proc(t: ^testing.T, stock: ^Stock_Sim) -> (w: ^sim.World, ok: bool) {
+// Paul vs Kazuya on Dragon's Nest.
+stock_world :: proc(t: ^testing.T, stock: ^Stock_Sim, seed: u64 = 7) -> (w: ^sim.World, ok: bool) {
 	err: string
-	w, err = sim.create(stock.engine, stock.module, &stock.pack, stage_params(), {loadout_bytes("paul"), loadout_bytes("kazuya")}, 7)
+	w, err = sim.create(stock.engine, stock.module, &stock.pack, stage_params(), {loadout_bytes("paul"), loadout_bytes("kazuya")}, seed)
 	return w, testing.expect_value(t, err, "")
 }
 
