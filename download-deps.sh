@@ -95,6 +95,9 @@ if [ ! -f vendor/clay/clay.h ]; then
 	curl -fL --retry 3 "https://github.com/nicbarker/clay/archive/refs/tags/$CLAY.tar.gz" | tar xz -C "$clay_dir" --strip-components=1
 	mkdir -p vendor/clay
 	cp "$clay_dir/clay.h" "$clay_dir/bindings/odin/clay-odin/clay.odin" vendor/clay/
+	# Clay keeps 10 clipped elements; every slot's name plate clips.
+	sed -i 's/ScrollContainerDataInternalArray_Allocate_Arena(10, arena)/ScrollContainerDataInternalArray_Allocate_Arena(512, arena)/' vendor/clay/clay.h
+	grep -q 'Allocate_Arena(512, arena)' vendor/clay/clay.h || { echo "clay.h: clip limit patch did not apply" >&2; exit 1; }
 	rm -rf "$clay_dir"
 	echo "vendor/clay: $CLAY"
 fi
