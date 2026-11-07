@@ -29,9 +29,13 @@ open_pack :: proc(path: string) -> (p: Pack, ok: bool) {
 	}
 	for layer in layers do for file in layer.files {
 		if !strings.has_suffix(file, DB_EXTENSION + PATCH_EXTENSION) do continue
-		target := p.dbs[strings.trim_suffix(file, PATCH_EXTENSION)] or_return
 		manifest := titlepack.read_file(layer^, titlepack.MANIFEST) or_return
 		tp := titlepack.read_titlepack(string(manifest), context.temp_allocator) or_return
+		target, has_target := p.dbs[strings.trim_suffix(file, PATCH_EXTENSION)]
+		if !has_target {
+			fmt.eprintfln("openwavu: %s %s: no database below to patch", tp.id, file)
+			return
+		}
 		patch := titlepack.read_file(layer^, file) or_return
 		if err := apply_patch(target, patch, tp.id); err != "" {
 			fmt.eprintfln("openwavu: %s %s: %s", tp.id, file, err)
