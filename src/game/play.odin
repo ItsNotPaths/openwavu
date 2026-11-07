@@ -44,7 +44,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, 
 		for intent in entry_state.intents do imports.lobby_intent_destroy(intent, entry_state.allocator)
 		delete(entry_state.intents)
 	}
-	lobbies := Lobbies{host = relay_host(settings.network), identity = identity, name = strings.to_string(settings.name)}
+	lobbies := Lobbies{host = lobby_host(settings.network), identity = identity, name = strings.to_string(settings.name)}
 	defer delete(lobbies.host)
 	defer lobbies_close(&lobbies)
 	entry, err := start_entry(&codes, tp.main, running, &entry_state)

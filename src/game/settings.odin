@@ -82,8 +82,8 @@ network_url :: proc(network: string) -> string {
 	return strings.contains(network, "://") ? network : strings.concatenate({"https://serve.", network}, context.temp_allocator)
 }
 
-// The network's relay host: serve.<network>, or the host of a full URL.
-relay_host :: proc(network: string, allocator := context.allocator) -> string {
+// The network's lobby server: serve.<network>, or the host of a full URL.
+lobby_host :: proc(network: string, allocator := context.allocator) -> string {
 	_, has_scheme, rest := strings.partition(network, "://")
 	if has_scheme == "" do return strings.concatenate({"serve.", network}, allocator)
 	end := strings.index_any(rest, ":/")
