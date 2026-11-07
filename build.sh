@@ -106,6 +106,7 @@ odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict
 # make those the vendored static libs.
 sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf -Lvendor/enet -Lvendor/curl"
 odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style "$sdl_libs"
+odin build src/tools/bot -out:build/openwavu-bot "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
 if [ "$run_tests" = 1 ]; then
