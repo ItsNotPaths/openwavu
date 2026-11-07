@@ -11,6 +11,7 @@ import "core:slice"
 import "core:strconv"
 import "core:strings"
 import "core:thread"
+import "core:time"
 import "../titlepack"
 
 // The files role (docs/network.md): `ls` is the store. A tar dropped in the packs folder is incorporated: renamed to
@@ -19,6 +20,7 @@ import "../titlepack"
 PACKS_DIR :: "/var/lib/openwavu/packs"
 FILES_ENDPOINT :: "127.0.0.1:9280"  // Apache proxies openwavu.paths.place here
 REQUEST_MAX :: 8192
+REQUEST_TIMEOUT :: 30 * time.Second  // a silent client frees its thread after this
 
 // (hole network-files :tags server) the files role has no /release /regions /submit /note, no review CLI, and serves plain HTTP only (TLS is Apache's).
 
@@ -113,10 +115,12 @@ listing :: proc(dir: string) -> (packs: []titlepack.Listed) {
 		stem := strings.trim_suffix(name, ".sha256")
 		id, at, version := strings.partition(stem, "@")
 		if at == "" do continue
+		sums, read_err := os.read_entire_file(in_folder(dir, name), context.temp_allocator)
+		if read_err != nil do continue
 		pack := titlepack.Listed{id = id, version = version}
-		pack.sha256, pack.size = listed_file(dir, name, strings.concatenate({stem, ".tar"}, context.temp_allocator))
-		pack.front_sha256, pack.front_size = listed_file(dir, name, strings.concatenate({stem, ".front.tar"}, context.temp_allocator))
-		pack.thumb_sha256, pack.thumb_size = listed_file(dir, name, strings.concatenate({stem, ".thumb.png"}, context.temp_allocator))
+		pack.sha256, pack.size = listed_file(dir, string(sums), strings.concatenate({stem, ".tar"}, context.temp_allocator))
+		pack.front_sha256, pack.front_size = listed_file(dir, string(sums), strings.concatenate({stem, ".front.tar"}, context.temp_allocator))
+		pack.thumb_sha256, pack.thumb_size = listed_file(dir, string(sums), strings.concatenate({stem, ".thumb.png"}, context.temp_allocator))
 		if pack.sha256 != "" && pack.front_sha256 != "" do append(&found, pack)
 	}
 	slice.sort_by(found[:], proc(a, b: titlepack.Listed) -> bool {
@@ -126,12 +130,10 @@ listing :: proc(dir: string) -> (packs: []titlepack.Listed) {
 	return found[:]
 }
 
-// A file's hash from the sidecar, and its size on disk.
+// A file's hash from the sidecar's text, and its size on disk.
 @(private = "file")
-listed_file :: proc(dir, sidecar, file: string) -> (sha256: string, size: i64) {
-	text, err := os.read_entire_file(in_folder(dir, sidecar), context.temp_allocator)
-	if err != nil do return
-	lines := string(text)
+listed_file :: proc(dir, sums, file: string) -> (sha256: string, size: i64) {
+	lines := sums
 	for line in strings.split_lines_iterator(&lines) {
 		sum, _, name := strings.partition(line, "  ")
 		if name != file do continue
@@ -175,6 +177,8 @@ serve_files :: proc(dir: string) -> (ok: bool) {
 answer :: proc(client: net.TCP_Socket, dir: string) {
 	defer net.close(client)
 	defer free_all(context.temp_allocator)
+	net.set_option(client, .Receive_Timeout, REQUEST_TIMEOUT)
+	net.set_option(client, .Send_Timeout, REQUEST_TIMEOUT)
 	request: [REQUEST_MAX]byte
 	size := 0
 	for size < len(request) && !strings.contains(string(request[:size]), "\r\n\r\n") {
@@ -234,7 +238,8 @@ send_pack_file :: proc(client: net.TCP_Socket, dir, name: string) {
 		return
 	}
 	defer virtual.unmap_file(data)
-	head := fmt.tprintf("HTTP/1.1 200 OK\r\nContent-Type: application/x-tar\r\nContent-Length: %d\r\nCache-Control: public, max-age=31536000, immutable\r\nConnection: close\r\n\r\n", len(data))
+	content_type := strings.has_suffix(name, ".png") ? "image/png" : "application/x-tar"
+	head := fmt.tprintf("HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: public, max-age=31536000, immutable\r\nConnection: close\r\n\r\n", content_type, len(data))
 	if _, send_err := net.send_tcp(client, transmute([]byte)head); send_err == nil do net.send_tcp(client, data)
 }
 
