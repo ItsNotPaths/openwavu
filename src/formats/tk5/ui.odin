@@ -53,3 +53,45 @@ SELECT_RENDERS :: [?]Select_Render{
 	{"raven", false}, {"raven", true}, {"feng", false}, {"armor_king", true}, {"armor_king", false},
 	{"lili", false}, {"dragunov", false}, {"dragunov", true}, {"jinpachi", false},
 }
+
+// Art inside a screen that belongs to one fighter or stage, named by eye: image ids <kind>/<id> for <screen>/<first + i>.
+Art_Names :: struct {
+	screen: string,
+	first:  int,
+	kind:   string,
+	ids:    []string,
+}
+
+// The fighters in the order of their 3-letter tags (AMK ANN ASK ...), the order of most per-fighter art.
+@(private = "file")
+TAG_ORDER := []string{
+	"armor_king", "anna", "asuka", "baek", "bruce", "bryan", "christie", "dragunov", "devil_jin", "eddy", "feng",
+	"ganryu", "heihachi", "hwoarang", "jack5", "jin", "jinpachi", "julia", "kazuya", "king", "kuma", "law", "lee",
+	"lei", "lili", "marduk", "mokujin", "nina", "panda", "paul", "raven", "roger", "steve", "wang", "xiaoyu",
+	"yoshimitsu",
+}
+
+ART_NAMES := [?]Art_Names{
+	{"select", 115, "name", TAG_ORDER},
+	{"profiles", 0, "profile", {
+		"armor_king", "anna", "asuka", "baek", "bruce", "bryan", "christie", "dragunov", "devil_jin", "eddy", "feng",
+		"ganryu", "hwoarang", "jack5", "jin", "jinpachi", "julia", "kazuya", "king", "law", "lee", "lei", "lili",
+		"marduk", "mokujin", "nina", "paul", "raven", "roger", "steve", "wang", "xiaoyu", "yoshimitsu",
+	}},
+	// The select grid's order; Panda has no face.
+	{"select", 152, "face", {
+		"random", "eddy", "baek", "mokujin", "devil_jin", "raven", "asuka", "ganryu", "feng", "wang", "armor_king",
+		"jinpachi", "anna", "marduk", "law", "hwoarang", "king", "lili", "dragunov", "heihachi", "christie", "paul",
+		"jack5", "bruce", "roger", "lei", "nina", "steve", "kazuya", "xiaoyu", "jin", "lee", "julia", "yoshimitsu",
+		"bryan", "kuma",
+	}},
+	// Matched by look against the stage models; stage_15 and ground_zero are guesses. stage_14 and final_stage have none.
+	{"select", 190, "stage", {
+		"dragons_nest", "burning_temple", "waterfall", "urban_jungle", "city_at_sunset", "moonlit_wilderness",
+		"pirates_cove", "secret_garden", "cathedral", "acid_rain", "polar_paradise", "hells_gate", "the_final_frontier",
+		"poolside", "stage_15", "western_gate", "autumn_temple", "meteor_shower", "ghetto_pit", "city_lights",
+		"great_plains", "galleon", "all_hallows_eve", "winter_palace", "festival", "aurora_australis", "heavens_gate",
+		"space_colony", "pool_party", "wolves_den", "playroom", "industrial_complex", "ominous_mist", "inferno",
+		"ground_zero",
+	}},
+}

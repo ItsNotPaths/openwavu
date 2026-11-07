@@ -14,6 +14,8 @@ GAMEPLAY_MODULE :: #load("../../../build/modules/gameplay.wasm", string)
 GAMERENDER_MODULE :: #load("../../../build/modules/gamerender.wasm", string)
 APP_MODULE :: #load("../../../build/modules/app.wasm", string)
 STOCK_FRONT :: #load("../../../modules/tk5/front.owf", string)
+DISPLAY_FONT :: #load("../../../vendor/fonts/Michroma-Regular.ttf", string)  // the stock menus' labels
+DISPLAY_FONT_LICENSE :: #load("../../../vendor/fonts/Michroma-OFL.txt", string)
 STOCK_MANIFEST :: #load("../../../modules/tk5/pack.toml", string)  // without version and [import], which an import adds
 
 // The game's stock title pack: the folder packs_dir/tekken5dr/, built beside it and renamed in when whole, then its
@@ -45,7 +47,7 @@ build_pack :: proc(inputs: []string, packs_dir: string, progress: ^Progress = ni
 	return
 }
 
-// pack.toml, the front and the modules: the files a pack needs at its root.
+// pack.toml, the front, the modules and the menu font: the files a pack needs at its root.
 write_pack_files :: proc(stage: string, inputs: []string) -> (err: string) {
 	toml := strings.builder_make(context.temp_allocator)
 	fmt.sbprintfln(&toml, "version = %s", quote(IMPORTER_VERSION))
@@ -64,7 +66,10 @@ write_pack_files :: proc(stage: string, inputs: []string) -> (err: string) {
 		{"gameplay.wasm", GAMEPLAY_MODULE},
 		{"gamerender.wasm", GAMERENDER_MODULE},
 		{"app.wasm", APP_MODULE},
+		{"fonts/michroma.ttf", DISPLAY_FONT},
+		{"fonts/michroma-ofl.txt", DISPLAY_FONT_LICENSE},
 	}
+	if !make_dir(join(stage, "fonts")) do return "cannot create fonts"
 	for f in files {
 		if os.write_entire_file(join(stage, f.name), f.text) != nil do return fmt.aprintf("cannot write %s", f.name)
 	}

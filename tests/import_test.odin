@@ -54,7 +54,10 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 		data, read_err := os.read_entire_file(fmt.tprintf("build/test_packs/tekken5dr/%s", file), context.temp_allocator)
 		if !testing.expect(t, read_err == nil && len(data) > 42 && string(data[:4]) == "fLaC", file) do break
 	}
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 1773)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 1913)  // 1773 files, 140 names for one fighter's or stage's art
+	// The stock menus find art by stage and character id.
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'stage/*' AND substr(id, 7) NOT IN (SELECT id FROM stage)"), 0)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'face/*' AND substr(id, 6) NOT IN (SELECT id FROM character UNION VALUES ('random'), ('mokujin'))"), 0)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select/*'"), 240)  // unlit menu entries
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_lit/*'"), 240)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_renders/*'"), 54)

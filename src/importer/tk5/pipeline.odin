@@ -535,6 +535,13 @@ import_images :: proc(im: ^Import) {
 		}
 		for section, i in parts do write_art(im, fmt.tprintf("%s/%03d", art.name, i), section)
 	}
+	for names in formats.ART_NAMES {
+		for id, i in names.ids {
+			defer free_all(context.temp_allocator)
+			file := fmt.tprintf("ui/%s/%03d.png", names.screen, names.first + i)
+			if os.exists(join(im.root, file)) do db.insert(&im.w, "image", fmt.tprintf("%s/%s", names.kind, id), file)
+		}
+	}
 	for font in formats.FONTS {
 		defer step(im)
 		defer free_all(context.temp_allocator)
