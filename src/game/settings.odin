@@ -58,11 +58,11 @@ network_url :: proc(network: string) -> string {
 }
 
 // The network's relay host: serve.<network>, or the host of a full URL.
-relay_host :: proc(network: string) -> string {
+relay_host :: proc(network: string, allocator := context.allocator) -> string {
 	_, has_scheme, rest := strings.partition(network, "://")
-	if has_scheme == "" do return strings.concatenate({"serve.", network}, context.temp_allocator)
+	if has_scheme == "" do return strings.concatenate({"serve.", network}, allocator)
 	end := strings.index_any(rest, ":/")
-	return end < 0 ? rest : rest[:end]
+	return strings.clone(end < 0 ? rest : rest[:end], allocator)
 }
 
 // Stars or unstars a tile.

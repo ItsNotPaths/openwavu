@@ -75,7 +75,9 @@ main :: proc() {
 
 		if pack, picked := l.play.?; picked {
 			l.play = nil
-			l.quit = play(&r, l.packs[pack], l.settings.frame_cap, l.online ? relay_host(l.settings.network) : "")
+			host := l.online ? relay_host(l.settings.network) : ""
+			l.quit = play(&r, l.packs[pack], l.settings.frame_cap, host)
+			delete(host)
 		}
 	}
 }
