@@ -102,3 +102,38 @@ stock_sim_plays_a_match :: proc(t: ^testing.T) {
 	T5_VIEW_VERSION :: 4  // modules/tk5/view.h, its first field
 	testing.expect(t, len(view) >= 4 && (^u32le)(raw_data(view))^ == T5_VIEW_VERSION, "the view starts with its version")
 }
+
+// The lobby's rule params reach the stock sim: at 1 health every clean hit ends a round, and at 0% damage no hit
+// does, so the same bots play much longer.
+@(test)
+stock_sim_reads_rule_params :: proc(t: ^testing.T) {
+	stock, opened := stock_sim_open(t)
+	if !opened do return
+	defer stock_sim_close(stock)
+	fragile := stage_params()
+	fragile["start_health"] = "1"
+	fragile_frames, fragile_ended := frames_to_match_end(t, stock, fragile, 40_000)
+	if !testing.expect(t, fragile_ended, "the match at 1 health did not end") do return
+	unhurt := stage_params()
+	unhurt["start_health"] = "1"
+	unhurt["damage_percent"] = "0"
+	_, unhurt_ended := frames_to_match_end(t, stock, unhurt, 2 * fragile_frames)
+	testing.expect(t, !unhurt_ended, "the match at 0% damage ended as fast as one with damage")
+}
+
+// Bots play until the match ends or frames_max passes.
+frames_to_match_end :: proc(t: ^testing.T, stock: ^Stock_Sim, params: map[string]string, frames_max: int) -> (frames: int, ended: bool) {
+	w, err := sim.create(stock.engine, stock.module, &stock.pack, params, {loadout_bytes("paul"), loadout_bytes("kazuya")}, 7)
+	if !testing.expect_value(t, err, "") do return
+	defer sim.destroy(w)
+	for ; frames < frames_max; frames += 1 {
+		pads: [2]sim.Input
+		for side in 0 ..< 2 {
+			pads[side], err = sim.bot_pad(w, side)
+			if !testing.expect_value(t, err, "") do return
+		}
+		if !testing.expect_value(t, sim.step(w, pads), "") do return
+		for event in w.inputs.events do if event.kind == .Match_End do return frames, true
+	}
+	return
+}

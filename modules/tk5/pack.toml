@@ -10,3 +10,24 @@ presenter = "gamerender.wasm"
 kind = "text"
 default = "dragons_nest"
 expose = true
+
+[params.start_health]
+kind = "number"
+default = 180
+min = 1
+max = 999
+expose = true
+
+[params.damage_percent]
+kind = "number"
+default = 100
+min = 0
+max = 1000
+expose = true
+
+[params.pushback_percent]
+kind = "number"
+default = 100
+min = 0
+max = 1000
+expose = true

@@ -573,7 +573,7 @@ static void take_pushback(T5World *w, T5Fighter *f, T5Ref pushback_ref, int16_t 
     f->pushback = pushback_ref;
     f->pushback_curve = t5_ref(pushback_ref.set, pushback->curve);
     f->pushback_frames = (int16_t)pushback->frames;
-    f->pushback_distance = (float)pushback->distance;
+    f->pushback_distance = t5_hit_pushback_distance(w, pushback);
     f->pushback_curve_frames = (int16_t)pushback->curve_frames;
     f->pushback_angle = angle;
     f->pushback_angle_start = angle;

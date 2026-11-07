@@ -139,6 +139,8 @@ typedef struct {
     bool untimed;          // the clock stands still
     T5DrawRule draw;  // what a draw does (see T5DrawRule)
     T5Who tie_winner;      // the side that takes a match tied on wins
+    T5Ratio damage_scale;    // of every hit's damage
+    T5Ratio pushback_scale;  // of every hit's pushback distance
 } T5MatchRules;
 
 // Result bits of a round.

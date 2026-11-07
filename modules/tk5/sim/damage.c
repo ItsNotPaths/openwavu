@@ -42,21 +42,21 @@ static int32_t self_damage_points(T5SelfDamage rule, int16_t move_damage) {
     return move_damage;
 }
 
-// The self damage of the defender's own move: a hurt costs health, a heal gives it back.
-static int32_t own_self_damage(const T5Fighter *defender, bool as_hit) {
+// The self damage of the defender's own move: a hurt costs health (times the damage scale), a heal gives it back.
+static int32_t own_self_damage(const T5World *w, const T5Fighter *defender, bool as_hit) {
     T5SelfDamage own = defender->self_damage;
     if (own.as_hit != as_hit) return 0;  // wrong kind (hit or plain): no self damage
-    if (own.effect == SELF_DAMAGE_HURT) return self_damage_points(own, defender->damage);  // hurt: lose health
+    if (own.effect == SELF_DAMAGE_HURT) return t5_ratio_of(self_damage_points(own, defender->damage), w->rules.damage_scale);
     if (own.effect == SELF_DAMAGE_HEAL) return -self_damage_points(own, defender->damage);  // heal: give health back
     return 0;
 }
 
 // The self damage the defender takes, as a hit or plain: its own move's, and the opponent's when it is thrown.
-static int32_t self_damage(const T5Fighter *defender, const T5Fighter *opponent, bool as_hit) {
-    int32_t points = own_self_damage(defender, as_hit);
+static int32_t self_damage(const T5World *w, const T5Fighter *defender, const T5Fighter *opponent, bool as_hit) {
+    int32_t points = own_self_damage(w, defender, as_hit);
     T5SelfDamage other = opponent->self_damage;
     if (t5_thrown(defender->throw.chain) && other.as_hit == as_hit && other.effect == SELF_DAMAGE_HURT_THROWN)
-        points += self_damage_points(other, opponent->damage);
+        points += t5_ratio_of(self_damage_points(other, opponent->damage), w->rules.damage_scale);
     return points;
 }
 
@@ -223,7 +223,8 @@ static int32_t hits_damage(const T5World *w, T5Fighter *defender) {
         const T5Fighter *attacker = t5_object(w, record->attacker);
         record->base_damage = (uint16_t)attacker->damage;  // remember the move's own damage
         record->final_damage =  // add what this hit does to the damage so far
-            (int16_t)(record->final_damage + hit_damage(w, defender, attacker, record->flags, attacker->damage));
+            (int16_t)(record->final_damage +
+                      t5_ratio_of(hit_damage(w, defender, attacker, record->flags, attacker->damage), w->rules.damage_scale));
         t5_hit_result(w, defender, record);  // copy damage and guard results to the fighters
         defender->damage_raw_frame = (int16_t)(defender->damage_raw_frame + record->base_damage);
         total += record->final_damage;  // sum of the final damage taken this frame
@@ -277,8 +278,8 @@ static void hit_cues(T5World *w, const T5Fighter *defender) {
 // Objects (extras) keep their health.
 void t5_damage_resolve(T5World *w, T5Fighter *defender) {
     T5Fighter *opponent = t5_object(w, defender->opponent);  // the opponent: source of throw self damage
-    int32_t self_as_hit = self_damage(defender, opponent, true);  // self damage that counts as a hit
-    int32_t self_total = self_as_hit + self_damage(defender, opponent, false);  // all self damage, hit and plain
+    int32_t self_as_hit = self_damage(w, defender, opponent, true);  // self damage that counts as a hit
+    int32_t self_total = self_as_hit + self_damage(w, defender, opponent, false);  // all self damage, hit and plain
     defender->zero_damage_hit = 0;  // reset the zero damage mark
     T5Fighter *attacker = classify_records(w, defender, opponent);  // classify hits; the attacker is the last live one
     if (defender->hit_taken != 0) {  // the defender took a hit this frame

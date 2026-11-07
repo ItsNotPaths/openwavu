@@ -506,6 +506,9 @@ static inline const T5Move *t5_move_at(const T5World *w, T5Ref ref) {
 static inline const T5Pushback *t5_pushback_at(const T5World *w, T5Ref ref) {
     return ref.index < 0 ? NULL : &t5_set(w, ref.set)->pushbacks[ref.index];  // no pushback for a missing ref
 }
+static inline float t5_hit_pushback_distance(const T5World *w, const T5Pushback *pushback) {
+    return (float)t5_ratio_of(pushback->distance, w->rules.pushback_scale);
+}
 static inline const T5Anim *t5_anim_at(const T5World *w, T5Ref move) {  // the anim of a move
     return t5_fighter_anim(w->data[move.set], t5_move_at(w, move)->anim);
 }

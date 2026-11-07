@@ -60,7 +60,8 @@ const T5MatchFlow T5_STANDARD_MATCH = {
     },
 };
 
-const T5MatchRules T5_STANDARD_RULES = {.wins_needed = DEFAULT_WINS_NEEDED, .round_time = DEFAULT_ROUND_TIME, .tie_winner = T5_SIDE_1};
+const T5MatchRules T5_STANDARD_RULES = {.wins_needed = DEFAULT_WINS_NEEDED, .round_time = DEFAULT_ROUND_TIME, .tie_winner = T5_SIDE_1,
+                                       .damage_scale = {1, 1}, .pushback_scale = {1, 1}};
 
 enum { PERFECT_PERCENT = 100, CLOSE_WIN_PERCENT = 5 };
 

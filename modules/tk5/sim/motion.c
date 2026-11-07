@@ -218,7 +218,7 @@ void t5_juggle_launch(const T5World *w, T5Fighter *defender, const T5Reaction *r
         defender->pushback_distance = 0.0f;
         if (pushback->distance != 0) {  // the pushback has a distance
             defender->pushback_frames = (int16_t)pushback->frames;  // take its frames
-            defender->pushback_distance = (float)pushback->distance;  // and its distance
+            defender->pushback_distance = t5_hit_pushback_distance(w, pushback);  // and its distance
         }
     } else {  // no reaction list: generic launch
         defender->pushback_curve = t5_ref(T5_SET_DEFAULT_PUSHBACK, 0);  // default pushback curve

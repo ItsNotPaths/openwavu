@@ -13,7 +13,7 @@
 enum {
     MODE_VERSUS = 2,           // T5World.mode of a versus match
     BATTLE_FIGHT = 4,          // T5World.battle_state while fighting: every start move cancel (intros, win poses) asks for it
-    START_HEALTH = 180 << 16,  // 16.16 fixed point; the stock match setup is not ported (hole round-match-setup)
+    START_HEALTH = 180,        // health points; the start_health param's fallback
 };
 static const float STAGE_DEPTH = 10000.0f;  // mm: past it the arena pass counts a fighter as out of range
 
@@ -34,7 +34,7 @@ static void fighter_init(T5World *w, T5Fighter *f, uint32_t side) {
     f->slot = (uint16_t)side;
     f->side_index = (int16_t)side;
     f->opponent = f->target = (int16_t)(1 - side);
-    f->health = f->max_health = START_HEALTH;
+    f->health = f->max_health = (int32_t)ow_param(OW_STR("start_health"), START_HEALTH) << 16;  // 16.16 fixed point
     f->chara = picked->chara;
     f->chara_40 = picked->model;
     f->body = t5_motbin_body(&data->moves);
@@ -60,6 +60,8 @@ void t5_match_begin(uint64_t seed) {
     w->limb_env.floor_origin = true;
     w->flow = &T5_STANDARD_MATCH;
     w->rules = T5_STANDARD_RULES;
+    w->rules.damage_scale = (T5Ratio){(int32_t)ow_param(OW_STR("damage_percent"), 100), 100};
+    w->rules.pushback_scale = (T5Ratio){(int32_t)ow_param(OW_STR("pushback_percent"), 100), 100};
     t5_hooks = t5_default_hooks;
     m->view_normal[0] = -1;  // the camera on -x: side 1, at -z, is on the left
     m->view_normal[1] = 0;
