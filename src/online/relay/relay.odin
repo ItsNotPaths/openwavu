@@ -41,3 +41,38 @@ start_decode :: proc(message: []byte) -> (start: Start, ok: bool) {
 packet_token :: proc(packet: []byte) -> (token: u32, ok: bool) {
 	return endian.get_u32(packet, .Little)
 }
+
+// Sent by one player to the other on the control channel, through the relay: what both sims start from. A stand-in
+// for the lobby's match start (hole server-lobby).
+Setup :: struct {
+	sim:      string,  // the mode's sim module, a path in the pack
+	params:   string,  // "name=value name=value"
+	loadouts: [2][]byte,
+}
+
+// Each part as a u16 length and its bytes.
+setup_encode :: proc(setup: Setup, allocator := context.allocator) -> (message: []byte) {
+	parts := [4][]byte{transmute([]byte)setup.sim, transmute([]byte)setup.params, setup.loadouts[0], setup.loadouts[1]}
+	size := 0
+	for part in parts do size += 2 + len(part)
+	message = make([]byte, size, allocator)
+	at := 0
+	for part in parts {
+		endian.put_u16(message[at:], .Little, u16(len(part)))
+		at += 2 + copy(message[at + 2:], part)
+	}
+	return
+}
+
+// The parts point into message.
+setup_decode :: proc(message: []byte) -> (setup: Setup, ok: bool) {
+	parts: [4][]byte
+	at := 0
+	for &part in parts {
+		size := endian.get_u16(message[at:], .Little) or_return
+		if at + 2 + int(size) > len(message) do return
+		part = message[at + 2:][:size]
+		at += 2 + int(size)
+	}
+	return {string(parts[0]), string(parts[1]), {parts[2], parts[3]}}, at == len(message)
+}

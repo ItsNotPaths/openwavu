@@ -6,7 +6,7 @@ import "core:sync"
 import enet "vendor:ENet"
 
 // The bare relay (ws.md Workstream E): players are paired in the order they connect, and each pair's session packets
-// are forwarded to the other player. Runs no pack code.
+// and control messages are forwarded to the other player. Runs no pack code.
 Server :: struct {
 	host:    ^enet.Host,
 	waiting: ^enet.Peer,  // connected, not yet paired
@@ -72,11 +72,15 @@ pair_players :: proc(first, second: ^enet.Peer) {
 forward :: proc(from: ^enet.Peer, packet: ^enet.Packet, channel: u8) {
 	defer enet.packet_destroy(packet)
 	pair := (^Pair)(from.data)
-	if pair == nil || channel != CHANNEL_SESSION do return
+	if pair == nil || channel >= CHANNELS do return
 	bytes := packet.data[:packet.dataLength]
-	if token, ok := packet_token(bytes); !ok || token != pair.token do return
+	flags := enet.PacketFlags{.RELIABLE}
+	if channel == CHANNEL_SESSION {
+		if token, ok := packet_token(bytes); !ok || token != pair.token do return
+		flags = {.UNSEQUENCED}
+	}
 	to := pair.players[0] == from ? pair.players[1] : pair.players[0]
-	enet.peer_send(to, CHANNEL_SESSION, enet.packet_create(raw_data(bytes), len(bytes), {.UNSEQUENCED}))
+	enet.peer_send(to, channel, enet.packet_create(raw_data(bytes), len(bytes), flags))
 }
 
 // The other player's session ends on its own after the session timeout.

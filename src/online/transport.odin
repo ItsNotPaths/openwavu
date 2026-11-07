@@ -1,5 +1,6 @@
 package online
 
+import "core:slice"
 import "core:strings"
 import enet "vendor:ENet"
 import "relay"
@@ -47,18 +48,31 @@ relay_disconnect :: proc(client: ^Relay_Client) {
 // Waits for the server to pair this player. start_in_ns: from now until frame 0, the server's delay less half the
 // round trip it took to arrive.
 relay_wait_start :: proc(client: ^Relay_Client, timeout_ms: u32) -> (start: relay.Start, start_in_ns: u64, ok: bool) {
+	message := relay_receive_control(client, timeout_ms) or_return
+	start = relay.start_decode(message) or_return
+	half_trip_ms := min(client.server.roundTripTime / 2, start.delay_ms)
+	return start, u64(start.delay_ms - half_trip_ms) * 1_000_000, true
+}
+
+// The next control message, from the server or the paired player, in the temp allocator.
+relay_receive_control :: proc(client: ^Relay_Client, timeout_ms: u32) -> (message: []byte, ok: bool) {
 	event: enet.Event
 	for enet.host_service(client.host, &event, timeout_ms) > 0 {
 		if event.type == .DISCONNECT do return
 		if event.type != .RECEIVE do continue
-		if event.channelID == relay.CHANNEL_CONTROL do start, ok = relay.start_decode(event.packet.data[:event.packet.dataLength])
-		enet.packet_destroy(event.packet)
-		if ok {
-			half_trip_ms := min(client.server.roundTripTime / 2, start.delay_ms)
-			return start, u64(start.delay_ms - half_trip_ms) * 1_000_000, true
+		if event.channelID == relay.CHANNEL_CONTROL {
+			message, ok = slice.clone(event.packet.data[:event.packet.dataLength], context.temp_allocator), true
 		}
+		enet.packet_destroy(event.packet)
+		if ok do return
 	}
 	return
+}
+
+// To the paired player, through the relay.
+relay_send_control :: proc(client: ^Relay_Client, message: []byte) {
+	enet.peer_send(client.server, relay.CHANNEL_CONTROL, enet.packet_create(raw_data(message), len(message), {.RELIABLE}))
+	enet.host_flush(client.host)
 }
 
 relay_transport :: proc(client: ^Relay_Client) -> Transport {
