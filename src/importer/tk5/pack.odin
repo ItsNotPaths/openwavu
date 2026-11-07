@@ -11,6 +11,7 @@ STOCK_PACK :: PACK_ID  // a folder: stock packs are built here and never sent, s
 TITLE :: "Tekken 5: Dark Resurrection"
 
 // The stock modules build.sh made from modules/tk5, so an import writes this openwavu's own.
+// (hole module-reproducible :tags (importer titlepack) :sev polish) the modules embed the build folder's path in their debug info, so a stock pack built on another machine has other bytes (same code and data); map the path in build.sh (-ffile-prefix-map) before the lobby hash covers the stock pack.
 GAMEPLAY_MODULE :: #load("../../../build/modules/gameplay.wasm", string)
 GAMERENDER_MODULE :: #load("../../../build/modules/gamerender.wasm", string)
 APP_MODULE :: #load("../../../build/modules/app.wasm", string)
