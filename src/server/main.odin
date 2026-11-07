@@ -11,6 +11,7 @@ import "../online/relay"
 // (hole server-lobby :tags server :needs (titlepack-hash param-layers) :sev blocker) no lobbies role: no lobby list per pack, match start, input relay, spectator feed or region check-in to the files host; no network.toml.
 // (hole orphan-refuse :tags (server saves) :needs server-lobby) the server does not refuse a pack version that is not the latest approved one (an orphaned tile) at lobby join.
 // (hole server-authority :tags server :needs server-lobby) no authority mode: the server does not run the mode's sim on confirmed inputs, compare the clients' hashes with its own, or send a client its snapshot.
+// (hole hosting-guide :tags server :sev polish) no hosting guide: DNS (serve.<domain> for files, region names for lobbies, grey records), TLS proxy, install-server.sh, firewall ports, network.toml.
 // openwavu-server [--prep] [packs folder]: --prep incorporates the dropped tars and exits.
 main :: proc() {
 	args := os.args[1:]
