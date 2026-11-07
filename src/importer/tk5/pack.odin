@@ -8,7 +8,6 @@ import "../../titlepack"
 
 PACK_ID :: "tekken5dr"
 STOCK_PACK :: PACK_ID  // a folder: stock packs are built here and never sent, so they need no tar
-TITLE :: "Tekken 5: Dark Resurrection"
 
 // The stock modules build.sh made from modules/tk5, so an import writes this openwavu's own.
 // (hole module-reproducible :tags (importer titlepack) :sev polish) the modules embed the build folder's path in their debug info, so a stock pack built on another machine has other bytes (same code and data); map the path in build.sh (-ffile-prefix-map) before the lobby hash covers the stock pack.
@@ -16,6 +15,7 @@ GAMEPLAY_MODULE :: #load("../../../build/modules/gameplay.wasm", string)
 GAMERENDER_MODULE :: #load("../../../build/modules/gamerender.wasm", string)
 APP_MODULE :: #load("../../../build/modules/app.wasm", string)
 STOCK_FRONT :: #load("../../../modules/tk5/front.owf", string)
+STOCK_MANIFEST :: #load("../../../modules/tk5/pack.toml", string)  // without version and [import], which an import adds
 
 // The game's stock title pack: the folder packs_dir/tekken5dr/, built beside it and renamed in when whole. inputs are
 // recorded so an openwavu update can rebuild it.
@@ -45,11 +45,8 @@ build_pack :: proc(inputs: []string, packs_dir: string, progress: ^Progress = ni
 // pack.toml, the front and the modules: the files a pack needs at its root.
 write_pack_files :: proc(stage: string, inputs: []string) -> (err: string) {
 	toml := strings.builder_make(context.temp_allocator)
-	fmt.sbprintfln(&toml, "id = %s", quote(PACK_ID))
-	fmt.sbprintfln(&toml, "name = %s", quote(TITLE))
 	fmt.sbprintfln(&toml, "version = %s", quote(IMPORTER_VERSION))
-	fmt.sbprintln(&toml, "main = \"app.wasm\"")
-	fmt.sbprintln(&toml, "\n[modes.versus]\nsim = \"gameplay.wasm\"\npresenter = \"gamerender.wasm\"")
+	fmt.sbprint(&toml, STOCK_MANIFEST)
 	fmt.sbprintln(&toml, "\n[import]")
 	fmt.sbprintfln(&toml, "schema = %s", quote(SCHEMA_VERSION))
 	fmt.sbprint(&toml, "inputs = [")

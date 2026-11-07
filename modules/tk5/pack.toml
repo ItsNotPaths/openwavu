@@ -1,0 +1,12 @@
+id = "tekken5dr"
+name = "Tekken 5: Dark Resurrection"
+main = "app.wasm"
+
+[modes.versus]
+sim = "gameplay.wasm"
+presenter = "gamerender.wasm"
+
+[params.stage]
+kind = "text"
+default = "dragons_nest"
+expose = true
