@@ -26,7 +26,6 @@ Launcher :: struct {
 	identity: online.Identity,
 	identity_err: string,
 	network_edit: strings.Builder,  // the network field; applied on Enter
-	online:   bool,  // --online: matches pair on the network's relay (until lobbies)
 	source:   Install_Source,
 	browser:  Browser,
 	importer: Import_Job,

@@ -105,10 +105,22 @@ OW_EXPORT(ow_bot_pad) uint32_t ow_bot_pad(uint32_t side);
 
 // The host's state, read any time; returns its length and copies as much as fits. Fields are only added at the end:
 // size says how many bytes this host fills.
-// (hole host-view-online :tags (sdk net)) no connection states past offline, and no lobby list (every region, with ping) or current lobby sections.
-#define OW_HOST_VIEW_VERSION 1
-enum { OW_CONNECTION_OFFLINE = 0 };
+#define OW_HOST_VIEW_VERSION 2
+enum { OW_CONNECTION_OFFLINE = 0, OW_CONNECTION_CONNECTING = 1, OW_CONNECTION_ONLINE = 2, OW_CONNECTION_FAILED = 3 };
 enum { OW_MATCH_NONE = 0, OW_MATCH_RUNNING = 1, OW_MATCH_ENDED = 2 };
+enum { OW_LOBBIES_MAX = 16, OW_NAME_MAX = 32, OW_PARAMS_MAX = 128, OW_REFUSED_MAX = 64 };
+// Text fields are NUL terminated, cut to fit.
+typedef struct {
+	uint32_t id;                  // for ow_lobby_join
+	uint32_t players;
+	char host[OW_NAME_MAX];       // the host's name
+	char mode[OW_NAME_MAX];
+	char params[OW_PARAMS_MAX];   // the host's picks, like ow_match_local's params
+} OwLobby;
+typedef struct {
+	char name[OW_NAME_MAX];
+	uint32_t ready;
+} OwSeat;
 typedef struct {
 	uint32_t version;     // OW_HOST_VIEW_VERSION
 	uint32_t size;        // sizeof(OwHostView) as the host builds it
@@ -116,7 +128,16 @@ typedef struct {
 	uint32_t overlay;     // 1 while openwavu's own menu is open on top
 	uint32_t match;       // OW_MATCH_*: ended stays until the next match runs
 	int32_t winner;       // an ended match: the side that won, -1 for a draw
+	// Online. The lobbies this player can join: this pack's, same lobby hash, a free seat, no match running.
+	uint32_t lobby_count;
+	OwLobby lobbies[OW_LOBBIES_MAX];
+	uint32_t joined;      // 1 while in a lobby: the fields below
+	OwLobby lobby;
+	OwSeat seats[2];      // join order; a missing player's name is empty
+	uint32_t seat;        // this player's
+	char refused[OW_REFUSED_MAX];  // the server's last refusal, or why the connection failed
 } OwHostView;
+// (hole lobby-regions-view :tags (sdk net) :needs lobby-regions) the lobby list has no region or ping.
 OW_IMPORT(host_view) int32_t ow_host_view(OwHostView *view, uint32_t cap);
 // Back to the launcher after this frame, at once: a running match ends, and any confirm is the pack's own.
 OW_IMPORT(exit) void ow_exit(void);
@@ -126,7 +147,16 @@ OW_IMPORT(exit) void ow_exit(void);
 OW_IMPORT(match_local) int32_t ow_match_local(const char *mode, uint32_t mode_len, uint32_t bot_sides,
 	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len, const char *params, uint32_t params_len);
 // (hole app-modules :tags (sdk game wasm)) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.
-// (hole lobby-intents :tags (sdk net)) no lobby list refresh, lobby join, create, leave, or ready with a loadout.
+// Online intents; the host view shows what came of them. ow_online(1) connects to the network's lobby server,
+// ow_online(0) leaves it. A lobby match starts by itself once both seats are ready, like an asked match.
+OW_IMPORT(online) void ow_online(uint32_t on);
+// Hosts a lobby of a pack.toml mode with these picks (as ow_match_local's params); -1 when refused (offline, already in
+// a lobby, an unknown mode, picks the pack does not allow).
+OW_IMPORT(lobby_create) int32_t ow_lobby_create(const char *mode, uint32_t mode_len, const char *params, uint32_t params_len);
+OW_IMPORT(lobby_join) void ow_lobby_join(uint32_t id);
+OW_IMPORT(lobby_leave) void ow_lobby_leave(void);
+// This player's loadout for the next match of its lobby; -1 when too big.
+OW_IMPORT(ready) int32_t ow_ready(const void *loadout, uint32_t loadout_len);
 // (hole save-imports :tags (sdk game saves)) no ow_save_read or ow_save_write on the pack save, and no save header stamped with the pack id and version (docs/packs.md).
 
 // Presentation exports. Outside rollback, once per rendered frame.

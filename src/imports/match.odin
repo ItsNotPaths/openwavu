@@ -21,10 +21,34 @@ Host_View :: struct {
 	overlay:       b32,
 	match:         Match_Phase,
 	winner:        i32,
+	lobby_count:   u32,
+	lobbies:       [LOBBIES_MAX]View_Lobby,
+	joined:        b32,
+	lobby:         View_Lobby,
+	seats:         [2]View_Seat,
+	seat:          u32,
+	refused:       [64]u8,
+}
+
+LOBBIES_MAX :: 16
+
+// Text fields NUL terminated (view_text).
+View_Lobby :: struct {
+	id, players: u32,
+	host, mode:  [32]u8,
+	params:      [128]u8,
+}
+
+View_Seat :: struct {
+	name:  [32]u8,
+	ready: b32,
 }
 
 Connection :: enum u32 {
 	Offline,
+	Connecting,
+	Online,
+	Failed,
 }
 
 Match_Phase :: enum u32 {
@@ -41,9 +65,10 @@ Entry :: struct {
 	asked:     Maybe(Match_Request),  // until the host starts it at its next frame
 	allocator: runtime.Allocator,     // what an ask is copied with
 	exit:      bool,                  // the pack asked to go back to the launcher
+	intents:   [dynamic]Lobby_Intent, // online asks, in order, until the host applies them
 }
 
-HOST_VIEW_VERSION :: 1
+HOST_VIEW_VERSION :: 2
 
 entry_create :: proc(tp: titlepack.Title_Pack) -> Entry {
 	return {view = {version = HOST_VIEW_VERSION, size = size_of(Host_View)}, modes = tp.modes, params = tp.params, allocator = context.allocator}
@@ -60,6 +85,7 @@ match_request_destroy :: proc(r: ^Match_Request, allocator: runtime.Allocator) {
 define_entry :: proc(l: wasm.Linker, entry: ^Entry) -> (err: string) {
 	if err = wasm.define_func(l, "host_view", {wasm.I32, wasm.I32}, {wasm.I32}, host_view, entry); err != "" do return
 	if err = wasm.define_func(l, "exit", {}, {}, exit_import, entry); err != "" do return
+	if err = define_lobby(l, entry); err != "" do return
 	return wasm.define_func(l, "match_local", {wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, match_local, entry)
 }
 
@@ -104,7 +130,6 @@ match_local :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val,
 	return nil
 }
 
-@(private = "file")
 find_mode :: proc(modes: []titlepack.Mode, name: string) -> (mode: titlepack.Mode, ok: bool) {
 	for m in modes do if m.name == name do return m, true
 	return

@@ -89,7 +89,7 @@ tick_alpha :: proc(m: ^Match) -> f32 {
 @(private = "file")
 tick :: proc(m: ^Match, pads: [2]sim.Input) -> (err: string) {
 	if m.online.session != nil {
-		_, err = online.session_tick(m.online.session, pads[m.online.local_pad], m.online.clock_ns)
+		_, err = online.session_tick(m.online.session, pads[0], m.online.clock_ns)
 		return
 	}
 	pads := pads

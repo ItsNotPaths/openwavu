@@ -45,6 +45,7 @@ Lobby_Client :: struct {
 	session_packets: [dynamic][]byte,
 }
 
+// On err the client is freed already.
 lobby_connect :: proc(host_name: string, identity: Identity, name: string, port: u16 = wire.PORT) -> (client: ^Lobby_Client, err: string) {
 	if enet.initialize() != 0 do return nil, "ENet does not start"
 	client = new(Lobby_Client)
