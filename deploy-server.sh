@@ -15,6 +15,7 @@ After=network-online.target
 [Service]
 ExecStart=/usr/local/bin/openwavu-server
 DynamicUser=yes
+StateDirectory=openwavu openwavu/packs
 Restart=always
 
 [Install]
