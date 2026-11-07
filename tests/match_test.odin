@@ -34,7 +34,7 @@ kind = "number"
 default = 60
 `
 
-// The entry module asks for a versus match of two bots: bad asks are refused (a locked param, a value out of range), a
+// The entry module asks for a versus match of two bots: bad asks are refused (a locked param, a value out of range or not a number), a
 // good one is copied for the host with every param the pack declares, and the host view shows the phase and winner the
 // host sets.
 // The host plays it through match.frame on the stock pack to the sim's match end, and the presenter gets the sim
@@ -79,6 +79,7 @@ entry_module_starts_a_bot_match :: proc(t: ^testing.T) {
 	testing.expect_value(t, ask(t, entry, "ask_bad_params"), -1)
 	testing.expect_value(t, ask(t, entry, "ask_locked"), -1)
 	testing.expect_value(t, ask(t, entry, "ask_out_of_range"), -1)
+	testing.expect_value(t, ask(t, entry, "ask_not_a_number"), -1)
 	testing.expect_value(t, ask(t, entry, "ask_versus"), 0)
 	testing.expect_value(t, ask(t, entry, "ask_versus"), -1)  // one is asked for already
 	asked, has := state.asked.?

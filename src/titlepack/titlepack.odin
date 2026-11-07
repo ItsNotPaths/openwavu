@@ -147,11 +147,11 @@ toml_number :: proc(datum: Toml_Datum) -> (number: f64, ok: bool) {
 	return
 }
 
-// Whether value is one the param may take: a number inside its range, and one of its values when it lists any.
+// Whether value is one the param may take: a finite number inside its range, and one of its values when it lists any.
 param_allows :: proc(param: Param, value: string) -> bool {
 	if param.kind == .Number {
 		number := strconv.parse_f64(value) or_return
-		if number < param.min || number > param.max do return false
+		if math.is_nan(number) || math.is_inf(number) || number < param.min || number > param.max do return false
 	}
 	return len(param.values) == 0 || slice.contains(param.values, value)
 }
