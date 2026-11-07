@@ -31,7 +31,8 @@ Versions :: struct {
 }
 
 Store_Pick :: struct {
-	index: int,
+	index:     int,
+	has_front: bool,  // downloaded once at the pick, so a failed download is not tried again each frame
 }
 
 store_destroy :: proc(store: ^Store) {
@@ -61,7 +62,7 @@ store_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 				picked, is_store := l.selected.(Store_Pick)
 				art := store_thumb(l, u, pack)
 				if ui.slot(u, clay.ID("StorePack", u32(index)), pack.id, art, is_store && picked.index == index) {
-					l.selected = Store_Pick{index}
+					l.selected = Store_Pick{index, store_front(pack) != ""}
 				}
 			}
 		}
@@ -118,9 +119,8 @@ cached :: proc(sha256, suffix, name: string) -> (path: string) {
 	return
 }
 
-// The picked store pack's front tar, from the cache.
-store_front :: proc(l: ^Launcher, pick: Store_Pick) -> string {
-	pack := l.store.packs[pick.index]
+// A store pack's front tar, from the cache.
+store_front :: proc(pack: titlepack.Listed) -> string {
 	return cached(pack.front_sha256, ".front.tar", fmt.tprintf("%s@%s.front.tar", pack.id, pack.version))
 }
 

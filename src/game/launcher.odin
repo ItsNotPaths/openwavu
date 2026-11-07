@@ -69,7 +69,7 @@ launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 	case Front_Preview:
 		path, file = pick.path, pick.file
 		if front_changed(path, file) != l.front.changed do front_close(&l.front)
-	case Store_Pick: path = store_front(l, pick)
+	case Store_Pick: if pick.has_front do path = store_front(l.store.packs[pick.index])
 	case Install_Screen:
 	}
 	if path != "" && path != l.front.path do front_open(&l.front, u, path, file)
