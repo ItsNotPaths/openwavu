@@ -61,6 +61,36 @@ if [ ! -x vendor/zig/zig ]; then
 	echo "vendor/zig: $ZIG $target"
 fi
 
+if [ ! -f vendor/tomlc17/tomlc17.c ]; then
+	toml_dir=$(mktemp -d)
+	fetch "https://github.com/cktan/tomlc17/archive/refs/tags/$TOMLC17.tar.gz" "$toml_dir/tomlc17.tar.gz" "$TOMLC17_SHA256"
+	tar xzf "$toml_dir/tomlc17.tar.gz" -C "$toml_dir" --strip-components=1
+	mkdir -p vendor/tomlc17
+	cp "$toml_dir/src/tomlc17.c" "$toml_dir/src/tomlc17.h" "$toml_dir/LICENSE" vendor/tomlc17/
+	rm -rf "$toml_dir"
+	echo "vendor/tomlc17: $TOMLC17"
+fi
+
+# UDP for online play, built static for vendor:ENet's "system:enet".
+if [ ! -f vendor/enet/libenet.a ]; then
+	enet_dir=$(mktemp -d)
+	fetch "https://github.com/lsalzman/enet/archive/refs/tags/v$ENET.tar.gz" "$enet_dir/enet.tar.gz" "$ENET_SHA256"
+	tar xzf "$enet_dir/enet.tar.gz" -C "$enet_dir" --strip-components=1
+	mkdir -p vendor/enet
+	for source in callbacks compress host list packet peer protocol unix; do
+		vendor/zig/zig cc -O2 -I"$enet_dir/include" \
+			-DHAS_POLL -DHAS_FCNTL -DHAS_SOCKLEN_T -DHAS_MSGHDR_FLAGS -DHAS_GETADDRINFO -DHAS_GETNAMEINFO \
+			-DHAS_INET_PTON -DHAS_INET_NTOP -c "$enet_dir/$source.c" -o "$enet_dir/$source.o"
+	done
+	vendor/zig/zig ar rcs vendor/enet/libenet.a "$enet_dir"/*.o
+	cp "$enet_dir/LICENSE" vendor/enet/
+	rm -rf "$enet_dir"
+	echo "vendor/enet: $ENET"
+fi
+
+# The server needs nothing below.
+[ "${1:-}" = server ] && exit 0
+
 if [ ! -d vendor/wasmtime ]; then
 	case "$(uname -s)-$(uname -m)" in
 		Linux-x86_64) target=x86_64-linux ;;
@@ -161,33 +191,6 @@ if [ ! -f vendor/dr_flac/dr_flac.h ]; then
 	mkdir -p vendor/dr_flac
 	fetch "https://raw.githubusercontent.com/mackron/dr_libs/$DR_FLAC/dr_flac.h" vendor/dr_flac/dr_flac.h "$DR_FLAC_SHA256"
 	echo "vendor/dr_flac: $DR_FLAC"
-fi
-
-if [ ! -f vendor/tomlc17/tomlc17.c ]; then
-	toml_dir=$(mktemp -d)
-	fetch "https://github.com/cktan/tomlc17/archive/refs/tags/$TOMLC17.tar.gz" "$toml_dir/tomlc17.tar.gz" "$TOMLC17_SHA256"
-	tar xzf "$toml_dir/tomlc17.tar.gz" -C "$toml_dir" --strip-components=1
-	mkdir -p vendor/tomlc17
-	cp "$toml_dir/src/tomlc17.c" "$toml_dir/src/tomlc17.h" "$toml_dir/LICENSE" vendor/tomlc17/
-	rm -rf "$toml_dir"
-	echo "vendor/tomlc17: $TOMLC17"
-fi
-
-# UDP for online play, built static for vendor:ENet's "system:enet". glibc 2.36 so the server runs on Debian 12.
-if [ ! -f vendor/enet/libenet.a ]; then
-	enet_dir=$(mktemp -d)
-	fetch "https://github.com/lsalzman/enet/archive/refs/tags/v$ENET.tar.gz" "$enet_dir/enet.tar.gz" "$ENET_SHA256"
-	tar xzf "$enet_dir/enet.tar.gz" -C "$enet_dir" --strip-components=1
-	mkdir -p vendor/enet
-	for source in callbacks compress host list packet peer protocol unix; do
-		vendor/zig/zig cc --target=x86_64-linux-gnu.2.36 -O2 -I"$enet_dir/include" \
-			-DHAS_POLL -DHAS_FCNTL -DHAS_SOCKLEN_T -DHAS_MSGHDR_FLAGS -DHAS_GETADDRINFO -DHAS_GETNAMEINFO \
-			-DHAS_INET_PTON -DHAS_INET_NTOP -c "$enet_dir/$source.c" -o "$enet_dir/$source.o"
-	done
-	vendor/zig/zig ar rcs vendor/enet/libenet.a "$enet_dir"/*.o
-	cp "$enet_dir/LICENSE" vendor/enet/
-	rm -rf "$enet_dir"
-	echo "vendor/enet: $ENET"
 fi
 
 # HTTPS for the network's files host: zlib and mbedTLS compiled as they are, curl through cmake with only HTTP(S).

@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-# ./build.sh [speed] [test]: speed optimizes the game and importer (slow build, ~5x faster import).
-optimize=() run_tests=0
+# ./build.sh [speed] [test] [server]: speed optimizes (slow build, ~5x faster import); server builds only the server.
+optimize=() run_tests=0 only_server=0
 for arg in "$@"; do
 	case "$arg" in
 		speed) optimize=(-o:speed) ;;
 		test) run_tests=1 ;;
-		*) echo "usage: ./build.sh [speed] [test]" >&2; exit 2 ;;
+		server) only_server=1 ;;
+		*) echo "usage: ./build.sh [speed] [test] [server]" >&2; exit 2 ;;
 	esac
 done
 mkdir -p build
-./download-deps.sh
+if [ "$only_server" = 1 ]; then ./download-deps.sh server; else ./download-deps.sh; fi
+if [ ! -f vendor/tomlc17/libtomlc17.a ] || [ vendor/tomlc17/tomlc17.c -nt vendor/tomlc17/libtomlc17.a ]; then
+	cc -O2 -c vendor/tomlc17/tomlc17.c -o vendor/tomlc17/tomlc17.o
+	ar rcs vendor/tomlc17/libtomlc17.a vendor/tomlc17/tomlc17.o
+fi
+odin build src/server -out:build/openwavu-server "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
+[ "$only_server" = 1 ] && exit 0
 if [ ! -f vendor/sqlite/libsqlite3.a ] || [ vendor/sqlite/sqlite3.c -nt vendor/sqlite/libsqlite3.a ]; then
 	cc -O2 -c vendor/sqlite/sqlite3.c -o vendor/sqlite/sqlite3.o
 	ar rcs vendor/sqlite/libsqlite3.a vendor/sqlite/sqlite3.o
@@ -26,10 +33,6 @@ if [ ! -f "$clay_lib" ] || [ vendor/clay/clay.h -nt "$clay_lib" ]; then
 	mkdir -p "$(dirname "$clay_lib")"
 	cc -O2 -fPIC -DCLAY_IMPLEMENTATION -x c -c vendor/clay/clay.h -o vendor/clay/clay.o
 	ar rcs "$clay_lib" vendor/clay/clay.o
-fi
-if [ ! -f vendor/tomlc17/libtomlc17.a ] || [ vendor/tomlc17/tomlc17.c -nt vendor/tomlc17/libtomlc17.a ]; then
-	cc -O2 -c vendor/tomlc17/tomlc17.c -o vendor/tomlc17/tomlc17.o
-	ar rcs vendor/tomlc17/libtomlc17.a vendor/tomlc17/tomlc17.o
 fi
 # The cgltf binding links lib/cgltf.a (lib/darwin/cgltf.a on macOS) next to cgltf.odin.
 case "$(uname -s)" in
@@ -103,7 +106,6 @@ odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict
 # make those the vendored static libs.
 sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf -Lvendor/enet -Lvendor/curl"
 odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style "$sdl_libs"
-odin build src/server -out:build/openwavu-server "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
 if [ "$run_tests" = 1 ]; then
