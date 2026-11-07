@@ -1,10 +1,8 @@
 #include "catalog.h"
 #include <stdio.h>
+#include <string.h>
 #include "openwavu.h"
-#include "ow_db.h"
 #include "sqlite3.h"
-
-static const char DB_PATH[] = "tk5.db";
 
 // Rows of (id, name, costumes); a row with no id is left out.
 static int load_entries(sqlite3 *db, const char *sql, T5Entry *entries) {
@@ -24,13 +22,20 @@ static int load_entries(sqlite3 *db, const char *sql, T5Entry *entries) {
     return count;
 }
 
-const char *catalog_load(T5Catalog *catalog) {
-    sqlite3 *db = ow_db_open(DB_PATH, sizeof DB_PATH - 1);
-    if (!db) return "the pack has no tk5.db";
+// Panda is Kuma's buttons past his costumes, as in the game. The boss is not picked.
+static const char *const ALTERNATES[][2] = {{"kuma", "panda"}};
+#define HIDDEN "'panda', 'jinpachi2'"
+
+const char *catalog_load(sqlite3 *db, T5Catalog *catalog) {
     catalog->character_count = load_entries(db,
-        "SELECT id, name, (SELECT count(*) FROM costume WHERE costume.character = character.id) FROM character ORDER BY rowid",
+        "SELECT id, name, (SELECT count(*) FROM costume WHERE costume.character = character.id) FROM character "
+        "WHERE id NOT IN (" HIDDEN ") ORDER BY rowid",
         catalog->characters);
+    for (int k = 0; k < catalog->character_count; k++) {
+        for (size_t pair = 0; pair < sizeof ALTERNATES / sizeof ALTERNATES[0]; pair++) {
+            if (strcmp(catalog->characters[k].id, ALTERNATES[pair][0]) == 0) snprintf(catalog->characters[k].alternate, T5_NAME_BYTES, "%s", ALTERNATES[pair][1]);
+        }
+    }
     catalog->stage_count = load_entries(db, "SELECT id, name, 0 FROM stage ORDER BY rowid", catalog->stages);
-    sqlite3_close(db);
     return catalog->character_count > 0 && catalog->stage_count > 0 ? NULL : "the db has no characters or no stages";
 }

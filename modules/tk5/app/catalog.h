@@ -11,6 +11,7 @@ typedef struct {
     char id[T5_NAME_BYTES];    // the row's key
     char name[T5_NAME_BYTES];  // what the menus show
     uint32_t costumes;         // characters only
+    char alternate[T5_NAME_BYTES];  // a character picked by the buttons past costumes, as its costumes; "" if none
 } T5Entry;
 
 typedef struct {
@@ -19,7 +20,9 @@ typedef struct {
     int character_count, stage_count;
 } T5Catalog;
 
+typedef struct sqlite3 sqlite3;
+
 // NULL, or why the db gives nothing to pick.
-const char *catalog_load(T5Catalog *catalog);
+const char *catalog_load(sqlite3 *db, T5Catalog *catalog);
 
 #endif

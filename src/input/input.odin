@@ -4,7 +4,7 @@ package input
 
 import sdl "vendor:sdl3"
 
-// (hole button-config :tags input :sev polish) the keys and buttons below are fixed: arrows, U I J K for buttons 1 to 4, Enter; on a gamepad the d-pad, the four face buttons and Start.
+// (hole button-config :tags input :sev polish) the keys and buttons below are fixed: arrows, U I J K for buttons 1 to 4, Enter, Backspace; on a gamepad the d-pad, the four face buttons, Start and Back.
 // (hole stick-settings :tags (input game) :sev polish) the stick's x and y inner deadzones are fixed, and there is no outer
 // deadzone; the openwavu settings popup should set them.
 PLAYERS :: 2
@@ -18,6 +18,7 @@ BUTTON_2 :: 1 << 5
 BUTTON_3 :: 1 << 6
 BUTTON_4 :: 1 << 7
 START :: 1 << 8
+BACK :: 1 << 9  // menus only
 
 // How far the stick must lean on each axis, 0..1, before it presses that direction.
 Deadzone :: struct {
@@ -30,7 +31,7 @@ STICK_DEADZONE :: Deadzone{0.35, 0.35}
 KEYS := [?]struct {
 	key: sdl.Scancode,
 	bit: u32,
-}{{.UP, UP}, {.DOWN, DOWN}, {.LEFT, LEFT}, {.RIGHT, RIGHT}, {.U, BUTTON_1}, {.I, BUTTON_2}, {.J, BUTTON_3}, {.K, BUTTON_4}, {.RETURN, START}}
+}{{.UP, UP}, {.DOWN, DOWN}, {.LEFT, LEFT}, {.RIGHT, RIGHT}, {.U, BUTTON_1}, {.I, BUTTON_2}, {.J, BUTTON_3}, {.K, BUTTON_4}, {.RETURN, START}, {.BACKSPACE, BACK}}
 
 @(private = "file")
 BUTTONS := [?]struct {
@@ -38,7 +39,7 @@ BUTTONS := [?]struct {
 	bit:    u32,
 }{
 	{.DPAD_UP, UP}, {.DPAD_DOWN, DOWN}, {.DPAD_LEFT, LEFT}, {.DPAD_RIGHT, RIGHT},
-	{.WEST, BUTTON_1}, {.NORTH, BUTTON_2}, {.SOUTH, BUTTON_3}, {.EAST, BUTTON_4}, {.START, START},
+	{.WEST, BUTTON_1}, {.NORTH, BUTTON_2}, {.SOUTH, BUTTON_3}, {.EAST, BUTTON_4}, {.START, START}, {.BACK, BACK},
 }
 
 // Opens a gamepad as it is plugged in; call it for every event.
