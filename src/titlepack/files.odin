@@ -1,5 +1,6 @@
 package titlepack
 
+import "core:mem"
 import "core:mem/virtual"
 import "core:os"
 import "core:path/filepath"
@@ -20,8 +21,9 @@ Pack_Files :: struct {
 // A folder's files, each mapped on its first read and kept until close_files: a big pack has more files than the
 // kernel allows mappings.
 Folder_Files :: struct {
-	lock:   sync.Mutex,
-	mapped: map[string]Folder_File,
+	lock:      sync.Mutex,
+	mapped:    map[string]Folder_File,
+	allocator: mem.Allocator,  // the opener's: reads come from wasm imports, which run in a default context
 }
 
 Folder_File :: struct {
@@ -34,6 +36,8 @@ open_files :: proc(path: string) -> (p: Pack_Files, ok: bool) {
 		paths, err := files_under(path, context.temp_allocator)
 		if err != "" do return
 		p = {dir = strings.clone(path), folder = new(Folder_Files)}
+		p.folder.allocator = context.allocator
+		p.folder.mapped = make(map[string]Folder_File, context.allocator)
 		for file in paths do p.files[strings.clone(file)] = {}
 		return p, true
 	}
@@ -53,8 +57,8 @@ close_files :: proc(p: ^Pack_Files) {
 	if p.folder != nil {
 		for path, file in p.folder.mapped {
 			if file.mapped do virtual.unmap_file(file.data)
-			else do delete(file.data)
-			delete(path)
+			else do delete(file.data, p.folder.allocator)
+			delete(path, p.folder.allocator)
 		}
 		delete(p.folder.mapped)
 		free(p.folder)
@@ -90,8 +94,8 @@ read_folder_file :: proc(p: Pack_Files, path: string) -> (data: []byte, ok: bool
 	file.mapped = map_err == nil
 	if !file.mapped {
 		read_err: os.Error
-		if file.data, read_err = os.read_entire_file(full, context.allocator); read_err != nil do return
+		if file.data, read_err = os.read_entire_file(full, p.folder.allocator); read_err != nil do return
 	}
-	p.folder.mapped[strings.clone(path)] = file
+	p.folder.mapped[strings.clone(path, p.folder.allocator)] = file
 	return file.data, true
 }
