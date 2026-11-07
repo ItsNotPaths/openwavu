@@ -1,6 +1,7 @@
 package online
 
 import "core:encoding/endian"
+import "core:time"
 import "../sim"
 
 // The rollback session of one match between two machines (ws.md Workstream Q). Each frame steps with the local pad
@@ -48,6 +49,7 @@ Session :: struct {
 	checked_frame:  int,  // the last frame whose hashes matched: the desync retry starts there
 	checked:        []byte,
 	heard_ns:       u64,  // when the last packet came
+	event_frames:   [dynamic]int,  // the frame that reported each of the world's events
 	outcome:        Outcome,
 }
 
@@ -69,6 +71,7 @@ session_destroy :: proc(s: ^Session) {
 	delete(s.pending)
 	delete(s.remote_records)
 	delete(s.inputs)
+	delete(s.event_frames)
 	free(s)
 }
 
@@ -107,9 +110,17 @@ step_frame :: proc(s: ^Session, local: sim.Input) -> (err: string) {
 	if len(s.inputs) == s.frame do append(&s.inputs, [2]sim.Input{})
 	s.inputs[s.frame][s.side] = local
 	if s.frame >= s.known do s.inputs[s.frame][remote_side(s)] = guess(s)
-	sim.save(s.world, s.snapshots[s.frame % ROLLBACK_MAX])
-	if err = sim.step(s.world, s.inputs[s.frame]); err != "" do return
+	if err = step_saved(s, s.frame); err != "" do return
 	s.frame += 1
+	return
+}
+
+// Saves the state before frame, steps it, and notes which frame reported the new events.
+@(private = "file")
+step_saved :: proc(s: ^Session, frame: int) -> (err: string) {
+	sim.save(s.world, s.snapshots[frame % ROLLBACK_MAX])
+	if err = sim.step(s.world, s.inputs[frame]); err != "" do return
+	for len(s.event_frames) < len(s.world.inputs.events) do append(&s.event_frames, frame)
 	return
 }
 
@@ -118,16 +129,37 @@ step_frame :: proc(s: ^Session, local: sim.Input) -> (err: string) {
 @(private = "file")
 run_again :: proc(s: ^Session, from: int, snapshot: []byte) -> (err: string) {
 	sim.restore(s.world, snapshot)
+	kept := len(s.event_frames)
+	for kept > 0 && s.event_frames[kept - 1] >= from do kept -= 1
+	resize(&s.event_frames, kept)
+	resize(&s.world.inputs.events, kept)
 	for frame in from ..= s.frame {
 		for &pending in s.pending do if int(pending.record.frame) == frame {
 			sim.save(s.world, pending.snapshot)
 			pending.record = {u32(frame), s.attempt, u32(sim.snapshot_hash(pending.snapshot))}
 		}
 		if frame == s.frame do break
-		sim.save(s.world, s.snapshots[frame % ROLLBACK_MAX])
-		if err = sim.step(s.world, s.inputs[frame]); err != "" do return
+		if err = step_saved(s, frame); err != "" do return
 	}
 	return
+}
+
+// The sim's match end, once the frame that reported it is confirmed: a guessed frame may still be rolled back.
+session_match_end :: proc(s: ^Session) -> (winner: i32, ended: bool) {
+	for event, index in s.world.inputs.events {
+		if s.event_frames[index] >= s.known do return
+		if event.kind == .Match_End do return event.a, true
+	}
+	return
+}
+
+// After the match end: a second more of packets, so the remote gets the last pads and confirms the end too.
+session_linger :: proc(s: ^Session, now_ns: u64) {
+	TICK :: time.Second / 60
+	for tick in 1 ..= 60 {
+		time.sleep(TICK)
+		if session_exchange(s, now_ns + u64(tick * int(TICK))) != "" do return
+	}
 }
 
 // Hashes each HASH_INTERVAL-th frame whose inputs are all confirmed and that the sim has reached.
