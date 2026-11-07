@@ -124,6 +124,7 @@ store_front :: proc(pack: titlepack.Listed) -> string {
 	return cached(pack.front_sha256, ".front.tar", fmt.tprintf("%s@%s.front.tar", pack.id, pack.version))
 }
 
+// (hole store-download-thread :tags (game net)) store fetches and installs run on the UI thread: a big install freezes the window with no progress bar.
 // Every version, newest first; Install downloads it over the installed one and picks it.
 store_install_popup :: proc(l: ^Launcher, u: ^ui.Ui, pick: Store_Pick) {
 	pack := l.store.packs[pick.index]
