@@ -5,7 +5,6 @@ import clay "../../vendor/clay"
 import "../ui"
 
 // The screen-bottom popup: openwavu's own, the top bar's counterpart. Packs only open its fixed modes.
-// (hole settings-save :tags game :sev polish) settings live only until openwavu closes.
 // (hole store-versions :tags (game net)) an installed pack's install popup shows only its installed version; no update or older versions from the network's /versions (a store pick lists them).
 Popup :: struct {
 	mode: Popup_Mode,
@@ -21,6 +20,7 @@ Popup_Mode :: enum u8 {
 
 // (hole volume-settings :tags (game audio)) no volume settings (master, music, effects, voices); the music plays a little loud against the rest. The host could set each pack stream's gain by a channel kind the SDK names.
 Settings :: struct {
+	file:      string,
 	frame_cap: int,
 }
 
@@ -62,7 +62,10 @@ settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 		at := 0
 		for cap, i in caps do if cap == l.settings.frame_cap do at = i
 		step := ui.stepper(u, clay.ID("FrameCap"), fmt.tprintf("%d fps", caps[at]), at > 0, at < len(caps) - 1)
-		l.settings.frame_cap = caps[at + step]
+		if step != 0 {
+			l.settings.frame_cap = caps[at + step]
+			settings_save(l.settings)
+		}
 	}
 }
 

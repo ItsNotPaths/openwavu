@@ -17,6 +17,16 @@ main :: proc() {
 	if len(os.args) == 3 && os.args[1] == "--package" {
 		os.exit(package_folder(os.args[2]))
 	}
+	data, config, has_folders := user_folders()
+	if !has_folders {
+		fmt.eprintln("openwavu: no user data folder:", sdl.GetError())
+		os.exit(1)
+	}
+	defer delete(data)
+	defer delete(config)
+	titlepack.packs_dir = strings.concatenate({data, "/packs"})
+	defer delete(titlepack.packs_dir)
+	os.make_directory_all(titlepack.packs_dir)
 	r, ok := render.init("openwavu", 1280, 720)
 	if !ok {
 		fmt.eprintln("openwavu:", sdl.GetError())
@@ -31,7 +41,7 @@ main :: proc() {
 	}
 	defer ui.destroy(&u)
 	// (hole stock-rebuild :tags (game importer)) the stock pack is not rebuilt when its pack.toml version differs from this openwavu's importer; the [import] inputs are recorded for it.
-	l := Launcher{packs = titlepack.installed(), settings = {frame_cap = FRAME_CAPS[0]}}
+	l := Launcher{packs = titlepack.installed(), settings = settings_load(config)}
 	if len(os.args) >= 3 && os.args[1] == "--front" {
 		l.selected = Front_Preview{os.args[2], len(os.args) > 3 ? os.args[3] : ""}
 	}

@@ -10,7 +10,6 @@ import "../titlepack"
 import "../ui"
 
 NETWORK :: "https://openwavu.paths.place:9443"
-CACHE_DIR :: titlepack.PACKS_DIR + "/cache"  // fronts and thumbs by hash; they never change
 CACHE_DOWNLOADS_MAX :: 4  // cache files downloading at once
 
 // The network's packs. Every GET runs on its own thread; the launcher polls each frame.
@@ -147,12 +146,13 @@ store_thumb :: proc(l: ^Launcher, u: ^ui.Ui, pack: titlepack.Listed) -> ^sdl.Tex
 // not be had.
 @(private = "file")
 cached :: proc(store: ^Store, sha256, suffix, name: string) -> (path: string, waiting: bool) {
-	path = titlepack.join_path(CACHE_DIR, strings.concatenate({sha256, suffix}, context.temp_allocator))
+	cache_dir := titlepack.join_path(titlepack.packs_dir, "cache")  // fronts and thumbs by hash; they never change
+	path = titlepack.join_path(cache_dir, strings.concatenate({sha256, suffix}, context.temp_allocator))
 	if os.exists(path) do return path, false
 	job, started := store.cache[sha256]
 	if !started {
 		if cache_downloads(store) >= CACHE_DOWNLOADS_MAX do return "", true
-		os.make_directory_all(CACHE_DIR)
+		os.make_directory_all(cache_dir)
 		store.cache[strings.clone(sha256)] = download.start(fmt.tprintf("%s/files/%s", NETWORK, name), sha256, path)
 		return "", true
 	}
@@ -202,10 +202,11 @@ store_install_popup :: proc(l: ^Launcher, u: ^ui.Ui, pick: Store_Pick) {
 	}
 }
 
+// (hole orphaned-packs :tags (game titlepack saves) :needs slot-badges) an older version installs over the latest: no lock button below the favourite star, no packs/<id>@<version>.tar as its own locked tile with its own saves, and an update does not download as a new tile when the installed one is locked; a non-latest download should start locked.
 @(private = "file")
 install_start :: proc(install: ^Install, version: titlepack.Listed) {
 	install_destroy(install)
-	path := titlepack.join_path(titlepack.PACKS_DIR, strings.concatenate({version.id, ".tar"}, context.temp_allocator))
+	path := titlepack.join_path(titlepack.packs_dir, strings.concatenate({version.id, ".tar"}, context.temp_allocator))
 	url := fmt.tprintf("%s/files/%s@%s.tar", NETWORK, version.id, version.version)
 	install^ = {job = download.start(url, version.sha256, path), id = strings.clone(version.id), version = strings.clone(version.version)}
 }

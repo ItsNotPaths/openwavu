@@ -101,12 +101,12 @@ destroy_titlepack :: proc(tp: Title_Pack, allocator := context.allocator) {
 	delete(tp.bases, allocator)
 }
 
-// (hole data-dir :tags titlepack :sev polish) packs live in the working directory, not a per-user data folder.
-PACKS_DIR :: "packs"
+// The game points it into the user's data folder at startup.
+packs_dir := "packs"
 
 // Where a base lives: a stock pack's folder in packs/.
 base_path :: proc(id: string) -> string {
-	return join_path(PACKS_DIR, id)
+	return join_path(packs_dir, id)
 }
 
 // The first base of tp that is not installed as a stock folder; "" when all are.
@@ -133,7 +133,7 @@ inherit_from_bases :: proc(tp: ^Title_Pack, allocator := context.allocator) {
 // Every packs/*.tar and stock packs/<id>/ folder whose pack.toml reads, sorted by name. Others are skipped, and so is
 // a folder with bases: only stock packs, built on this machine, are folders.
 installed :: proc(allocator := context.allocator) -> []Title_Pack {
-	paths, _ := filepath.glob(PACKS_DIR + "/*", context.temp_allocator)
+	paths, _ := filepath.glob(join_path(packs_dir, "*"), context.temp_allocator)
 	packs := make([dynamic]Title_Pack, allocator)
 	for path in paths {
 		folder := os.is_dir(path)

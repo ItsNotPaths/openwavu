@@ -52,6 +52,7 @@ launcher_destroy :: proc(l: ^Launcher) {
 	strings.builder_destroy(&l.url)
 	strings.builder_destroy(&l.search_installed)
 	strings.builder_destroy(&l.search_store)
+	delete(l.settings.file)
 }
 
 Install_Source :: enum u8 {
