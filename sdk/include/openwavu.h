@@ -120,7 +120,7 @@ OW_IMPORT(match_local) int32_t ow_match_local(const char *mode, uint32_t mode_le
 	const void *loadout0, uint32_t loadout0_len, const void *loadout1, uint32_t loadout1_len, const char *params, uint32_t params_len);
 // (hole app-modules :tags (sdk game wasm)) no ow_module_start, ow_module_stop, ow_module_send, ow_scene_owner or 2D order for the entry module's own modules.
 // (hole lobby-intents :tags (sdk net) :needs server-lobby) no lobby list refresh, lobby join, create, leave, or ready with a loadout.
-// (hole save-imports :tags (sdk game)) no ow_save_read or ow_save_write on the pack save (docs/packs.md).
+// (hole save-imports :tags (sdk game saves)) no ow_save_read or ow_save_write on the pack save, and no save header stamped with the pack id and version (docs/packs.md).
 
 // Presentation exports. Outside rollback, once per rendered frame.
 
