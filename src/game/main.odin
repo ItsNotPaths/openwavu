@@ -44,6 +44,7 @@ main :: proc() {
 	l := Launcher{packs = titlepack.installed(), settings = settings_load(config)}
 	l.identity, l.identity_err = online.load_identity(titlepack.join_path(data, "identity.key"))
 	strings.write_string(&l.network_edit, l.settings.network)
+	l.online = len(os.args) == 2 && os.args[1] == "--online"
 	if len(os.args) >= 3 && os.args[1] == "--front" {
 		l.selected = Front_Preview{os.args[2], len(os.args) > 3 ? os.args[3] : ""}
 	}
@@ -74,7 +75,7 @@ main :: proc() {
 
 		if pack, picked := l.play.?; picked {
 			l.play = nil
-			l.quit = play(&r, l.packs[pack], l.settings.frame_cap)
+			l.quit = play(&r, l.packs[pack], l.settings.frame_cap, l.online ? relay_host(l.settings.network) : "")
 		}
 	}
 }

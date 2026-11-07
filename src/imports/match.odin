@@ -81,6 +81,13 @@ parse_params :: proc(text: string, allocator := context.allocator) -> (params: m
 	return params, true
 }
 
+// parse_params' inverse.
+params_text :: proc(params: map[string]string, allocator := context.allocator) -> string {
+	pairs := make([dynamic]string, context.temp_allocator)
+	for name, value in params do append(&pairs, strings.concatenate({name, "=", value}, context.temp_allocator))
+	return strings.join(pairs[:], " ", allocator)
+}
+
 params_clone :: proc(params: map[string]string, allocator := context.allocator) -> map[string]string {
 	copied := make(map[string]string, allocator)
 	for name, value in params do copied[strings.clone(name, allocator)] = strings.clone(value, allocator)

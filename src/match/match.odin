@@ -1,8 +1,10 @@
-// An offline match: the mode's sim stepped at 60 Hz against display time, bots on their sides, the sim view to the
-// presenter each display frame, until the sim reports the match end. Online play steps the same sim through src/online.
+// A match: the mode's sim stepped at 60 Hz against display time, bots on their sides, the sim view to the presenter
+// each display frame, until the sim reports the match end. Online, a rollback session steps the sim (online.odin).
 package match
 
+import "core:fmt"
 import "../imports"
+import "../online"
 import "../presentation"
 import "../sim"
 import "../wasm"
@@ -17,6 +19,7 @@ Match :: struct {
 	view:      [dynamic]byte,  // the sim view of the last tick: the presenter's ow_view
 	behind:    u64,            // display time in ns not stepped yet
 	ticked:    bool,           // the last frame ran a tick, so the presenter's scene is a new tick's
+	online:    Online,
 }
 
 // Starts the mode's sim and presenter, compiled by the caller. The pack must outlive the match.
@@ -41,6 +44,7 @@ start_modules :: proc(m: ^Match, engine: wasm.Engine, sim_code, presenter_code: 
 }
 
 stop :: proc(m: ^Match) {
+	online_stop(&m.online)
 	if m.presenter != nil do imports.module_destroy(m.presenter)
 	if m.world != nil do sim.destroy(m.world)
 	delete(m.view)
@@ -52,6 +56,7 @@ stop :: proc(m: ^Match) {
 // for a draw. A trap in either module comes back as err.
 frame :: proc(m: ^Match, pack: ^presentation.Pack, dt_ns: u64, pads: [2]sim.Input) -> (ended: bool, winner: i32, err: string) {
 	m.behind += dt_ns
+	m.online.clock_ns += dt_ns
 	m.ticked = m.behind >= TICK_NS
 	for ticks := 0; m.behind >= TICK_NS; ticks += 1 {
 		if ticks == CATCH_UP_TICKS {
@@ -60,7 +65,7 @@ frame :: proc(m: ^Match, pack: ^presentation.Pack, dt_ns: u64, pads: [2]sim.Inpu
 		}
 		m.behind -= TICK_NS
 		if err = tick(m, pads); err != "" do return
-		if winner, ended = match_end(m.world); ended do return
+		if winner, ended = match_end(m); ended do return
 	}
 	if err = copy_view(m); err != "" do return
 	err = presentation.frame(m.presenter, pack, f32(dt_ns) / 1e9)
@@ -83,15 +88,24 @@ tick_alpha :: proc(m: ^Match) -> f32 {
 
 @(private = "file")
 tick :: proc(m: ^Match, pads: [2]sim.Input) -> (err: string) {
+	if m.online.session != nil {
+		_, err = online.session_tick(m.online.session, pads[m.online.local_pad], m.online.clock_ns)
+		return
+	}
 	pads := pads
 	for side in m.bot_sides do if pads[side], err = sim.bot_pad(m.world, side); err != "" do return
 	return sim.step(m.world, pads)
 }
 
-// (hole match-online :tags (net game)) match.frame steps offline only: no online.Session ticks it, and the sim's events count on every frame, not only on confirmed ones.
+// Online, the match end counts once its frame is confirmed; a lost session ends the match as a draw.
 @(private = "file")
-match_end :: proc(w: ^sim.World) -> (winner: i32, ended: bool) {
-	events := w.inputs.events[:]
+match_end :: proc(m: ^Match) -> (winner: i32, ended: bool) {
+	if session := m.online.session; session != nil {
+		if session.outcome == .Playing do return online.session_match_end(session)
+		fmt.eprintfln("openwavu: the online match ended: %v", session.outcome)
+		return -1, true
+	}
+	events := m.world.inputs.events[:]
 	if len(events) == 0 || events[len(events) - 1].kind != .Match_End do return
 	return events[len(events) - 1].a, true
 }

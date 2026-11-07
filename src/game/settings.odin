@@ -57,6 +57,14 @@ network_url :: proc(network: string) -> string {
 	return strings.contains(network, "://") ? network : strings.concatenate({"https://serve.", network}, context.temp_allocator)
 }
 
+// The network's relay host: serve.<network>, or the host of a full URL.
+relay_host :: proc(network: string) -> string {
+	_, has_scheme, rest := strings.partition(network, "://")
+	if has_scheme == "" do return strings.concatenate({"serve.", network}, context.temp_allocator)
+	end := strings.index_any(rest, ":/")
+	return end < 0 ? rest : rest[:end]
+}
+
 // Stars or unstars a tile.
 toggle_favourite :: proc(settings: ^Settings, tile: string) {
 	if index, found := slice.linear_search(settings.favourites[:], tile); found {
