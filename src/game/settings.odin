@@ -11,7 +11,7 @@ DEFAULT_NETWORK :: "openwavu.org"
 
 // One key=value per line; favourite= repeats. A missing file, unknown keys and bad values keep the defaults.
 settings_load :: proc(config_dir: string) -> (settings: Settings) {
-	settings = {file = strings.concatenate({config_dir, "/settings.conf"}), frame_cap = FRAME_CAPS[0], music_volume = 100, effects_volume = 100, network = strings.clone(DEFAULT_NETWORK)}
+	settings = {file = strings.concatenate({config_dir, "/settings.conf"}), frame_cap = FRAME_CAPS[0], music_volume = 100, effects_volume = 100, blend_fighters = true, network = strings.clone(DEFAULT_NETWORK)}
 	text, err := os.read_entire_file(settings.file, context.temp_allocator)
 	if err != nil do return
 	caps := FRAME_CAPS
@@ -27,6 +27,8 @@ settings_load :: proc(config_dir: string) -> (settings: Settings) {
 			settings.music_volume = parse_percent(value, settings.music_volume)
 		case "effects_volume":
 			settings.effects_volume = parse_percent(value, settings.effects_volume)
+		case "blend_fighters":
+			settings.blend_fighters = value != "false"
 		case "favourite":
 			if value != "" do append(&settings.favourites, strings.clone(value))
 		case "name":
@@ -45,6 +47,7 @@ settings_save :: proc(settings: Settings) {
 	fmt.sbprintfln(&text, "frame_cap=%d", settings.frame_cap)
 	fmt.sbprintfln(&text, "music_volume=%d", settings.music_volume)
 	fmt.sbprintfln(&text, "effects_volume=%d", settings.effects_volume)
+	fmt.sbprintfln(&text, "blend_fighters=%v", settings.blend_fighters)
 	fmt.sbprintfln(&text, "name=%s", strings.to_string(settings.name))
 	fmt.sbprintfln(&text, "network=%s", settings.network)
 	for tile in settings.favourites do fmt.sbprintfln(&text, "favourite=%s", tile)

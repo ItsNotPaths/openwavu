@@ -24,6 +24,7 @@ Settings :: struct {
 	file:       string,
 	frame_cap:  int,
 	music_volume, effects_volume: int,  // percent
+	blend_fighters: bool,  // off: fighters move only on sim ticks, the truthful 60 fps look
 	favourites: [dynamic]string,  // tile names
 	name:       strings.Builder,  // the player's name online; free text
 	network:    string,  // the files host's name, or a full URL
@@ -69,6 +70,15 @@ settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 		step := ui.stepper(u, clay.ID("FrameCap"), fmt.tprintf("%d fps", caps[at]), at > 0, at < len(caps) - 1)
 		if step != 0 {
 			l.settings.frame_cap = caps[at + step]
+			settings_save(l.settings)
+		}
+	}
+	if clay.UI()(ui.row(8)) {
+		ui.label("Fighter motion", tint = ui.TEXT_DIM)
+		ui.spacer()
+		blended := l.settings.blend_fighters
+		if ui.stepper(u, clay.ID("FighterMotion"), blended ? "Smooth" : "60 fps", blended, !blended) != 0 {
+			l.settings.blend_fighters = !blended
 			settings_save(l.settings)
 		}
 	}

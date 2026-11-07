@@ -34,6 +34,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, 
 	codes := Codes{engine = wasm.engine_create(), pack = &pack}
 	defer codes_destroy(&codes)
 	running := presentation.pack_create(&pack, r.renderer_2d, &r.gpu, volumes(settings))
+	r.blend.fighters = settings.blend_fighters
 	defer presentation.pack_destroy(running)
 	entry_state := imports.entry_create(tp.modes)
 	defer if asked, has := &entry_state.asked.?; has do imports.match_request_destroy(asked, entry_state.allocator)
