@@ -9,7 +9,7 @@ import "core:time"
 import "../titlepack"
 
 // The files role over HTTP: GET /store, /versions/<id>, /files/<name>. One thread per connection, Connection: close.
-FILES_ENDPOINT :: "127.0.0.1:9280"  // Apache proxies openwavu.paths.place here
+FILES_ENDPOINT :: "127.0.0.1:9280"  // the box's TLS proxy (Caddy) forwards here
 REQUEST_MAX :: 8192
 REQUEST_TIMEOUT :: 30 * time.Second  // a silent client frees its thread after this
 

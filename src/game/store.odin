@@ -9,7 +9,7 @@ import "../download"
 import "../titlepack"
 import "../ui"
 
-NETWORK :: "https://openwavu.paths.place:9443"
+NETWORK :: "https://serve.openwavu.org"
 CACHE_DOWNLOADS_MAX :: 4  // cache files downloading at once
 
 // The network's packs. Every GET runs on its own thread; the launcher polls each frame.
