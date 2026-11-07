@@ -211,77 +211,101 @@ command :: proc(client: ^Lobby_Client, kind: string, subject: []string, attribut
 
 @(private = "file")
 apply :: proc(client: ^Lobby_Client, line: kipp.Line) {
-	subject := line.subject
 	switch line.kind {
-	case "challenge":
-		if len(subject) < 1 do return
-		challenge, read := hex.decode(transmute([]byte)subject[0], context.temp_allocator)
-		if !read do return
-		signature := sign(client.identity, challenge)
-		command(client, "HELLO", {client.key}, {"signature", string(hex.encode(signature[:], context.temp_allocator))}, {"name", client.name})
-	case "welcome":
-		client.greeted = true
+	case "challenge": answer_challenge(client, line)
+	case "welcome":   client.greeted = true
+	case "lobby":     apply_lobby(client, line)
+	case "player":    apply_player(client, line)
+	case "match":     apply_match(client, line)
+	case "drop":      apply_drop(client, line)
+	case "error":     replace(&client.refused, line.attributes["msg"])
+	}
+}
+
+// challenge <hex>: HELLO with the challenge signed by this player's key.
+@(private = "file")
+answer_challenge :: proc(client: ^Lobby_Client, line: kipp.Line) {
+	if len(line.subject) < 1 do return
+	challenge, read := hex.decode(transmute([]byte)line.subject[0], context.temp_allocator)
+	if !read do return
+	signature := sign(client.identity, challenge)
+	command(client, "HELLO", {client.key}, {"signature", string(hex.encode(signature[:], context.temp_allocator))}, {"name", client.name})
+}
+
+// lobby <id>: a new lobby, or new values for a known one.
+@(private = "file")
+apply_lobby :: proc(client: ^Lobby_Client, line: kipp.Line) {
+	if len(line.subject) < 1 do return
+	lobby := find_lobby(client, line.subject[0])
+	if lobby == nil {
+		append(&client.lobbies, Lobby{id = strings.clone(line.subject[0])})
+		lobby = &client.lobbies[len(client.lobbies) - 1]
+	}
+	replace(&lobby.pack, line.attributes["pack"])
+	replace(&lobby.mode, line.attributes["mode"])
+	replace(&lobby.params, line.attributes["params"])
+	replace(&lobby.hash, line.attributes["hash"])
+	replace(&lobby.host, line.attributes["host"])
+}
+
+// player <lobby id> <key>
+@(private = "file")
+apply_player :: proc(client: ^Lobby_Client, line: kipp.Line) {
+	if len(line.subject) < 2 do return
+	lobby := find_lobby(client, line.subject[0])
+	if lobby == nil do return
+	player := lobby_player(lobby, line.subject[1])
+	if player == nil {
+		append(&lobby.players, Lobby_Player{key = strings.clone(line.subject[1])})
+		player = &lobby.players[len(lobby.players) - 1]
+	}
+	replace(&player.name, line.attributes["name"])
+	player.ready = line.attributes["ready"] == "1"
+	delete(player.loadout)
+	player.loadout = hex.decode(transmute([]byte)line.attributes["loadout"]) or_else nil
+}
+
+// match <lobby id>: a fact that does not read leaves the lobby as it was.
+@(private = "file")
+apply_match :: proc(client: ^Lobby_Client, line: kipp.Line) {
+	if len(line.subject) < 1 do return
+	lobby := find_lobby(client, line.subject[0])
+	token, token_read := strconv.parse_u64_of_base(line.attributes["token"], 16)
+	seed, seed_read := strconv.parse_u64(line.attributes["seed"])
+	delay_ms, delay_read := strconv.parse_u64(line.attributes["delay_ms"])
+	if lobby == nil || !token_read || !seed_read || !delay_read do return
+	lobby_match_destroy(lobby)
+	lobby.match = Lobby_Match{
+		token    = u32(token),
+		seed     = seed,
+		delay_ms = u32(delay_ms),
+		sides    = {strings.clone(line.attributes["side0"]), strings.clone(line.attributes["side1"])},
+		heard    = time.tick_now(),
+	}
+}
+
+// drop lobby <id> | drop player <lobby id> <key> | drop match <lobby id>
+@(private = "file")
+apply_drop :: proc(client: ^Lobby_Client, line: kipp.Line) {
+	if len(line.subject) < 2 do return
+	lobby := find_lobby(client, line.subject[1])
+	if lobby == nil do return
+	switch line.subject[0] {
 	case "lobby":
-		if len(subject) < 1 do return
-		lobby := find_lobby(client, subject[0])
-		if lobby == nil {
-			append(&client.lobbies, Lobby{id = strings.clone(subject[0])})
-			lobby = &client.lobbies[len(client.lobbies) - 1]
+		for candidate, position in client.lobbies do if candidate.id == lobby.id {
+			lobby_destroy(lobby)
+			ordered_remove(&client.lobbies, position)
+			return
 		}
-		replace(&lobby.pack, line.attributes["pack"])
-		replace(&lobby.mode, line.attributes["mode"])
-		replace(&lobby.params, line.attributes["params"])
-		replace(&lobby.hash, line.attributes["hash"])
-		replace(&lobby.host, line.attributes["host"])
 	case "player":
-		if len(subject) < 2 do return
-		lobby := find_lobby(client, subject[0])
-		if lobby == nil do return
-		player := lobby_player(lobby, subject[1])
-		if player == nil {
-			append(&lobby.players, Lobby_Player{key = strings.clone(subject[1])})
-			player = &lobby.players[len(lobby.players) - 1]
+		if len(line.subject) < 3 do return
+		for player, position in lobby.players do if player.key == line.subject[2] {
+			lobby_player_destroy(player)
+			ordered_remove(&lobby.players, position)
+			return
 		}
-		replace(&player.name, line.attributes["name"])
-		player.ready = line.attributes["ready"] == "1"
-		delete(player.loadout)
-		player.loadout = hex.decode(transmute([]byte)line.attributes["loadout"]) or_else nil
 	case "match":
-		if len(subject) < 1 do return
-		lobby := find_lobby(client, subject[0])
-		if lobby == nil do return
-		match := Lobby_Match{heard = time.tick_now()}
-		token, token_read := strconv.parse_u64_of_base(line.attributes["token"], 16)
-		seed, seed_read := strconv.parse_u64(line.attributes["seed"])
-		delay_ms, delay_read := strconv.parse_u64(line.attributes["delay_ms"])
-		if !token_read || !seed_read || !delay_read do return
-		match.token, match.seed, match.delay_ms = u32(token), seed, u32(delay_ms)
 		lobby_match_destroy(lobby)
-		match.sides = {strings.clone(line.attributes["side0"]), strings.clone(line.attributes["side1"])}
-		lobby.match = match
-	case "drop":
-		if len(subject) < 2 do return
-		lobby := find_lobby(client, subject[1])
-		if lobby == nil do return
-		switch subject[0] {
-		case "lobby":
-			for &candidate, index in client.lobbies do if candidate.id == subject[1] {
-				lobby_destroy(&candidate)
-				ordered_remove(&client.lobbies, index)
-				break
-			}
-		case "player":
-			if len(subject) < 3 do return
-			for player, index in lobby.players do if player.key == subject[2] {
-				lobby_player_destroy(player)
-				ordered_remove(&lobby.players, index)
-				break
-			}
-		case "match":
-			lobby_match_destroy(lobby)
-		}
-	case "error":
-		replace(&client.refused, line.attributes["msg"])
 	}
 }
 
