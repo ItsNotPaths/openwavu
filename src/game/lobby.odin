@@ -12,8 +12,9 @@ Lobbies :: struct {
 	host:     string,  // the lobby server's name
 	identity: online.Identity,
 	name:     string,
-	client:   ^online.Lobby_Client,  // nil while offline
-	failed:   string,                // why the last connection failed or ended
+	connection: imports.Connection,   // Offline -> Online or Failed (go_online); Online -> Failed (hang_up); any -> Offline (go_offline)
+	client:     ^online.Lobby_Client,  // only while Online
+	failed:     string,                // only while Failed: why
 	hashes:   map[string]string,     // a lobby's picks -> their lobby hash for this pack, "" when the pack refuses them
 	played:   u32,                   // the token of the last match started here
 }
@@ -25,7 +26,6 @@ lobbies_close :: proc(l: ^Lobbies) {
 		delete(hash)
 	}
 	delete(l.hashes)
-	delete(l.failed)
 }
 
 // The entry module's intents, in order.
@@ -40,7 +40,7 @@ lobbies_apply :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, entry: ^imports.Ent
 			else do go_offline(l)
 			continue
 		}
-		if l.client == nil do continue
+		if l.connection != .Online do continue
 		#partial switch asked in intent {
 		case imports.Create_Lobby: online.lobby_create(l.client, pack_name(tp), asked.mode, asked.picks, picks_hash(l, tp, asked.picks))
 		case imports.Join_Lobby:   online.lobby_join(l.client, fmt.tprintf("%08x", asked.id))
@@ -50,17 +50,14 @@ lobbies_apply :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, entry: ^imports.Ent
 	}
 }
 
-// Takes in what the server sent; a server that hung up leaves this player offline.
+// Takes in what the server sent.
 lobbies_pump :: proc(l: ^Lobbies) {
-	if l.client == nil || online.lobby_pump(l.client) do return
-	go_offline(l)
-	delete(l.failed)
-	l.failed = fmt.aprint("the lobby server hung up")
+	if l.connection == .Online && !online.lobby_pump(l.client) do hang_up(l, "the lobby server hung up")
 }
 
 // The lobby of a match fact not started yet, or nil.
 lobbies_new_match :: proc(l: ^Lobbies) -> ^online.Lobby {
-	if l.client == nil do return nil
+	if l.connection != .Online do return nil
 	lobby := online.lobby_joined(l.client)
 	if lobby == nil do return nil
 	match, running := lobby.match.?
@@ -70,14 +67,10 @@ lobbies_new_match :: proc(l: ^Lobbies) -> ^online.Lobby {
 }
 
 lobbies_view :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, view: ^imports.Host_View) {
-	view.lobby_count, view.joined = 0, false
+	view.connection = l.connection
+	view.lobby_count, view.joined, view.seat = 0, false, 0
 	imports.view_text(view.refused[:], l.failed)
-	switch {
-	case l.client != nil: view.connection = .Online
-	case l.failed != "":  view.connection = .Failed
-	case:                 view.connection = .Offline
-	}
-	if l.client == nil do return
+	if l.connection != .Online do return
 	imports.view_text(view.refused[:], l.client.refused)
 	joined := online.lobby_joined(l.client)
 	for &lobby in l.client.lobbies {
@@ -101,18 +94,27 @@ lobbies_view :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, view: ^imports.Host_
 
 @(private = "file")
 go_online :: proc(l: ^Lobbies) {
-	if l.client != nil do return
-	delete(l.failed)
-	err: string
-	l.client, err = online.lobby_connect(l.host, l.identity, l.name)
-	if err != "" do l.client = nil  // lobby_connect freed it
-	l.failed = fmt.aprint(err)
+	if l.connection == .Online do return
+	go_offline(l)
+	client, err := online.lobby_connect(l.host, l.identity, l.name)
+	if err != "" {
+		hang_up(l, err)  // lobby_connect freed the client
+		return
+	}
+	l.client, l.connection = client, .Online
 }
 
 @(private = "file")
 go_offline :: proc(l: ^Lobbies) {
-	if l.client != nil do online.lobby_disconnect(l.client)
-	l.client = nil
+	if l.connection == .Online do online.lobby_disconnect(l.client)
+	delete(l.failed)
+	l.client, l.failed, l.connection = nil, "", .Offline
+}
+
+@(private = "file")
+hang_up :: proc(l: ^Lobbies, why: string) {
+	go_offline(l)
+	l.failed, l.connection = fmt.aprint(why), .Failed
 }
 
 // This pack's, a free seat, no match, and the same lobby hash here.
