@@ -16,7 +16,7 @@ import "../wasm"
 // closes (quit) or a module traps, which cuts off the whole pack and returns to the launcher.
 // (hole pack-leave :tags game :needs app-shell) the player can not leave a running pack for the launcher; only closing the window ends it.
 // relay_host: "" plays offline; otherwise every match pairs on that relay.
-play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int, relay_host: string) -> (quit: bool) {
+play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, relay_host: string) -> (quit: bool) {
 	if base := titlepack.missing_base(tp); base != "" {
 		fmt.eprintfln("openwavu: %s needs the stock pack %s; import it first", tp.name, base)
 		return
@@ -33,7 +33,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int, rela
 	defer content.close_pack(&pack)
 	codes := Codes{engine = wasm.engine_create(), pack = &pack}
 	defer codes_destroy(&codes)
-	running := presentation.pack_create(&pack, r.renderer_2d, &r.gpu)
+	running := presentation.pack_create(&pack, r.renderer_2d, &r.gpu, volumes(settings))
 	defer presentation.pack_destroy(running)
 	entry_state := imports.entry_create(tp.modes)
 	defer if asked, has := &entry_state.asked.?; has do imports.match_request_destroy(asked, entry_state.allocator)
@@ -90,13 +90,13 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int, rela
 			render.show_scene(r, &running.scene.scene, game == nil || game.ticked)
 			running.scene.sent = false
 		}
-		alpha: f32 = game != nil && frame_cap > 60 ? match.tick_alpha(game) : 1  // at 60 fps every frame is a tick: no blending
+		alpha: f32 = game != nil && settings.frame_cap > 60 ? match.tick_alpha(game) : 1  // at 60 fps every frame is a tick: no blending
 		if !render.draw_scene(r, &running.scene.assets, alpha) {
 			fmt.eprintfln("openwavu: the 3D did not draw: %s", sdl.GetError())
 			return
 		}
 		render.end_frame(r)
-		pace(now, frame_cap)
+		pace(now, settings.frame_cap)
 	}
 }
 

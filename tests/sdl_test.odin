@@ -1,5 +1,6 @@
 package tests
 
+import hm "core:container/handle_map"
 import "core:fmt"
 import "core:os"
 import "core:strings"
@@ -96,4 +97,35 @@ module_with_unlisted_sdl_call_does_not_load :: proc(t: ^testing.T) {
 	defer wasm.module_destroy(m)
 	_, err := wasm.instantiate(r.linker, r.store, m)
 	testing.expectf(t, strings.contains(err, "SDL_CreateWindow"), "got %q", err)
+}
+
+// A pack's stream plays at the pack's own gain times the player's volume for the kind the pack names.
+@(test)
+stream_plays_at_the_player_volume :: proc(t: ^testing.T) {
+	code, built := build_module(t, "tests/ref/sound_probe.c")
+	if !built do return
+	_ = sdl.SetHint(sdl.HINT_AUDIO_DRIVER, "dummy")
+	if !testing.expect(t, sdl.InitSubSystem({.AUDIO})) do return
+	defer sdl.QuitSubSystem({.AUDIO})
+	set := imports.sdl_set_create(nil, {.Effects = 1, .Music = 0.25})
+	defer imports.sdl_set_destroy(&set)
+	r := rig_create(64 << 20)
+	defer rig_destroy(r)
+	testing.expect_value(t, imports.define_sdl(r.linker, &set), "")
+	m, compile_err := wasm.compile(r.engine, code)
+	if !testing.expect_value(t, compile_err, "") do return
+	defer wasm.module_destroy(m)
+	inst, inst_err := wasm.instantiate(r.linker, r.store, m)
+	if !testing.expect_value(t, inst_err, "") do return
+
+	got := []wasm.Val{{}}
+	testing.expect_value(t, wasm.call(r.store, inst, "music", nil, got), "")
+	testing.expect_value(t, got[0].of.i32, 1)
+	streams := 0
+	iterator := hm.iterator_make(&set.objects)
+	for object, _ in hm.iterate(&iterator) do if object.kind == .Audio_Stream {
+		streams += 1
+		testing.expect_value(t, sdl.GetAudioStreamGain((^sdl.AudioStream)(object.pointer)), 0.125)
+	}
+	testing.expect_value(t, streams, 1)
 }

@@ -15,16 +15,18 @@ static const SDL_AudioSpec MIX_SPEC = {SDL_AUDIO_F32, 2, MIX_RATE};
 
 static uint32_t next_number;
 
-static SDL_AudioStream *open_stream(const SDL_AudioSpec *spec) {
+static SDL_AudioStream *open_stream(const SDL_AudioSpec *spec, uint32_t kind) {
 	SDL_AudioStream *stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, spec, NULL, NULL);
-	if (stream != NULL) SDL_ResumeAudioStreamDevice(stream);
+	if (stream == NULL) return NULL;
+	ow_sound_kind(stream, kind);
+	SDL_ResumeAudioStreamDevice(stream);
 	return stream;
 }
 
 bool ow_sound_channel_open(OwSoundChannel *channel, uint32_t voices) {
 	*channel = (OwSoundChannel){.voices = voices};
 	for (uint32_t voice = 0; voice < voices; voice++) {
-		channel->streams[voice] = open_stream(&MIX_SPEC);
+		channel->streams[voice] = open_stream(&MIX_SPEC, OW_SOUND_EFFECTS);
 		if (channel->streams[voice] == NULL) {
 			ow_sound_channel_close(channel);
 			return false;
@@ -140,7 +142,7 @@ bool ow_music_start(OwMusic *music, OwStr path, uint64_t loop_start, uint64_t lo
 	drflac *decoder = drflac_open(music_read, music_seek, music_tell, music, NULL);
 	if (decoder == NULL) return false;
 	SDL_AudioSpec spec = {SDL_AUDIO_F32, decoder->channels, (int)decoder->sampleRate};
-	music->stream = open_stream(&spec);
+	music->stream = open_stream(&spec, OW_SOUND_MUSIC);
 	if (music->stream == NULL) {
 		drflac_close(decoder);
 		return false;

@@ -23,6 +23,15 @@ Sdl_Kind :: enum u8 {
 	Audio_Stream,
 }
 
+// What a pack names an audio stream (OW_SOUND_*); the player sets a volume for each.
+Sound_Kind :: enum u32 {
+	Effects,
+	Music,
+}
+
+// Gains per kind, 1 = as the pack plays it.
+Volumes :: [Sound_Kind]f32
+
 // A pack sees a handle as one u32; 0 is NULL. A destroyed object's handle never names a later object in its slot.
 Sdl_Handle :: hm.Handle32
 
@@ -32,17 +41,21 @@ Sdl_Object :: struct {
 	kind:    Sdl_Kind,
 	pointer: rawptr,
 	owners:  [2]u32,
+	sound:   Sound_Kind,  // an audio stream's
+	gain:    f32,         // an audio stream's own, before the player's volume
 }
 
 // One pack's SDL objects.
 Sdl_Set :: struct {
 	objects:  hm.Dynamic_Handle_Map(Sdl_Object, Sdl_Handle),
 	renderer: u32,  // the host's renderer
+	volumes:  Volumes,
 }
 
 // The imports grow its lists with the allocator it is made with here.
-sdl_set_create :: proc(renderer: ^sdl.Renderer) -> (set: Sdl_Set) {
+sdl_set_create :: proc(renderer: ^sdl.Renderer, volumes := Volumes{.Effects = 1, .Music = 1}) -> (set: Sdl_Set) {
 	hm.dynamic_init(&set.objects, context.allocator)
+	set.volumes = volumes
 	set.renderer = sdl_new(&set, .Renderer, renderer, {})
 	return
 }
@@ -74,10 +87,12 @@ define_sdl :: proc(l: wasm.Linker, set: ^Sdl_Set) -> (err: string) {
 		{"SDL_IOFromConstMem", {wasm.I32, wasm.I32}, {wasm.I32}, io_from_const_mem},
 		{"TTF_OpenFontIO", {wasm.I32, wasm.I32, wasm.F32}, {wasm.I32}, open_font_io},
 		{"SDL_OpenAudioDeviceStream", {wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, open_audio_device_stream},
+		{"SDL_SetAudioStreamGain", {wasm.I32, wasm.F32}, {wasm.I32}, set_audio_stream_gain},
 	}
 	for list in ([][]Sdl_Define{hand[:], sdl_glue()}) {
 		for d in list do if err = wasm.define_func(l, d.name, d.params, d.results, d.callback, set, "env"); err != "" do return
 	}
+	if err = wasm.define_func(l, "sound_kind", {wasm.I32, wasm.I32}, {}, sound_kind, set); err != "" do return
 	return wasm.define_func(l, "renderer", {}, {wasm.I32}, renderer, set)
 }
 
@@ -249,6 +264,57 @@ open_audio_device_stream :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args:
 	if args[2].of.i32 != 0 do fail(&call, 3, "is a callback")
 	if call.error != "" do return wasm.trap(call.error)
 	stream := sdl.OpenAudioDeviceStream(sdl.AUDIO_DEVICE_DEFAULT_PLAYBACK, spec, nil, nil)
-	results[0] = wasm.i32_val(i32(sdl_new(call.set, .Audio_Stream, stream, {})))
+	handle := sdl_new(call.set, .Audio_Stream, stream, {})
+	if object, valid := hm.get(&call.set.objects, transmute(Sdl_Handle)handle); valid {
+		object.gain = 1
+		apply_gain(call.set, object^)
+	}
+	results[0] = wasm.i32_val(i32(handle))
 	return nil
+}
+
+// The pack's gain is kept, and SDL gets it times the player's volume.
+@(private = "file")
+set_audio_stream_gain :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_SetAudioStreamGain")
+	stream := audio_stream(&call, 1, args[0])
+	if call.error != "" do return wasm.trap(call.error)
+	gain := args[1].of.f32
+	set := stream != nil && gain >= 0
+	if set {
+		stream.gain = gain
+		apply_gain(call.set, stream^)
+	}
+	results[0] = wasm.i32_val(i32(set))
+	return nil
+}
+
+// ow_sound_kind(stream, kind): which of the player's volumes the stream plays at.
+@(private = "file")
+sound_kind :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "ow_sound_kind")
+	stream := audio_stream(&call, 1, args[0])
+	kind := u32(args[1].of.i32)
+	if kind > u32(max(Sound_Kind)) do fail(&call, 2, "is not an OW_SOUND_* kind")
+	if call.error != "" do return wasm.trap(call.error)
+	if stream != nil {
+		stream.sound = Sound_Kind(kind)
+		apply_gain(call.set, stream^)
+	}
+	return nil
+}
+
+// The audio stream object behind a handle; nil for 0.
+@(private = "file")
+audio_stream :: proc(call: ^Sdl_Call, arg: int, v: wasm.Val) -> ^Sdl_Object {
+	if sdl_handle(call, arg, v, .Audio_Stream) == nil do return nil
+	object, _ := hm.get(&call.set.objects, transmute(Sdl_Handle)u32(v.of.i32))
+	return object
+}
+
+@(private = "file")
+apply_gain :: proc(set: ^Sdl_Set, stream: Sdl_Object) {
+	_ = sdl.SetAudioStreamGain((^sdl.AudioStream)(stream.pointer), stream.gain * set.volumes[stream.sound])
 }

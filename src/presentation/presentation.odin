@@ -24,11 +24,11 @@ Pack :: struct {
 }
 
 // renderer: the host's, for the pack's 2D. gpu: the one the scene's assets load on; nil draws no scene.
-pack_create :: proc(files: ^content.Pack, renderer: ^sdl.Renderer, gpu: ^render.Gpu = nil) -> (p: ^Pack) {
+pack_create :: proc(files: ^content.Pack, renderer: ^sdl.Renderer, gpu: ^render.Gpu = nil, volumes := imports.Volumes{.Effects = 1, .Music = 1}) -> (p: ^Pack) {
 	p = new(Pack)
 	p.content = files
 	p.gpu = gpu
-	p.sdl = imports.sdl_set_create(renderer)
+	p.sdl = imports.sdl_set_create(renderer, volumes)
 	p.scene = imports.scene_inbox_create(files)
 	return
 }

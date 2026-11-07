@@ -61,6 +61,11 @@ OW_IMPORT(event) void ow_event(uint32_t kind, int32_t a, int32_t b);
 // SDL_GetTextureSize, not texture->w. The host resets draw state (color, blend, clip, scale) after each module draws.
 OW_IMPORT(renderer) struct SDL_Renderer *ow_renderer(void);
 
+// Which of the player's volumes an audio stream plays at; a stream starts as effects. The SDK sound helper names its own.
+struct SDL_AudioStream;
+enum { OW_SOUND_EFFECTS, OW_SOUND_MUSIC };
+OW_IMPORT(sound_kind) void ow_sound_kind(struct SDL_AudioStream *stream, uint32_t kind);
+
 // What local player 0 or 1 holds this frame, an OW_PAD_* word; 0 for any other player. Menus read it too.
 OW_IMPORT(pad) uint32_t ow_pad(uint32_t player);
 // The sim view of the last frame (in ow_init: the match start's); returns its length.

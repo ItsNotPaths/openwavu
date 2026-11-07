@@ -60,7 +60,6 @@ sdl_glue :: proc() -> []Sdl_Define {
 		{"SDL_PutAudioStreamData", {wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, import_SDL_PutAudioStreamData},
 		{"SDL_ClearAudioStream", {wasm.I32}, {wasm.I32}, import_SDL_ClearAudioStream},
 		{"SDL_GetAudioStreamQueued", {wasm.I32}, {wasm.I32}, import_SDL_GetAudioStreamQueued},
-		{"SDL_SetAudioStreamGain", {wasm.I32, wasm.F32}, {wasm.I32}, import_SDL_SetAudioStreamGain},
 		{"SDL_SetAudioStreamFrequencyRatio", {wasm.I32, wasm.F32}, {wasm.I32}, import_SDL_SetAudioStreamFrequencyRatio},
 	}
 	return defines[:]
@@ -691,17 +690,6 @@ import_SDL_GetAudioStreamQueued :: proc "c" (env: rawptr, caller: ^wasm.C_Caller
 }
 
 @(private = "file")
-import_SDL_SetAudioStreamGain :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
-	context = runtime.default_context()
-	call := sdl_call(env, caller, "SDL_SetAudioStreamGain")
-	p1 := sdl_handle(&call, 1, args[0], .Audio_Stream)
-	p2 := args[1].of.f32
-	if call.error != "" do return wasm.trap(call.error)
-	results[0] = wasm.i32_val(i32(SDL_SetAudioStreamGain(p1, p2)))
-	return nil
-}
-
-@(private = "file")
 import_SDL_SetAudioStreamFrequencyRatio :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
 	context = runtime.default_context()
 	call := sdl_call(env, caller, "SDL_SetAudioStreamFrequencyRatio")
@@ -965,11 +953,6 @@ SDL_ClearAudioStream :: proc(p1: rawptr) -> bool {
 @(private = "file")
 SDL_GetAudioStreamQueued :: proc(p1: rawptr) -> i32 {
 	return (proc "c" (rawptr) -> i32)(rawptr(sdl.GetAudioStreamQueued))(p1)
-}
-
-@(private = "file")
-SDL_SetAudioStreamGain :: proc(p1: rawptr, p2: f32) -> bool {
-	return (proc "c" (rawptr, f32) -> bool)(rawptr(sdl.SetAudioStreamGain))(p1, p2)
 }
 
 @(private = "file")

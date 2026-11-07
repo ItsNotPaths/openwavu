@@ -37,6 +37,23 @@ stepper :: proc(ui: ^Ui, id: clay.ElementId, text: string, can_down, can_up: boo
 	return
 }
 
+// A fraction (0..1) as a lit bar between arrow buttons: the arrows step it by SLIDER_STEP, a press or drag on the bar
+// sets it.
+slider :: proc(ui: ^Ui, id: clay.ElementId, fraction: f32) -> (value: f32) {
+	value = fraction
+	if clay.UI()(row(6)) {
+		if button(ui, clay.ID("SlideDown", id.id), "<", fraction > 0 ? BUTTON : OFF_BUTTON) do value = max(fraction - SLIDER_STEP, 0)
+		bar := clay.ID("SlideBar", id.id)
+		if clay.UI()({id = bar, layout = {sizing = {clay.SizingFixed(SLIDER_WIDTH), clay.SizingFixed(BUTTON.height)}}, custom = painted(Progress{fraction})}) {}
+		if !ui.input.pad && ui.input.mouse_down && clay.PointerOver(bar) {
+			box := clay.GetElementData(bar).boundingBox
+			value = clamp((ui.input.mouse.x - box.x) / box.width, 0, 1)
+		}
+		if button(ui, clay.ID("SlideUp", id.id), ">", fraction < 1 ? BUTTON : OFF_BUTTON) do value = min(fraction + SLIDER_STEP, 1)
+	}
+	return
+}
+
 // A raised card with a heading and a line of text; the whole card is the button.
 card :: proc(ui: ^Ui, id: clay.ElementId, heading, text: string, selected := false) -> bool {
 	s := interact(ui, id)

@@ -70,5 +70,5 @@ SDL_PauseAudioStreamDevice
 SDL_PutAudioStreamData 2=3
 SDL_ClearAudioStream
 SDL_GetAudioStreamQueued
-SDL_SetAudioStreamGain
 SDL_SetAudioStreamFrequencyRatio
+SDL_SetAudioStreamGain hand

@@ -5,12 +5,13 @@ import "core:os"
 import "core:slice"
 import "core:strconv"
 import "core:strings"
+import "../imports"
 
 DEFAULT_NETWORK :: "openwavu.org"
 
 // One key=value per line; favourite= repeats. A missing file, unknown keys and bad values keep the defaults.
 settings_load :: proc(config_dir: string) -> (settings: Settings) {
-	settings = {file = strings.concatenate({config_dir, "/settings.conf"}), frame_cap = FRAME_CAPS[0], network = strings.clone(DEFAULT_NETWORK)}
+	settings = {file = strings.concatenate({config_dir, "/settings.conf"}), frame_cap = FRAME_CAPS[0], music_volume = 100, effects_volume = 100, network = strings.clone(DEFAULT_NETWORK)}
 	text, err := os.read_entire_file(settings.file, context.temp_allocator)
 	if err != nil do return
 	caps := FRAME_CAPS
@@ -22,6 +23,10 @@ settings_load :: proc(config_dir: string) -> (settings: Settings) {
 		case "frame_cap":
 			cap, parsed := strconv.parse_int(value)
 			if parsed && slice.contains(caps[:], cap) do settings.frame_cap = cap
+		case "music_volume":
+			settings.music_volume = parse_percent(value, settings.music_volume)
+		case "effects_volume":
+			settings.effects_volume = parse_percent(value, settings.effects_volume)
 		case "favourite":
 			if value != "" do append(&settings.favourites, strings.clone(value))
 		case "name":
@@ -38,10 +43,27 @@ settings_load :: proc(config_dir: string) -> (settings: Settings) {
 settings_save :: proc(settings: Settings) {
 	text := strings.builder_make(context.temp_allocator)
 	fmt.sbprintfln(&text, "frame_cap=%d", settings.frame_cap)
+	fmt.sbprintfln(&text, "music_volume=%d", settings.music_volume)
+	fmt.sbprintfln(&text, "effects_volume=%d", settings.effects_volume)
 	fmt.sbprintfln(&text, "name=%s", strings.to_string(settings.name))
 	fmt.sbprintfln(&text, "network=%s", settings.network)
 	for tile in settings.favourites do fmt.sbprintfln(&text, "favourite=%s", tile)
 	if os.write_entire_file(settings.file, strings.to_string(text)) != nil do fmt.eprintln("openwavu: could not save", settings.file)
+}
+
+@(private = "file")
+parse_percent :: proc(value: string, fallback: int) -> int {
+	percent, parsed := strconv.parse_int(value)
+	return parsed && percent >= 0 && percent <= 100 ? percent : fallback
+}
+
+// The volumes as gains, squared so the middle of a slider sounds like the middle.
+volumes :: proc(settings: Settings) -> imports.Volumes {
+	gain :: proc(percent: int) -> f32 {
+		fraction := f32(percent) / 100
+		return fraction * fraction
+	}
+	return {.Effects = gain(settings.effects_volume), .Music = gain(settings.music_volume)}
 }
 
 settings_destroy :: proc(settings: ^Settings) {

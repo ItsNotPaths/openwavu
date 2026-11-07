@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:math"
 import "core:strings"
 import clay "../../vendor/clay"
 import "../ui"
@@ -19,10 +20,10 @@ Popup_Mode :: enum u8 {
 	Uninstall,
 }
 
-// (hole volume-settings :tags (game audio)) no volume settings (master, music, effects, voices); the music plays a little loud against the rest. The host could set each pack stream's gain by a channel kind the SDK names.
 Settings :: struct {
 	file:       string,
 	frame_cap:  int,
+	music_volume, effects_volume: int,  // percent
 	favourites: [dynamic]string,  // tile names
 	name:       strings.Builder,  // the player's name online; free text
 	network:    string,  // the files host's name, or a full URL
@@ -71,6 +72,8 @@ settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 			settings_save(l.settings)
 		}
 	}
+	volume_row(u, "Music", &l.settings.music_volume, &l.settings)
+	volume_row(u, "Effects", &l.settings.effects_volume, &l.settings)
 	if clay.UI()(ui.row(8)) {
 		ui.label("Name", tint = ui.TEXT_DIM)
 		ui.spacer()
@@ -90,6 +93,20 @@ settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 }
 
 SETTINGS_FIELD_WIDTH :: 360
+
+// A volume setting, saved when it moves. Packs take it when they start.
+@(private = "file")
+volume_row :: proc(u: ^ui.Ui, name: string, percent: ^int, settings: ^Settings) {
+	if clay.UI()(ui.row(8)) {
+		ui.label(name, tint = ui.TEXT_DIM)
+		ui.spacer()
+		moved := int(math.round(ui.slider(u, clay.ID(name), f32(percent^) / 100) * 100))
+		if moved != percent^ {
+			percent^ = moved
+			settings_save(settings^)
+		}
+	}
+}
 
 // A text field of one width for every settings row.
 @(private = "file")
