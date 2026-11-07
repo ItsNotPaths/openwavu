@@ -14,8 +14,29 @@ import "../src/render"
 import "../src/titlepack"
 import "../src/wasm"
 
-// The entry module asks for a versus match of two bots: bad asks are refused, a good one is copied for the host, and
-// the host view shows the phase and winner the host sets.
+PARAMS_MANIFEST :: `id = "probe"
+version = "1"
+[modes.versus]
+sim = "gameplay.wasm"
+presenter = "gamerender.wasm"
+[params.stage]
+kind = "text"
+default = "acid_rain"
+expose = true
+[params.rounds]
+kind = "number"
+default = 3
+min = 1
+max = 5
+expose = true
+[params.time]
+kind = "number"
+default = 60
+`
+
+// The entry module asks for a versus match of two bots: bad asks are refused (a locked param, a value out of range), a
+// good one is copied for the host with every param the pack declares, and the host view shows the phase and winner the
+// host sets.
 // The host plays it through match.frame on the stock pack to the sim's match end, and the presenter gets the sim
 // view every frame. Needs an import.
 @(test)
@@ -40,8 +61,9 @@ entry_module_starts_a_bot_match :: proc(t: ^testing.T) {
 	}
 	defer for code in codes do wasm.module_destroy(code)
 
-	modes := []titlepack.Mode{{"versus", "gameplay.wasm", "gamerender.wasm"}}
-	state := imports.entry_create(modes)
+	tp, read := titlepack.read_titlepack(PARAMS_MANIFEST, context.temp_allocator)
+	if !testing.expect(t, read) do return
+	state := imports.entry_create(tp)
 	entry, err := presentation.create(engine, "entry", running)
 	if !testing.expect_value(t, err, "") do return
 	defer imports.module_destroy(entry)
@@ -55,6 +77,8 @@ entry_module_starts_a_bot_match :: proc(t: ^testing.T) {
 	testing.expect_value(t, ask(t, entry, "read_view"), 0 * 10 + 0 + 1)  // no match yet
 	testing.expect_value(t, ask(t, entry, "ask_unknown_mode"), -1)
 	testing.expect_value(t, ask(t, entry, "ask_bad_params"), -1)
+	testing.expect_value(t, ask(t, entry, "ask_locked"), -1)
+	testing.expect_value(t, ask(t, entry, "ask_out_of_range"), -1)
 	testing.expect_value(t, ask(t, entry, "ask_versus"), 0)
 	testing.expect_value(t, ask(t, entry, "ask_versus"), -1)  // one is asked for already
 	asked, has := state.asked.?
@@ -65,6 +89,7 @@ entry_module_starts_a_bot_match :: proc(t: ^testing.T) {
 	testing.expect_value(t, asked.bot_sides, bit_set[0 ..< 2; u32]{0, 1})
 	testing.expect_value(t, asked.params["rounds"], "2")
 	testing.expect_value(t, asked.params["stage"], "dragons_nest")
+	testing.expect_value(t, asked.params["time"], "60")
 	testing.expect_value(t, string(cstring(raw_data(asked.loadouts[1]))), "kazuya")
 	state.view.match = .Running
 	testing.expect_value(t, ask(t, entry, "ask_versus"), -1)  // one is running

@@ -12,6 +12,8 @@ static int32_t ask(OwStr mode, OwStr params) {
 OW_EXPORT(ow_init) int32_t init(void) { return 0; }
 OW_EXPORT(ow_frame) void frame(float dt, uint32_t cmdbuf) {}
 OW_EXPORT(ask_versus) int32_t ask_versus(void) { return ask(OW_STR("versus"), OW_STR("stage=dragons_nest rounds=2")); }
+OW_EXPORT(ask_locked) int32_t ask_locked(void) { return ask(OW_STR("versus"), OW_STR("time=30")); }
+OW_EXPORT(ask_out_of_range) int32_t ask_out_of_range(void) { return ask(OW_STR("versus"), OW_STR("rounds=9")); }
 OW_EXPORT(ask_unknown_mode) int32_t ask_unknown_mode(void) { return ask(OW_STR("story"), OW_STR("")); }
 // The host view's match phase * 10 + its winner + 1, or -1 when the version or size is wrong.
 OW_EXPORT(read_view) int32_t read_view(void) {

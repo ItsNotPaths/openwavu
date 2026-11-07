@@ -11,7 +11,7 @@ Match_Request :: struct {
 	mode:      titlepack.Mode,
 	bot_sides: bit_set[0 ..< 2; u32],  // ow_bot_pad plays these
 	loadouts:  [2][]byte,
-	params:    map[string]string,  // name -> value text, as the entry module wrote it
+	params:    map[string]string,  // every declared param's final value, as text
 }
 
 // The host view (openwavu.h OwHostView), which the host keeps current.
@@ -37,6 +37,7 @@ Match_Phase :: enum u32 {
 Entry :: struct {
 	view:      Host_View,
 	modes:     []titlepack.Mode,      // the pack.toml modes it may start
+	params:    []titlepack.Param,     // the pack.toml params it may pick
 	asked:     Maybe(Match_Request),  // until the host starts it at its next frame
 	allocator: runtime.Allocator,     // what an ask is copied with
 	exit:      bool,                  // the pack asked to go back to the launcher
@@ -45,8 +46,8 @@ Entry :: struct {
 HOST_VIEW_VERSION :: 1
 LOADOUT_MAX :: 4096
 
-entry_create :: proc(modes: []titlepack.Mode) -> Entry {
-	return {view = {version = HOST_VIEW_VERSION, size = size_of(Host_View)}, modes = modes, allocator = context.allocator}
+entry_create :: proc(tp: titlepack.Title_Pack) -> Entry {
+	return {view = {version = HOST_VIEW_VERSION, size = size_of(Host_View)}, modes = tp.modes, params = tp.params, allocator = context.allocator}
 }
 
 match_request_destroy :: proc(r: ^Match_Request, allocator: runtime.Allocator) {
@@ -56,7 +57,7 @@ match_request_destroy :: proc(r: ^Match_Request, allocator: runtime.Allocator) {
 
 // host_view(buf, cap) -> its length, copying as much as fits. match_local(mode, len, bot_sides, loadout0, len,
 // loadout1, len, params, len) -> 0 when the match starts at the next frame, -1 when it is refused: an unknown mode,
-// params that do not read, or a match asked for or running.
+// params that do not read or the pack does not allow (titlepack.resolve_params), or a match asked for or running.
 define_entry :: proc(l: wasm.Linker, entry: ^Entry) -> (err: string) {
 	if err = wasm.define_func(l, "host_view", {wasm.I32, wasm.I32}, {wasm.I32}, host_view, entry); err != "" do return
 	if err = wasm.define_func(l, "exit", {}, {}, exit_import, entry); err != "" do return
@@ -125,8 +126,10 @@ match_local :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val,
 	if entry.asked != nil || entry.view.match == .Running || len(loadout0) > LOADOUT_MAX || len(loadout1) > LOADOUT_MAX do return nil
 	mode, known := find_mode(entry.modes, string(mode_name))
 	if !known do return nil
-	params, read := parse_params(string(params_text))
+	picks, read := parse_params(string(params_text), context.temp_allocator)
 	if !read do return nil
+	params, refused := titlepack.resolve_params(entry.params, picks)
+	if refused != "" do return nil
 	entry.asked = Match_Request{
 		mode      = mode,
 		bot_sides = transmute(bit_set[0 ..< 2; u32])(u32(args[2].of.i32) & 0b11),

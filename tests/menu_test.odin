@@ -32,7 +32,9 @@ stock_menus_ask_for_the_picked_match :: proc(t: ^testing.T) {
 	code, compile_err := wasm.compile(engine, bytes)
 	if !testing.expect_value(t, compile_err, "") do return
 	defer wasm.module_destroy(code)
-	state := imports.entry_create([]titlepack.Mode{{"versus", "gameplay.wasm", "gamerender.wasm"}})
+	tp, read := titlepack.read_titlepack(PARAMS_MANIFEST, context.temp_allocator)
+	if !testing.expect(t, read) do return
+	state := imports.entry_create(tp)
 	entry, err := presentation.create(engine, "app.wasm", running)
 	if !testing.expect_value(t, err, "") do return
 	defer imports.module_destroy(entry)

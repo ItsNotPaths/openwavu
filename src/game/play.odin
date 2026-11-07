@@ -36,7 +36,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, 
 	running := presentation.pack_create(&pack, r.renderer_2d, &r.gpu, volumes(settings))
 	r.blend.fighters = settings.blend_fighters
 	defer presentation.pack_destroy(running)
-	entry_state := imports.entry_create(tp.modes)
+	entry_state := imports.entry_create(tp)
 	defer if asked, has := &entry_state.asked.?; has do imports.match_request_destroy(asked, entry_state.allocator)
 	entry, err := start_entry(&codes, tp.main, running, &entry_state)
 	if err != "" {

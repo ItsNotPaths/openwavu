@@ -1,26 +1,30 @@
 // Title pack: one tar (docs/packs.md). At the root: pack.toml (the first entry), the wasm modules and the db or
-// db patch; everything else in folders the modules name. Params narrow in layers: core defaults, pack,
-// network, lobby. Each layer sets values and exposes a subset.
+// db patch; everything else in folders the modules name. pack.toml declares the params; the lobby host may change the
+// exposed ones, inside their ranges.
 package titlepack
 
 import "core:c"
+import "core:fmt"
+import "core:math"
 import "core:os"
 import "core:path/filepath"
 import "core:slice"
+import "core:strconv"
 import "core:strings"
 
-// A param as a module declares it (OW_PARAM writes the openwavu.params custom section).
-Param :: struct {
-	name:     string,
-	default:  f64,
-	min, max: f64,
+Param_Kind :: enum {
+	Number,
+	Text,
 }
 
-// One layer's say on a param: its value, whether the next layer may change it, and a narrower range.
-Param_Set :: struct {
-	value:    f64,
-	expose:   bool,
-	min, max: f64,
+// A [params.x] table of pack.toml. Values are text, like the sim reads them.
+Param :: struct {
+	name:     string,
+	kind:     Param_Kind,
+	default:  string,
+	expose:   bool,      // the lobby host may change it
+	min, max: f64,       // numbers only
+	values:   []string,  // the only values allowed; empty allows any
 }
 
 // A match mode: the sim module and the presentation module that draws it.
@@ -35,6 +39,7 @@ Title_Pack :: struct {
 	main:              string,  // the entry module; "" for a pack without code (a db mod)
 	modes:             []Mode,    // sorted by name
 	bases:             []string,  // pack ids, bottom first; a stock pack has none
+	params:            []Param,   // sorted by name
 }
 
 // pack.toml text -> the pack. id and version are required; name falls back to the id. Each [modes.x] needs both a sim
@@ -50,6 +55,7 @@ read_titlepack :: proc(manifest: string, allocator := context.allocator) -> (tp:
 	name := toml_text(toml_get(top, "name")) or_else id
 	main := toml_text(toml_get(top, "main")) or_else ""
 	modes := read_modes(top) or_return
+	params := read_params(top) or_return
 	bases := make([dynamic]string, allocator)
 	if list := toml_get(top, "bases"); list.type == .Array {
 		for element in list.array.elements[:list.array.size] {
@@ -63,8 +69,10 @@ read_titlepack :: proc(manifest: string, allocator := context.allocator) -> (tp:
 		main    = strings.clone(main, allocator),
 		modes   = make([]Mode, len(modes), allocator),
 		bases   = bases[:],
+		params  = make([]Param, len(params), allocator),
 	}
 	for mode, i in modes do tp.modes[i] = {strings.clone(mode.name, allocator), strings.clone(mode.sim, allocator), strings.clone(mode.presenter, allocator)}
+	for param, i in params do tp.params[i] = param_clone(param, allocator)
 	return tp, true
 }
 
@@ -86,6 +94,84 @@ read_modes :: proc(top: Toml_Datum) -> (modes: []Mode, ok: bool) {
 	return modes, true
 }
 
+// The [params.x] tables, sorted by name; views into top's result, in the temp allocator. kind and default are required;
+// a number's default must sit inside min and max.
+@(private = "file")
+read_params :: proc(top: Toml_Datum) -> (params: []Param, ok: bool) {
+	section := toml_get(top, "params")
+	if section.type == .Unknown do return nil, true
+	if section.type != .Table do return
+	params = make([]Param, section.table.size, context.temp_allocator)
+	for &param, index in params {
+		entry := section.table.values[index]
+		if entry.type != .Table do return
+		param.name = string(section.table.keys[index][:section.table.key_lengths[index]])
+		switch toml_text(toml_get(entry, "kind")) or_return {
+		case "number": param.kind = .Number
+		case "text":   param.kind = .Text
+		case:          return
+		}
+		param.default = toml_value_text(toml_get(entry, "default")) or_return
+		expose := toml_get(entry, "expose")
+		param.expose = expose.type == .Boolean && expose.boolean
+		param.min = toml_number(toml_get(entry, "min")) or_else math.inf_f64(-1)
+		param.max = toml_number(toml_get(entry, "max")) or_else math.inf_f64(1)
+		if list := toml_get(entry, "values"); list.type == .Array {
+			values := make([dynamic]string, context.temp_allocator)
+			for element in list.array.elements[:list.array.size] do append(&values, toml_value_text(element) or_return)
+			param.values = values[:]
+		}
+		if !param_allows(param, param.default) do return
+	}
+	slice.sort_by(params, proc(a, b: Param) -> bool {return a.name < b.name})
+	return params, true
+}
+
+// A string or number datum as text.
+@(private = "file")
+toml_value_text :: proc(datum: Toml_Datum) -> (text: string, ok: bool) {
+	#partial switch datum.type {
+	case .String: return toml_text(datum)
+	case .Int64:  return fmt.tprint(datum.int64), true
+	case .Fp64:   return fmt.tprint(datum.fp64), true
+	}
+	return
+}
+
+@(private = "file")
+toml_number :: proc(datum: Toml_Datum) -> (number: f64, ok: bool) {
+	#partial switch datum.type {
+	case .Int64: return f64(datum.int64), true
+	case .Fp64:  return datum.fp64, true
+	}
+	return
+}
+
+// Whether value is one the param may take: a number inside its range, and one of its values when it lists any.
+param_allows :: proc(param: Param, value: string) -> bool {
+	if param.kind == .Number {
+		number := strconv.parse_f64(value) or_return
+		if number < param.min || number > param.max do return false
+	}
+	return len(param.values) == 0 || slice.contains(param.values, value)
+}
+
+param_clone :: proc(param: Param, allocator := context.allocator) -> (copied: Param) {
+	copied = param
+	copied.name = strings.clone(param.name, allocator)
+	copied.default = strings.clone(param.default, allocator)
+	copied.values = make([]string, len(param.values), allocator)
+	for value, i in param.values do copied.values[i] = strings.clone(value, allocator)
+	return
+}
+
+param_destroy :: proc(param: Param, allocator := context.allocator) {
+	delete(param.name, allocator)
+	delete(param.default, allocator)
+	for value in param.values do delete(value, allocator)
+	delete(param.values, allocator)
+}
+
 destroy_titlepack :: proc(tp: Title_Pack, allocator := context.allocator) {
 	delete(tp.path, allocator)
 	delete(tp.id, allocator)
@@ -100,6 +186,8 @@ destroy_titlepack :: proc(tp: Title_Pack, allocator := context.allocator) {
 	delete(tp.modes, allocator)
 	for base in tp.bases do delete(base, allocator)
 	delete(tp.bases, allocator)
+	for param in tp.params do param_destroy(param, allocator)
+	delete(tp.params, allocator)
 }
 
 // The user's data folder: packs/ and saves/. The game sets it at startup.
@@ -120,10 +208,10 @@ missing_base :: proc(tp: Title_Pack) -> string {
 	return ""
 }
 
-// A pack that names no entry module or modes runs its bases': the top base that names them.
+// A pack that names no entry module or modes runs its bases': the top base that names them. It also takes every base
+// param it does not declare itself, like a file of the same path.
 inherit_from_bases :: proc(tp: ^Title_Pack, allocator := context.allocator) {
 	#reverse for base in tp.bases {
-		if tp.main != "" && len(tp.modes) > 0 do return
 		manifest := read_manifest(base_path(base), context.temp_allocator) or_continue
 		base_tp := read_titlepack(manifest, allocator) or_continue
 		if tp.main == "" do tp.main, base_tp.main = base_tp.main, ""
@@ -131,6 +219,11 @@ inherit_from_bases :: proc(tp: ^Title_Pack, allocator := context.allocator) {
 			delete(tp.modes, allocator)
 			tp.modes, base_tp.modes = base_tp.modes, nil
 		}
+		params := slice.to_dynamic(tp.params, allocator)
+		for param in base_tp.params do if _, found := find_param(params[:], param.name); !found do append(&params, param_clone(param, allocator))
+		delete(tp.params, allocator)
+		tp.params = params[:]
+		slice.sort_by(tp.params, proc(a, b: Param) -> bool {return a.name < b.name})
 		destroy_titlepack(base_tp, allocator)
 	}
 }
@@ -163,17 +256,26 @@ destroy_installed :: proc(packs: []Title_Pack, allocator := context.allocator) {
 	delete(packs, allocator)
 }
 
-// (hole param-section :tags (titlepack sdk)) no OW_PARAM macro in the SDK, and the host does not read the openwavu.params section.
-read_params :: proc(module: []byte, allocator := context.allocator) -> (params: []Param, ok: bool) {
-	return nil, false
+find_param :: proc(params: []Param, name: string) -> (param: Param, found: bool) {
+	for p in params do if p.name == name do return p, true
+	return
 }
 
-// (hole param-layers :tags titlepack :needs param-section) params are not narrowed pack -> network -> lobby; a layer could change what the one above locked.
-resolve_params :: proc(declared: []Param, layers: []map[string]Param_Set) -> (final: map[string]f64, ok: bool) {
-	return nil, false
+// The lobby host's picks over the pack's defaults: every declared param, as text. A pick of a param the pack does not
+// declare or expose, or a value it does not allow, refuses the whole set.
+resolve_params :: proc(declared: []Param, picks: map[string]string, allocator := context.allocator) -> (final: map[string]string, err: string) {
+	for name, value in picks {
+		param, found := find_param(declared, name)
+		if !found do return nil, fmt.tprintf("the pack has no param %s", name)
+		if !param.expose do return nil, fmt.tprintf("the param %s is locked", name)
+		if !param_allows(param, value) do return nil, fmt.tprintf("%s=%s is not allowed", name, value)
+	}
+	final = make(map[string]string, allocator)
+	for param in declared do final[strings.clone(param.name, allocator)] = strings.clone(picks[param.name] or_else param.default, allocator)
+	return
 }
 
-// (hole titlepack-hash :tags titlepack :needs param-layers) the lobby hash (manifest hash + final params) is not computed.
-lobby_hash :: proc(manifest_hash: [32]u8, final: map[string]f64) -> (hash: [32]u8) {
+// (hole titlepack-hash :tags titlepack) the lobby hash (manifest hash + final params) is not computed.
+lobby_hash :: proc(manifest_hash: [32]u8, final: map[string]string) -> (hash: [32]u8) {
 	return {}
 }

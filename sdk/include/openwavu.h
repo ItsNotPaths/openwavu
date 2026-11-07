@@ -29,7 +29,7 @@ OW_IMPORT(content_read) int32_t ow_content_read_raw(const char *path, uint32_t p
 OW_IMPORT(content_size) int32_t ow_content_size_raw(const char *path, uint32_t path_len);
 OW_IMPORT(log) void ow_log_raw(const char *msg, uint32_t len);
 
-// Final value after all param layers, as a number; the fallback if the name is unknown or its value is not a number.
+// Final value (the pack.toml default or the lobby host's pick), as a number; the fallback if the name is unknown or its value is not a number.
 static inline double ow_param(OwStr name, double fallback) { return ow_param_raw(name.data, name.len, fallback); }
 // Final value as text (a row id, like stage=dragons_nest), no NUL; returns its length, or -1 if the name is unknown.
 static inline int32_t ow_param_text(OwStr name, char *buf, uint32_t cap) { return ow_param_text_raw(name.data, name.len, buf, cap); }

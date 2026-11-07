@@ -16,9 +16,12 @@ Toml_Datum :: struct {
 	line, column: c.int,
 	source:       cstring,
 	using value:  struct #raw_union {
-		text:  struct {data: [^]u8, length: c.int},
-		array: struct {size: i32, elements: [^]Toml_Datum},
-		table: struct {size: i32, keys: [^][^]u8, key_lengths: [^]c.int, values: [^]Toml_Datum},
+		text:    struct {data: [^]u8, length: c.int},
+		int64:   i64,
+		fp64:    f64,
+		boolean: bool,
+		array:   struct {size: i32, elements: [^]Toml_Datum},
+		table:   struct {size: i32, keys: [^][^]u8, key_lengths: [^]c.int, values: [^]Toml_Datum},
 	},
 }
 
