@@ -81,7 +81,7 @@ pack_lines :: proc(packs: []titlepack.Listed, id: string, latest_only: bool) -> 
 send_pack_file :: proc(client: net.TCP_Socket, dir, name: string) {
 	listed := false
 	for pack in listing(dir) {
-		stem := fmt.tprintf("%s@%s", pack.id, pack.version)
+		stem := titlepack.pack_name(pack.id, pack.version)
 		for suffix in ([]string{".tar", ".front.tar"}) do listed ||= name == strings.concatenate({stem, suffix}, context.temp_allocator)
 		listed ||= pack.thumb_sha256 != "" && name == strings.concatenate({stem, ".thumb.png"}, context.temp_allocator)
 	}

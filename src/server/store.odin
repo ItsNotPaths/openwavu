@@ -37,7 +37,7 @@ incorporate :: proc(dir, name: string) -> (err: string) {
 	tp, parsed := titlepack.read_titlepack(manifest, context.temp_allocator)
 	if !parsed do return "pack.toml does not read"
 	if !plain_name(tp.id) || !plain_name(tp.version) do return "the id or version has characters a file name can not"
-	stem := fmt.tprintf("%s@%s", tp.id, tp.version)
+	stem := titlepack.pack_name(tp.id, tp.version)
 	tar_name := strings.concatenate({stem, ".tar"}, context.temp_allocator)
 	tar_path := titlepack.join_path(dir, tar_name)
 	if name != tar_name {

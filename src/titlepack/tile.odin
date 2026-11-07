@@ -7,7 +7,12 @@ import "core:os"
 import "core:path/filepath"
 
 tile_name :: proc(id, version: string, locked: bool) -> string {
-	return locked ? fmt.tprintf("%s@%s", id, version) : id
+	return locked ? pack_name(id, version) : id
+}
+
+// id@version: one version of a pack, as the store, the lobbies and a locked tile name it.
+pack_name :: proc(id, version: string) -> string {
+	return fmt.tprintf("%s@%s", id, version)
 }
 
 tile_path :: proc(id, version: string, locked: bool) -> string {
