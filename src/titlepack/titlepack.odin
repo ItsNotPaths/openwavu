@@ -33,7 +33,6 @@ Title_Pack :: struct {
 	id, name, version: string,
 	main:              string,  // the entry module; "" for a pack without code (a db mod)
 	modes:             []Mode,    // sorted by name
-	// (hole pack-base :tags titlepack) bases are not checked: each must be a stock pack id (tekken5dr, later tekken6br), and a pack whose base is not installed should be refused at install, not fail inside the sim.
 	bases:             []string,  // pack ids, bottom first; a stock pack has none
 }
 
@@ -105,6 +104,32 @@ destroy_titlepack :: proc(tp: Title_Pack, allocator := context.allocator) {
 // (hole data-dir :tags titlepack :sev polish) packs live in the working directory, not a per-user data folder.
 PACKS_DIR :: "packs"
 
+// Where a base lives: a stock pack's folder in packs/.
+base_path :: proc(id: string) -> string {
+	return join_path(PACKS_DIR, id)
+}
+
+// The first base of tp that is not installed as a stock folder; "" when all are.
+missing_base :: proc(tp: Title_Pack) -> string {
+	for base in tp.bases do if !os.is_dir(base_path(base)) do return base
+	return ""
+}
+
+// A pack that names no entry module or modes runs its bases': the top base that names them.
+inherit_from_bases :: proc(tp: ^Title_Pack, allocator := context.allocator) {
+	#reverse for base in tp.bases {
+		if tp.main != "" && len(tp.modes) > 0 do return
+		manifest := read_manifest(base_path(base), context.temp_allocator) or_continue
+		base_tp := read_titlepack(manifest, allocator) or_continue
+		if tp.main == "" do tp.main, base_tp.main = base_tp.main, ""
+		if len(tp.modes) == 0 {
+			delete(tp.modes, allocator)
+			tp.modes, base_tp.modes = base_tp.modes, nil
+		}
+		destroy_titlepack(base_tp, allocator)
+	}
+}
+
 // Every packs/*.tar and stock packs/<id>/ folder whose pack.toml reads, sorted by name. Others are skipped, and so is
 // a folder with bases: only stock packs, built on this machine, are folders.
 installed :: proc(allocator := context.allocator) -> []Title_Pack {
@@ -120,6 +145,7 @@ installed :: proc(allocator := context.allocator) -> []Title_Pack {
 			continue
 		}
 		tp.path = strings.clone(path, allocator)
+		inherit_from_bases(&tp, allocator)
 		append(&packs, tp)
 	}
 	slice.sort_by(packs[:], proc(a, b: Title_Pack) -> bool {return a.name < b.name})

@@ -16,6 +16,10 @@ import "../wasm"
 // closes (quit) or a module traps, which cuts off the whole pack and returns to the launcher.
 // (hole pack-leave :tags game :needs app-shell) the player can not leave a running pack for the launcher; only closing the window ends it.
 play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, frame_cap: int) -> (quit: bool) {
+	if base := titlepack.missing_base(tp); base != "" {
+		fmt.eprintfln("openwavu: %s needs the stock pack %s; import it first", tp.name, base)
+		return
+	}
 	if tp.main == "" {
 		fmt.eprintfln("openwavu: %s has no entry module", tp.name)
 		return

@@ -1,6 +1,7 @@
 // A pack file at run time: its tar, read in place, and its databases in memory.
 package content
 
+import "core:fmt"
 import "core:mem"
 import "core:strings"
 import "../db"
@@ -13,20 +14,52 @@ Pack :: struct {
 	dbs:   map[string]^db.Sqlite,  // by path; in memory, so patches from the packs above can apply
 }
 
-// A tar, or a stock pack's folder.
+// A tar, or a stock pack's folder, over its bases: the stock folders its pack.toml names, the last one right under
+// it. Each database loads from the top layer that has it, then every layer's <db>.patch applies to it, bottom first.
 open_pack :: proc(path: string) -> (p: Pack, ok: bool) {
 	p.files = titlepack.open_files(path) or_return
 	p.dbs = make(map[string]^db.Sqlite)
-	for file in p.files.files {
-		if !strings.has_suffix(file, DB_EXTENSION) do continue
-		handle, loaded := load_db(p.files, file)
-		if !loaded {
-			close_pack(&p)
-			return {}, false
+	defer if !ok do close_pack(&p)
+	stack_bases(&p.files) or_return
+	layers := make([dynamic]^titlepack.Pack_Files, context.temp_allocator)
+	for layer := &p.files; layer != nil; layer = layer.below do inject_at(&layers, 0, layer)
+	for layer in layers do for file in layer.files {
+		if !strings.has_suffix(file, DB_EXTENSION) || file in p.dbs do continue
+		p.dbs[file] = load_db(p.files, file) or_return
+	}
+	for layer in layers do for file in layer.files {
+		if !strings.has_suffix(file, DB_EXTENSION + PATCH_EXTENSION) do continue
+		target := p.dbs[strings.trim_suffix(file, PATCH_EXTENSION)] or_return
+		manifest := titlepack.read_file(layer^, titlepack.MANIFEST) or_return
+		tp := titlepack.read_titlepack(string(manifest), context.temp_allocator) or_return
+		patch := titlepack.read_file(layer^, file) or_return
+		if err := apply_patch(target, patch, tp.id); err != "" {
+			fmt.eprintfln("openwavu: %s %s: %s", tp.id, file, err)
+			return
 		}
-		p.dbs[file] = handle
 	}
 	return p, true
+}
+
+// The pack's bases under it, bottom first. A base is a stock pack: one with no bases of its own.
+@(private = "file")
+stack_bases :: proc(files: ^titlepack.Pack_Files) -> (ok: bool) {
+	manifest := titlepack.read_file(files^, titlepack.MANIFEST) or_return
+	tp := titlepack.read_titlepack(string(manifest), context.temp_allocator) or_return
+	for base in tp.bases {
+		layer := new(titlepack.Pack_Files)
+		opened: bool
+		if layer^, opened = titlepack.open_files(titlepack.base_path(base)); !opened {
+			free(layer)
+			return
+		}
+		layer.below = files.below
+		files.below = layer
+		base_manifest := titlepack.read_file(layer^, titlepack.MANIFEST) or_return
+		base_tp := titlepack.read_titlepack(string(base_manifest), context.temp_allocator) or_return
+		if len(base_tp.bases) > 0 do return
+	}
+	return true
 }
 
 close_pack :: proc(p: ^Pack) {
@@ -80,13 +113,3 @@ load_db :: proc(files: titlepack.Pack_Files, path: string) -> (handle: ^db.Sqlit
 	return handle, true
 }
 
-// What a pack sees: its bases in pack.toml order, then the pack itself; the same path in a later layer wins.
-// A stock pack has no bases and is a view of one layer.
-View :: struct {
-	layers: []Pack,
-}
-
-// (hole content-view :tags (content titlepack) :needs (patch-apply pack-base)) no file view of a pack over its stock base behind content_read (two layers: the base, then the pack), with the pack's db patch applied to the base's database.
-open_view :: proc(tars: []string) -> (v: View, ok: bool) {
-	return {}, false
-}

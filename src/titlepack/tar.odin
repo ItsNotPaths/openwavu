@@ -215,7 +215,6 @@ files_under :: proc(dir: string, allocator := context.allocator) -> (paths: []st
 	return list[:], ""
 }
 
-@(private = "file")
 join_path :: proc(dir, path: string) -> string {
 	return strings.concatenate({dir, "/", path}, context.temp_allocator)
 }

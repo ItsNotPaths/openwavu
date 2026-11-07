@@ -6,13 +6,15 @@ import "core:path/filepath"
 import "core:strings"
 import "core:sync"
 
-// A pack's files: its tar mapped into memory, or a folder (a stock base, or the front preview). files lists every
-// path; a folder's entries hold no offsets.
+// A pack's files: its tar mapped into memory, or a folder (a stock base, or the front preview). files lists this
+// layer's paths; a folder's entries hold no offsets. below is the base this pack sits on: a path this layer lacks is
+// read there.
 Pack_Files :: struct {
 	data:   []byte,
 	files:  map[string]Tar_Entry,
 	dir:    string,
 	folder: ^Folder_Files,
+	below:  ^Pack_Files,  // owned: closed with this one
 }
 
 // A folder's files, each mapped on its first read and kept until close_files: a big pack has more files than the
@@ -57,15 +59,23 @@ close_files :: proc(p: ^Pack_Files) {
 		delete(p.folder.mapped)
 		free(p.folder)
 	}
+	if p.below != nil {
+		close_files(p.below)
+		free(p.below)
+	}
 	delete(p.dir)
 	p^ = {}
 }
 
-// A file's bytes, valid until close_files.
+// A file's bytes from the top layer that has it, valid until close_files.
 read_file :: proc(p: Pack_Files, path: string) -> (data: []byte, ok: bool) {
-	if p.folder != nil do return read_folder_file(p, path)
-	e := p.files[path] or_return
-	return p.data[e.offset:][:e.size], true
+	if p.folder != nil {
+		if data, ok = read_folder_file(p, path); ok do return
+	} else if e, has := p.files[path]; has {
+		return p.data[e.offset:][:e.size], true
+	}
+	if p.below != nil do return read_file(p.below^, path)
+	return
 }
 
 @(private = "file")

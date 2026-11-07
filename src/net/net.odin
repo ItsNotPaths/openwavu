@@ -8,7 +8,7 @@ connect :: proc(host: string) -> (c: ^Connection, ok: bool) {
 	return nil, false
 }
 
-// (hole lobby-join :tags net :needs (pack-base server-lobby titlepack-hash content-view loadout-blob identity-key)) joining a lobby does not sign the server's challenge, fetch its title pack from the network (its base is a stock pack the player built), apply the params the server passes down, or check the lobby hash.
+// (hole lobby-join :tags net :needs (server-lobby titlepack-hash loadout-blob identity-key)) joining a lobby does not sign the server's challenge, fetch its title pack from the network (its base is a stock pack the player built), apply the params the server passes down, or check the lobby hash.
 join_lobby :: proc(c: ^Connection, lobby: string) -> (ok: bool) {
 	return false
 }
