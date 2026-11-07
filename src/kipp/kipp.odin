@@ -20,7 +20,7 @@ Attribute :: struct {
 // Views into text, in allocator. Reserved @ fields are skipped; ok is false for a line with no kind, over LINE_MAX or
 // over FIELDS_MAX fields.
 parse :: proc(text: string, allocator := context.temp_allocator) -> (line: Line, ok: bool) {
-	if len(text) >= LINE_MAX do return
+	if len(text) > LINE_MAX do return
 	rest := strings.trim_right(text, "\n")
 	subject := make([dynamic]string, allocator)
 	line.attributes = make(map[string]string, allocator)
