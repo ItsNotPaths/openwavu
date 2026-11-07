@@ -65,6 +65,7 @@ MARQUEE_SPEED :: 30  // px per second
 MARQUEE_PAUSE :: 1.2  // seconds at each end
 WINDOW_H   :: SLOT - SLOT_FRAME - 38
 PLATE_H    :: 20
+PROGRESS_HEIGHT :: 12  // room for the strip's glow
 
 Face :: enum u8 {
 	None,

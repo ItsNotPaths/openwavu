@@ -69,6 +69,11 @@ list_row :: proc(ui: ^Ui, id: clay.ElementId, text: string, picked: bool) -> boo
 	return s.clicked
 }
 
+// A bar lit up to fraction (0..1), drawn like a slot's LED strips.
+progress :: proc(fraction: f32) {
+	if clay.UI()({layout = {sizing = {clay.SizingGrow({}), clay.SizingFixed(PROGRESS_HEIGHT)}}, custom = painted(Progress{fraction})}) {}
+}
+
 // A pack slot: a steel box, a glass window over the pack's art, an engraved name plate.
 // (hole slot-badges :tags game) no favourite star on installed slots, no size or installed badge on store slots.
 slot :: proc(ui: ^Ui, id: clay.ElementId, name: string, art: ^sdl.Texture, selected: bool) -> bool {

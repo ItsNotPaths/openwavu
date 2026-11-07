@@ -19,6 +19,7 @@ Paint :: union {
 	Field,
 	Backdrop,
 	Front_Button,
+	Progress,
 }
 
 // A raised or recessed steel face. lit adds the LED glow of a hovered or focused button.
@@ -43,6 +44,11 @@ Plate :: struct {
 }
 
 Bar :: struct {}
+
+// A slot's LED strip as a bar, lit up to fraction.
+Progress :: struct {
+	fraction: f32,
+}
 
 // The screen-bottom popup, the top bar's counterpart: its light line sits under its top edge.
 Tray :: struct {}
@@ -102,6 +108,10 @@ paint :: proc(ui: ^Ui, rect: sdl.FRect, p: Paint) {
 		lit_steel(ui, rect, rect.y + rect.h - 4)
 	case Tray:
 		lit_steel(ui, rect, rect.y + 4)
+	case Progress:
+		strip := sdl.FRect{rect.x + 1, rect.y + rect.h / 2 - 1, rect.w - 2, 2}
+		led_strip(ui.renderer, strip, false)
+		if p.fraction > 0 do led_strip(ui.renderer, {strip.x, strip.y, strip.w * min(p.fraction, 1), strip.h}, true)
 	}
 }
 
@@ -159,18 +169,22 @@ slot_box :: proc(ui: ^Ui, rect: sdl.FRect, s: Slot_Box) {
 		{rect.x + 7, rect.y + rect.h * 0.2, 2, rect.h * 0.6},
 		{rect.x + rect.w - 9, rect.y + rect.h * 0.2, 2, rect.h * 0.6},
 	}
-	for strip in strips {
-		if s.lit {
-			soft(r, grow(strip, 2), 14, lit_color(0.6))
-			soft(r, grow(strip, 1), 6, lit_color(1))
-		} else {
-			soft(r, grow(strip, 1), 5, lit_color(0.45))
-		}
-		fill(r, offset(grow(strip, 1), 0, 1), color(0xffffff12))
-		fill(r, grow(strip, 1), color(0x000000ff))
-		led := color(LED)
-		fill(r, strip, s.lit ? led : {led.r * 0.55, led.g * 0.55, led.b * 0.55, 1})
+	for strip in strips do led_strip(r, strip, s.lit)
+}
+
+// A thin LED set in a black groove, glowing.
+@(private)
+led_strip :: proc(r: ^sdl.Renderer, strip: sdl.FRect, lit: bool) {
+	if lit {
+		soft(r, grow(strip, 2), 14, lit_color(0.6))
+		soft(r, grow(strip, 1), 6, lit_color(1))
+	} else {
+		soft(r, grow(strip, 1), 5, lit_color(0.45))
 	}
+	fill(r, offset(grow(strip, 1), 0, 1), color(0xffffff12))
+	fill(r, grow(strip, 1), color(0x000000ff))
+	led := color(LED)
+	fill(r, strip, lit ? led : {led.r * 0.55, led.g * 0.55, led.b * 0.55, 1})
 }
 
 @(private)
