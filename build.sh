@@ -74,13 +74,14 @@ fi
 # (hole module-build :tags (wasm tk5mod) :needs ow-cli) build.sh builds the stock modules with zig itself; ow build should make them with the same pinned flags, reproducibly.
 mkdir -p build/modules
 tk5_core=(modules/tk5/sim/*.c modules/tk5/load.c)
-# tk5_module <out> <link flags> <sources...>: rebuilt when anything under modules/tk5 or sdk is newer.
+# tk5_module <out> <link flags> <sources...>: rebuilt when anything under modules/tk5 or sdk is newer. -s: zig's crt
+# carries this machine's paths in its debug info, and the stock pack hash needs the same bytes everywhere.
 tk5_module() {
 	out="build/modules/$1"
 	link="$2"
 	shift 2
 	if [ ! -f "$out" ] || [ -n "$(find modules/tk5 sdk build/sdk -newer "$out" -print -quit)" ]; then
-		vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -fwrapv -ffp-contract=off -fno-fast-math -mexec-model=reactor \
+		vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -fwrapv -ffp-contract=off -fno-fast-math -mexec-model=reactor -s \
 			-Imodules/tk5 -Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $link \
 			-o "$out" "$@" build/sdk/libow_db.a build/sdk/libow_sound.a
 	fi
