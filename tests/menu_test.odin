@@ -11,8 +11,8 @@ import "../src/wasm"
 
 STOCK_APP :: "build/modules/app.wasm"
 
-// The stock menus ask for the match the player picked: Versus CPU, the player's fighter, the CPU's fighter with
-// its costume button, then the stage. Needs an import.
+// The stock menus' Exit leaves the pack, and they ask for the match the player picked: Versus CPU, the player's fighter,
+// the CPU's fighter with its costume button, then the stage. Needs an import.
 @(test)
 stock_menus_ask_for_the_picked_match :: proc(t: ^testing.T) {
 	if !os.exists(STOCK_PACK) do return
@@ -39,9 +39,19 @@ stock_menus_ask_for_the_picked_match :: proc(t: ^testing.T) {
 	testing.expect_value(t, imports.define_entry(entry.linker, &state), "")
 	if !testing.expect_value(t, presentation.start(entry, code), "") do return
 
+	UP :: 1 << 0
+	DOWN :: 1 << 1
 	RIGHT :: 1 << 3
 	BUTTON_1 :: 1 << 4
 	BUTTON_2 :: 1 << 5
+	// Up wraps to Exit.
+	for pad in ([]u32{UP, 0, BUTTON_1, 0}) {
+		running.pads[0] = pad
+		if !testing.expect_value(t, presentation.frame(entry, running, 1.0 / 60), "") do return
+	}
+	testing.expect(t, state.exit, "Exit did not leave the pack")
+	running.pads[0] = DOWN
+	if !testing.expect_value(t, presentation.frame(entry, running, 1.0 / 60), "") do return
 	// Versus CPU; paul with costume 1; one right to law, with costume 2; one right to the second stage.
 	for pad in ([]u32{0, BUTTON_1, 0, BUTTON_1, 0, RIGHT, 0, BUTTON_2, 0, RIGHT, 0, BUTTON_1}) {
 		running.pads[0] = pad

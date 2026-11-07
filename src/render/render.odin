@@ -76,6 +76,13 @@ show_scene :: proc(renderer: ^Renderer, scene: ^Scene, ticked: bool) {
 	if ticked do blend_restart(&renderer.blend, scene_ring_back(&renderer.scenes, 1))
 }
 
+// Drops a closed pack's scenes, so the next pack does not start on them.
+forget_scenes :: proc(renderer: ^Renderer) {
+	scene_ring_destroy(&renderer.scenes)
+	renderer.scenes = scene_ring_create()
+	blend_restart(&renderer.blend, nil)
+}
+
 // Queues the frame's 3D image as the first 2D draw, so the pack's 2D lands on top. draw_scene renders that image later
 // in the frame, from the scene the pack sends this frame, and submits it before the 2D renderer presents.
 queue_scene :: proc(renderer: ^Renderer) -> (ok: bool) {

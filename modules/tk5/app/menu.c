@@ -14,11 +14,11 @@
 
 enum { SCALE = GRID_SCALE, LINE = GRID_LINE, TOP = 24, GRID_TOP = TOP + 3 * LINE };
 enum Screen { SCREEN_MODE, SCREEN_CHARACTERS, SCREEN_STAGE, SCREEN_MATCH };
-enum Mode { MODE_VERSUS_CPU, MODE_VERSUS, MODE_WATCH, MODES };
+enum Mode { MODE_VERSUS_CPU, MODE_VERSUS, MODE_WATCH, MODE_EXIT, MODES };
 enum { BOT_SIDE_1 = 1u << 0, BOT_SIDE_2 = 1u << 1 };  // ow_match_local bot_sides
 
-static const char *const MODE_NAMES[MODES] = {"Versus CPU", "Versus", "CPU vs CPU"};
-static const uint32_t MODE_BOT_SIDES[MODES] = {BOT_SIDE_2, 0, BOT_SIDE_1 | BOT_SIDE_2};
+static const char *const MODE_NAMES[MODES] = {"Versus CPU", "Versus", "CPU vs CPU", "Exit"};
+static const uint32_t MODE_BOT_SIDES[MODES] = {BOT_SIDE_2, 0, BOT_SIDE_1 | BOT_SIDE_2, 0};
 
 static T5Catalog catalog;
 static enum Screen screen;
@@ -80,7 +80,8 @@ static void step(const uint32_t pressed[OW_SIDES]) {
     case SCREEN_MODE:
         if (pressed[0] & OW_PAD_UP) mode = (mode + MODES - 1) % MODES;
         if (pressed[0] & OW_PAD_DOWN) mode = (mode + 1) % MODES;
-        if (pressed[0] & OW_PAD_BUTTON_1) {
+        if ((pressed[0] & OW_PAD_BUTTON_1) && mode == MODE_EXIT) ow_exit();
+        else if (pressed[0] & OW_PAD_BUTTON_1) {
             sides[0].locked = sides[1].locked = false;
             screen = SCREEN_CHARACTERS;
         }

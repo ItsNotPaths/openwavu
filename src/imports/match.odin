@@ -39,6 +39,7 @@ Entry :: struct {
 	modes:     []titlepack.Mode,      // the pack.toml modes it may start
 	asked:     Maybe(Match_Request),  // until the host starts it at its next frame
 	allocator: runtime.Allocator,     // what an ask is copied with
+	exit:      bool,                  // the pack asked to go back to the launcher
 }
 
 HOST_VIEW_VERSION :: 1
@@ -58,6 +59,7 @@ match_request_destroy :: proc(r: ^Match_Request, allocator: runtime.Allocator) {
 // params that do not read, or a match asked for or running.
 define_entry :: proc(l: wasm.Linker, entry: ^Entry) -> (err: string) {
 	if err = wasm.define_func(l, "host_view", {wasm.I32, wasm.I32}, {wasm.I32}, host_view, entry); err != "" do return
+	if err = wasm.define_func(l, "exit", {}, {}, exit_import, entry); err != "" do return
 	return wasm.define_func(l, "match_local", {wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, match_local, entry)
 }
 
@@ -100,6 +102,12 @@ params_destroy :: proc(params: ^map[string]string, allocator := context.allocato
 		delete(value, allocator)
 	}
 	delete(params^)
+}
+
+@(private = "file")
+exit_import :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	(^Entry)(env).exit = true
+	return nil
 }
 
 @(private = "file")

@@ -13,8 +13,7 @@ import "../titlepack"
 import "../wasm"
 
 // Runs the picked pack's entry module, one frame call per display frame, and the matches it starts, until the window
-// closes (quit) or a module traps, which cuts off the whole pack and returns to the launcher.
-// (hole pack-leave :tags game :needs app-shell) the player can not leave a running pack for the launcher; only closing the window ends it.
+// closes (quit), the pack calls ow_exit, or a module traps, which cuts off the whole pack; the last two return to the launcher.
 // relay_host: "" plays offline; otherwise every match pairs on that relay.
 play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, relay_host: string) -> (quit: bool) {
 	if base := titlepack.missing_base(tp); base != "" {
@@ -31,6 +30,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, 
 		return
 	}
 	defer content.close_pack(&pack)
+	defer render.forget_scenes(r)
 	codes := Codes{engine = wasm.engine_create(), pack = &pack}
 	defer codes_destroy(&codes)
 	running := presentation.pack_create(&pack, r.renderer_2d, &r.gpu, volumes(settings))
@@ -98,6 +98,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, 
 		}
 		render.end_frame(r)
 		pace(now, settings.frame_cap)
+		if entry_state.exit do return
 	}
 }
 

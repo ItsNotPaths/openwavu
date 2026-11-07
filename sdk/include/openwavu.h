@@ -118,6 +118,8 @@ typedef struct {
 	int32_t winner;       // an ended match: the side that won, -1 for a draw
 } OwHostView;
 OW_IMPORT(host_view) int32_t ow_host_view(OwHostView *view, uint32_t cap);
+// Back to the launcher after this frame, at once: a running match ends, and any confirm is the pack's own.
+OW_IMPORT(exit) void ow_exit(void);
 // An offline match of a pack.toml mode, started at the next frame; 0, or -1 when refused (an unknown mode, params that
 // do not read, a match asked for or running). bot_sides: bit per side played by ow_bot_pad. params: values for params
 // the modules declare, as a lobby host sets them: `name=value` pairs split by spaces ("stage=dragons_nest rounds=5").
