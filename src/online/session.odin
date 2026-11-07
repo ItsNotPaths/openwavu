@@ -256,7 +256,7 @@ take_record :: proc(s: ^Session, record: Hash_Record) {
 }
 
 // Each remote hash against the local one of its frame. A match moves the retry start there; a mismatch runs the retry
-// once, a second one is a desync.
+// once, a second one is a desync (in retry).
 @(private = "file")
 compare_hashes :: proc(s: ^Session) -> (err: string) {
 	for index := 0; index < len(s.remote_records); {
@@ -277,10 +277,6 @@ compare_hashes :: proc(s: ^Session) -> (err: string) {
 		if s.pending[mine].record.hash == remote.hash {
 			check(s, mine)
 			continue
-		}
-		if s.attempt > 0 {
-			s.outcome = .Desync
-			return
 		}
 		if err = retry(s); err != "" || s.outcome != .Playing do return
 	}
