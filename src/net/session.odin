@@ -213,7 +213,7 @@ take_packets :: proc(s: ^Session, now_ns: u64) -> (err: string) {
 		for &record in records do record = {take(&reader, 4), take(&reader, 4), take(&reader, 4)}
 		if reader.short do continue
 		s.heard_ns = now_ns
-		s.acked = max(s.acked, acked)
+		s.acked = max(s.acked, min(acked, s.frame))
 		first_wrong = min(first_wrong, take_pads(s, first, pads))
 		for record in records do take_record(s, record)
 	}
