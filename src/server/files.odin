@@ -14,19 +14,13 @@ import "core:thread"
 import "../titlepack"
 
 // The files role (docs/network.md): `ls` is the store. A tar dropped in the packs folder is incorporated: renamed to
-// <id>@<version>.tar, its front cut to <id>@<version>.front.tar, and both hashed into <id>@<version>.sha256, written
-// last. Each request reads the folder again, so `--prep` in another process needs no restart.
+// <id>@<version>.tar, its front cut to <id>@<version>.front.tar, its thumb.png copied to <id>@<version>.thumb.png,
+// and all of them hashed into <id>@<version>.sha256, written last. Each request reads the folder again, so `--prep` in another process needs no restart.
 PACKS_DIR :: "/var/lib/openwavu/packs"
 FILES_ENDPOINT :: "127.0.0.1:9280"  // Apache proxies openwavu.paths.place here
 REQUEST_MAX :: 8192
 
 // (hole network-files :tags server) the files role has no /release /regions /submit /note, no review CLI, and serves plain HTTP only (TLS is Apache's).
-
-Listed :: struct {
-	id, version:             string,
-	sha256, front_sha256:    string,
-	size, front_size:        i64,
-}
 
 // Every tar in dir that is not incorporated yet.
 incorporate_all :: proc(dir: string) {
@@ -60,9 +54,14 @@ incorporate :: proc(dir, name: string) -> (err: string) {
 	}
 	front_name := strings.concatenate({stem, ".front.tar"}, context.temp_allocator)
 	if err = cut_front(tar_path, in_folder(dir, front_name)); err != "" do return
+	cut := make([dynamic]string, context.temp_allocator)
+	append(&cut, tar_name, front_name)
+	thumb_name := strings.concatenate({stem, ".thumb.png"}, context.temp_allocator)
+	if has_thumb, thumb_err := copy_thumb(tar_path, in_folder(dir, thumb_name)); thumb_err != "" do return thumb_err
+	else if has_thumb do append(&cut, thumb_name)
 	sums: strings.Builder
 	strings.builder_init(&sums, context.temp_allocator)
-	for file in ([]string{tar_name, front_name}) {
+	for file in cut {
 		sum, hashed := sha256_hex(in_folder(dir, file))
 		if !hashed do return fmt.tprintf("can not hash %s", file)
 		fmt.sbprintf(&sums, "%s  %s\n", sum, file)
@@ -93,22 +92,34 @@ cut_front :: proc(tar_path, out_path: string) -> (err: string) {
 	return titlepack.write_tar_of(files, used[:], out_path)
 }
 
+@(private = "file")
+copy_thumb :: proc(tar_path, out_path: string) -> (has: bool, err: string) {
+	files, opened := titlepack.open_files(tar_path)
+	if !opened do return false, "the tar does not read"
+	defer titlepack.close_files(&files)
+	thumb, found := titlepack.read_file(files, titlepack.THUMB)
+	if !found do return false, ""
+	if os.write_entire_file(out_path, thumb) != nil do return false, "can not write the thumb"
+	return true, ""
+}
+
 // Incorporated packs, newest version first within each id.
-listing :: proc(dir: string) -> (packs: []Listed) {
+listing :: proc(dir: string) -> (packs: []titlepack.Listed) {
 	names, err := folder_names(dir)
 	if err != "" do return
-	found := make([dynamic]Listed, context.temp_allocator)
+	found := make([dynamic]titlepack.Listed, context.temp_allocator)
 	for name in names {
 		if !strings.has_suffix(name, ".sha256") do continue
 		stem := strings.trim_suffix(name, ".sha256")
 		id, at, version := strings.partition(stem, "@")
 		if at == "" do continue
-		pack := Listed{id = id, version = version}
+		pack := titlepack.Listed{id = id, version = version}
 		pack.sha256, pack.size = listed_file(dir, name, strings.concatenate({stem, ".tar"}, context.temp_allocator))
 		pack.front_sha256, pack.front_size = listed_file(dir, name, strings.concatenate({stem, ".front.tar"}, context.temp_allocator))
+		pack.thumb_sha256, pack.thumb_size = listed_file(dir, name, strings.concatenate({stem, ".thumb.png"}, context.temp_allocator))
 		if pack.sha256 != "" && pack.front_sha256 != "" do append(&found, pack)
 	}
-	slice.sort_by(found[:], proc(a, b: Listed) -> bool {
+	slice.sort_by(found[:], proc(a, b: titlepack.Listed) -> bool {
 		if a.id != b.id do return a.id < b.id
 		return version_less(b.version, a.version)
 	})
@@ -191,7 +202,7 @@ answer :: proc(client: net.TCP_Socket, dir: string) {
 
 // latest_only: the first, newest, line of each id. id "" is every id.
 @(private = "file")
-pack_lines :: proc(packs: []Listed, id: string, latest_only: bool) -> string {
+pack_lines :: proc(packs: []titlepack.Listed, id: string, latest_only: bool) -> string {
 	lines: strings.Builder
 	strings.builder_init(&lines, context.temp_allocator)
 	last_id := ""
@@ -199,7 +210,7 @@ pack_lines :: proc(packs: []Listed, id: string, latest_only: bool) -> string {
 		if id != "" && pack.id != id do continue
 		if latest_only && pack.id == last_id do continue
 		last_id = pack.id
-		fmt.sbprintf(&lines, "%s %s %s %d %s %d\n", pack.id, pack.version, pack.sha256, pack.size, pack.front_sha256, pack.front_size)
+		strings.write_string(&lines, titlepack.listing_line(pack))
 	}
 	return strings.to_string(lines)
 }
@@ -210,7 +221,8 @@ send_pack_file :: proc(client: net.TCP_Socket, dir, name: string) {
 	listed := false
 	for pack in listing(dir) {
 		stem := fmt.tprintf("%s@%s", pack.id, pack.version)
-		listed ||= name == strings.concatenate({stem, ".tar"}, context.temp_allocator) || name == strings.concatenate({stem, ".front.tar"}, context.temp_allocator)
+		for suffix in ([]string{".tar", ".front.tar"}) do listed ||= name == strings.concatenate({stem, suffix}, context.temp_allocator)
+		listed ||= pack.thumb_sha256 != "" && name == strings.concatenate({stem, ".thumb.png"}, context.temp_allocator)
 	}
 	if !listed {
 		respond(client, "404 Not Found", "text/plain", "not found\n")
