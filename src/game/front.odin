@@ -64,6 +64,7 @@ front_close :: proc(v: ^Front_View) {
 	delete(v.textures)
 	delete(v.toggled)
 	delete(v.front.elements)
+	delete(v.front.credits)
 	delete(v.text)
 	delete(v.err)
 	delete(v.path)
