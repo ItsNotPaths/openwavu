@@ -10,15 +10,14 @@ PACK_ID :: "tekken5dr"
 STOCK_PACK :: PACK_ID  // a folder: stock packs are built here and never sent, so they need no tar
 
 // The stock modules build.sh made from modules/tk5, so an import writes this openwavu's own.
-// (hole module-reproducible :tags (importer titlepack) :sev polish) the modules embed the build folder's path in their debug info, so a stock pack built on another machine has other bytes (same code and data); map the path in build.sh (-ffile-prefix-map) before the lobby hash covers the stock pack.
 GAMEPLAY_MODULE :: #load("../../../build/modules/gameplay.wasm", string)
 GAMERENDER_MODULE :: #load("../../../build/modules/gamerender.wasm", string)
 APP_MODULE :: #load("../../../build/modules/app.wasm", string)
 STOCK_FRONT :: #load("../../../modules/tk5/front.owf", string)
 STOCK_MANIFEST :: #load("../../../modules/tk5/pack.toml", string)  // without version and [import], which an import adds
 
-// The game's stock title pack: the folder packs_dir/tekken5dr/, built beside it and renamed in when whole. inputs are
-// recorded so an openwavu update can rebuild it.
+// The game's stock title pack: the folder packs_dir/tekken5dr/, built beside it and renamed in when whole, then its
+// hash file (titlepack.folder_hash). inputs are recorded so an openwavu update can rebuild it.
 build_pack :: proc(inputs: []string, packs_dir: string, progress: ^Progress = nil) -> (err: string) {
 	if progress != nil do sync.atomic_store(&progress.total, PROGRESS_STEPS)
 	if !make_dir(packs_dir) do return fmt.aprintf("cannot create %s", packs_dir)
@@ -35,9 +34,13 @@ build_pack :: proc(inputs: []string, packs_dir: string, progress: ^Progress = ni
 	defer os.remove_all(stage)
 	if err = run(game, stage, progress); err != "" do return
 	if err = write_pack_files(stage, inputs); err != "" do return
+	digest, hash_err := titlepack.folder_hash(stage)
+	if hash_err != "" do return strings.clone(hash_err)
 	pack := join(packs_dir, STOCK_PACK)
+	os.remove(titlepack.folder_hash_path(pack))
 	os.remove_all(pack)
-	if os.rename(stage, pack) != nil do err = fmt.aprintf("cannot move the pack into %s", pack)
+	if os.rename(stage, pack) != nil do return fmt.aprintf("cannot move the pack into %s", pack)
+	if hash_err = titlepack.write_folder_hash(pack, digest); hash_err != "" do return strings.clone(hash_err)
 	if progress != nil do sync.atomic_add(&progress.done, 1)
 	return
 }

@@ -274,8 +274,3 @@ resolve_params :: proc(declared: []Param, picks: map[string]string, allocator :=
 	for param in declared do final[strings.clone(param.name, allocator)] = strings.clone(picks[param.name] or_else param.default, allocator)
 	return
 }
-
-// (hole titlepack-hash :tags titlepack) the lobby hash (manifest hash + final params) is not computed.
-lobby_hash :: proc(manifest_hash: [32]u8, final: map[string]string) -> (hash: [32]u8) {
-	return {}
-}
