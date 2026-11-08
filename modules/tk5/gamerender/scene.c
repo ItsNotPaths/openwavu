@@ -18,7 +18,8 @@ enum {
     BODY_JOINTS = 23,   // glb joints 0..22: the root, then the body bones the sim's skeleton B moves
     FIRST_FINGER_JOINT = FIRST_FINGER_BONE + 4,  // glb joints 55..84 are A bones 51..80
     POSED_BONES = FIRST_FINGER_JOINT + FINGER_BONES,  // joints 23..54 are left zero: they keep their rest pose
-    NODES_MAX = T5_FIGHTER_COUNT * PARTS_MAX + 1,
+    STAGE_NODES_MAX = 256,  // layers and floor tiles
+    NODES_MAX = T5_FIGHTER_COUNT * PARTS_MAX + STAGE_NODES_MAX,
     FX_MAX = 128,
 };
 
@@ -33,7 +34,6 @@ typedef struct {
 
 static Part parts[T5_FIGHTER_COUNT][PARTS_MAX];
 static int part_count[T5_FIGHTER_COUNT];
-static uint32_t stage_asset;
 static T5Visual visual;
 
 static struct {
@@ -44,7 +44,7 @@ static struct {
     OwFx fx[FX_MAX];
 } block;
 
-static uint32_t asset_of(const unsigned char *path) {
+uint32_t t5_asset_of(const unsigned char *path) {
     return path ? ow_asset((OwStr){(uint32_t)strlen((const char *)path), (const char *)path}) : 0;
 }
 
@@ -61,7 +61,7 @@ static void load_parts(sqlite3 *db, int side, const T5Loadout *loadout) {
     while (part_count[side] < PARTS_MAX && sqlite3_step(rows) == SQLITE_ROW) {
         Part *part = &parts[side][part_count[side]];
         snprintf(part->id, sizeof part->id, "%d:%s", side + 1, (const char *)sqlite3_column_text(rows, 0));
-        part->asset = asset_of(sqlite3_column_text(rows, 1));
+        part->asset = t5_asset_of(sqlite3_column_text(rows, 1));
         if (part->asset) part_count[side]++;
     }
     sqlite3_finalize(rows);
@@ -78,15 +78,6 @@ static void load_hands(sqlite3 *db, int side, const T5Loadout *loadout) {
     if (!failed) visual.fighter[side].banks = banks;
 }
 
-static uint32_t load_stage(sqlite3 *db, const char *stage) {
-    sqlite3_stmt *rows;
-    if (sqlite3_prepare_v2(db, "SELECT file FROM stage WHERE id = ?1", -1, &rows, NULL) != SQLITE_OK) return 0;
-    sqlite3_bind_text(rows, 1, stage, -1, SQLITE_STATIC);
-    uint32_t asset = sqlite3_step(rows) == SQLITE_ROW ? asset_of(sqlite3_column_text(rows, 0)) : 0;
-    sqlite3_finalize(rows);
-    return asset;
-}
-
 bool t5_scene_init(const T5View *view) {
     sqlite3 *db = ow_db_open(DB_PATH, sizeof DB_PATH - 1);
     if (!db) return false;
@@ -94,7 +85,7 @@ bool t5_scene_init(const T5View *view) {
         load_parts(db, side, &view->fighters[side].loadout);
         load_hands(db, side, &view->fighters[side].loadout);
     }
-    stage_asset = load_stage(db, view->stage);
+    t5_stage_init(db, view);
     t5_camera_init(db, view);
     t5_effects_init(db, view);
     t5_sound_init(db, view);
@@ -131,10 +122,15 @@ static const OwTransform PLACE_AT_ORIGIN = {.rotation = {0, 0, 0, 1}, .scale = {
 
 void t5_scene_send(const T5View *view, float seconds) {
     t5_visual_step(&visual, view, seconds);
-    uint32_t count = 0;
-    if (stage_asset) {
-        block.nodes[count++] = (OwNode){.id = "stage", .asset = stage_asset, .transform = PLACE_AT_ORIGIN, .class = OW_CLASS_SCENERY};
+    OwScene *scene = &block.scene;
+    scene->camera = t5_camera(view, seconds);
+    float midpoint_x = 0, midpoint_z = 0;
+    for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
+        const T5Mat4 *root = &visual.fighter[side].rig.root.world;
+        midpoint_x += root->m[3][0] * MM / T5_FIGHTER_COUNT;
+        midpoint_z += root->m[3][2] * MM / T5_FIGHTER_COUNT;
     }
+    uint32_t count = t5_stage_nodes(view, scene->camera, midpoint_x, midpoint_z, block.nodes, STAGE_NODES_MAX);
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
         pose_fighter(block.bones[side], &visual.fighter[side].rig);
         for (int at = 0; at < part_count[side]; at++) {
@@ -150,9 +146,7 @@ void t5_scene_send(const T5View *view, float seconds) {
             memcpy(node->id, parts[side][at].id, sizeof node->id);
         }
     }
-    OwScene *scene = &block.scene;
     OW_SCENE_SIZES(scene);
-    scene->camera = t5_camera(view, seconds);
     scene->ambient = (OwColor){0.45f, 0.45f, 0.5f, 1};
     block.light = (OwLight){.kind = OW_LIGHT_DIRECTIONAL, .color = {1, 0.97f, 0.9f, 0.8f}, .direction = {0.3f, -1, 0.4f}};
     scene->light_count = 1;

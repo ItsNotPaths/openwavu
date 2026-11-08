@@ -22,17 +22,13 @@ static struct {
     uint32_t rows[FIGHTER_ROWS];        // bit n: record n plays
 } fighter[T5_FIGHTER_COUNT];
 
-static uint32_t path_asset(const unsigned char *path) {
-    return path ? ow_asset((OwStr){(uint32_t)strlen((const char *)path), (const char *)path}) : 0;
-}
-
 static void load_fighter(sqlite3 *db, int side, const char *character) {
     sqlite3_stmt *rows;
     if (sqlite3_prepare_v2(db, "SELECT record, file FROM character_effect WHERE character = ?1", -1, &rows, NULL) == SQLITE_OK) {
         sqlite3_bind_text(rows, 1, character, -1, SQLITE_STATIC);
         while (sqlite3_step(rows) == SQLITE_ROW) {
             int record = sqlite3_column_int(rows, 0);
-            if (record < FIGHTER_RECORDS) fighter[side].records[record] = path_asset(sqlite3_column_text(rows, 1));
+            if (record < FIGHTER_RECORDS) fighter[side].records[record] = t5_asset_of(sqlite3_column_text(rows, 1));
         }
         sqlite3_finalize(rows);
     }
