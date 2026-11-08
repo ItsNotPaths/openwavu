@@ -358,8 +358,8 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 		for mesh, k in group {
 			mesh := mesh
 			mesh.name = nodes[k].name  // _DRWOFF_ in the name: a broken state, hidden at start
-			// (hole stage-shadows :tags (importer render look) :sev polish) the shadow receiver plane (_O_SMAP_, slot 5) is left out, so fighters cast no shadow on the floor.
-			if strings.contains(mesh.name, "_O_SMAP_") do continue
+			// (hole stage-shadows :tags (importer render look) :sev polish) the shadow receiver planes (slot 5) are left out, so fighters cast no shadow on the floor.
+			if i == STAGE_SHADOW_LAYER do continue
 			if i == STAGE_TILE_LAYER && s.radius > 0 do append(&tiles, Stage_Tile{len(meshes), nodes[k].transform[12], nodes[k].transform[14]})
 			append(&meshes, mesh)
 			append(&layers, i)
@@ -381,6 +381,7 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 }
 
 STAGE_TILE_LAYER :: 2  // tk5decomp docs/stages.md 8.3
+STAGE_SHADOW_LAYER :: 5  // stages.md 4: flat planes the fighters' shadows land on, never drawn as they are
 
 // mesh: index in the stage's meshes; home: the MIF matrix translation, mm.
 Stage_Tile :: struct {
