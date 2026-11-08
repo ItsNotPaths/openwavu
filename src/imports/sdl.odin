@@ -46,16 +46,19 @@ Sdl_Object :: struct {
 	gain:    f32,         // an audio stream's own, before the player's volume
 }
 
-// One pack's SDL objects.
+// One pack's SDL objects, and this frame's key and mouse events for its SDL_PollEvent.
 Sdl_Set :: struct {
-	objects:  hm.Dynamic_Handle_Map(Sdl_Object, Sdl_Handle),
-	renderer: u32,  // the host's renderer
-	volumes:  Volumes,
+	objects:    hm.Dynamic_Handle_Map(Sdl_Object, Sdl_Handle),
+	renderer:   u32,  // the host's renderer
+	volumes:    Volumes,
+	events:     [dynamic]sdl.Event,
+	next_event: int,
 }
 
 // The imports grow its lists with the allocator it is made with here.
 sdl_set_create :: proc(renderer: ^sdl.Renderer, volumes := Volumes{.Effects = 1, .Music = 1}) -> (set: Sdl_Set) {
 	hm.dynamic_init(&set.objects, context.allocator)
+	set.events = make([dynamic]sdl.Event)
 	set.volumes = volumes
 	set.renderer = sdl_new(&set, .Renderer, renderer, {})
 	return
@@ -68,6 +71,24 @@ sdl_set_destroy :: proc(set: ^Sdl_Set) {
 	for _, handle in hm.iterate(&iterator) do append(&handles, transmute(u32)handle)
 	for handle in handles do sdl_destroy(set, handle)
 	hm.dynamic_destroy(&set.objects)
+	delete(set.events)
+}
+
+// Starts a frame's events: the last frame's ones the pack did not poll are gone.
+sdl_events_clear :: proc(set: ^Sdl_Set) {
+	clear(&set.events)
+	set.next_event = 0
+}
+
+// Keeps a key or mouse event for the pack, in the renderer's coordinates. Events with host pointers in them (text
+// input, drops) are never kept.
+sdl_event_keep :: proc(set: ^Sdl_Set, renderer: ^sdl.Renderer, event: sdl.Event) {
+	#partial switch event.type {
+	case .KEY_DOWN, .KEY_UP, .MOUSE_MOTION, .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP, .MOUSE_WHEEL:
+		event := event
+		_ = sdl.ConvertEventToRenderCoordinates(renderer, &event)
+		append(&set.events, event)
+	}
 }
 
 // Puts back the renderer state the allowlist lets a pack change: draw color, draw blend mode, clip, scale.
@@ -91,6 +112,7 @@ define_sdl :: proc(l: wasm.Linker, set: ^Sdl_Set) -> (err: string) {
 		{"SDL_CreateTextureFromSurface", {wasm.I32, wasm.I32}, {wasm.I32}, create_texture_from_surface},
 		{"SDL_OpenAudioDeviceStream", {wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, open_audio_device_stream},
 		{"SDL_SetAudioStreamGain", {wasm.I32, wasm.F32}, {wasm.I32}, set_audio_stream_gain},
+		{"SDL_PollEvent", {wasm.I32}, {wasm.I32}, poll_event},
 	}
 	for list in ([][]Sdl_Define{hand[:], sdl_glue()}) {
 		for d in list do if err = wasm.define_func(l, d.name, d.params, d.results, d.callback, set, "env"); err != "" do return
@@ -213,6 +235,23 @@ update_texture :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.V
 	pixels := sdl_bytes(&call, 3, args[2], u64(i64(h - 1) * i64(pitch) + row))
 	if call.error != "" do return wasm.trap(call.error)
 	results[0] = wasm.i32_val(i32(sdl.UpdateTexture(texture, rect, pixels, pitch)))
+	return nil
+}
+
+// The next of this frame's kept events; a NULL event only asks whether one is left.
+@(private = "file")
+poll_event :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	call := sdl_call(env, caller, "SDL_PollEvent")
+	event := (^sdl.Event)(sdl_bytes(&call, 1, args[0], size_of(sdl.Event)))
+	if call.error != "" do return wasm.trap(call.error)
+	set := call.set
+	left := set.next_event < len(set.events)
+	results[0] = wasm.i32_val(i32(left))
+	if left && event != nil {
+		event^ = set.events[set.next_event]
+		set.next_event += 1
+	}
 	return nil
 }
 

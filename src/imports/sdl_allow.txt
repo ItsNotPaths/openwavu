@@ -69,6 +69,9 @@ TTF_SetTextWrapWidth
 TTF_GetTextSize
 TTF_DrawRendererText
 
+// Input: this frame's key and mouse events, in the renderer's coordinates
+SDL_PollEvent hand
+
 // Sound: one stream per channel on the default playback device, fed by the pack
 SDL_OpenAudioDeviceStream hand
 SDL_DestroyAudioStream destroy

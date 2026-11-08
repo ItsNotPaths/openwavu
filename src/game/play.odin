@@ -60,9 +60,11 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, 
 	for {
 		defer free_all(context.temp_allocator)
 		e: sdl.Event
+		imports.sdl_events_clear(&running.sdl)
 		for sdl.PollEvent(&e) {
 			if e.type == .QUIT do return true
 			input.handle_event(e)
+			imports.sdl_event_keep(&running.sdl, r.renderer_2d, e)
 		}
 		pads := input.poll()
 		running.pads = pads
