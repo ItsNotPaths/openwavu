@@ -1008,13 +1008,14 @@ const char *t5_own_anim_bank(sqlite3 *db, const char *character, char owner[T5_O
     return failed;
 }
 
-static const char *stage_files(sqlite3 *db, const char *stage, T5ReadFile read, void *context, T5Bytes *collision, T5Bytes *surfaces) {
+static const char *stage_files(sqlite3 *db, const char *stage, T5ReadFile read, void *context, T5Bytes *collision, T5Bytes *surfaces, bool *infinite) {
     sqlite3_stmt *row;
-    const char *failed = prepare(db, "SELECT collision, surfaces FROM stage WHERE id = ?1", stage, &row);
+    const char *failed = prepare(db, "SELECT collision, surfaces, radius FROM stage WHERE id = ?1", stage, &row);
     if (!failed && sqlite3_step(row) != SQLITE_ROW) failed = fail("stage %s: no row", stage);
     if (!failed) {
         *collision = read(context, (const char *)sqlite3_column_text(row, 0));
         *surfaces = read(context, (const char *)sqlite3_column_text(row, 1));
+        *infinite = sqlite3_column_double(row, 2) > 0;
         if (!collision->size || !surfaces->size) failed = fail("stage %s: missing file", stage);
     }
     sqlite3_finalize(row);
@@ -1023,8 +1024,10 @@ static const char *stage_files(sqlite3 *db, const char *stage, T5ReadFile read, 
 
 static const char *load_stage(T5Stage *out, sqlite3 *db, const char *stage, T5ReadFile read, void *context, T5Arena *arena, size_t *bytes) {
     T5Bytes collision, surfaces;
-    const char *failed = stage_files(db, stage, read, context, &collision, &surfaces);
+    bool infinite = false;
+    const char *failed = stage_files(db, stage, read, context, &collision, &surfaces, &infinite);
     if (!failed) failed = t5_stage_parse(out, collision, surfaces, arena, bytes);
+    if (!failed) out->infinite = infinite;
     return failed && failed != error ? fail("stage %s: %s", stage, failed) : failed;
 }
 

@@ -2,8 +2,6 @@
 // file order; every query tests all of them. load.c reads them from a stage's collision glb and .surfaces file.
 // (hole slope-stage :tags (tk5mod content) :sev polish) every stock floor is flat (steps of up to 100 mm), so the slope
 // code (floor planes, limb probes, hip drop twists) never runs in play; add a stage whose floor rises and falls at random.
-// (hole infinite-stage :tags (port tk5mod) :sev gap) the infinite stages (no walls) wrap around in the game, by some circular logic not found yet
-// (fighters and stage moved back by a period, or positions taken modulo); not ported, so a fighter can walk off the collision floor.
 #ifndef T5_STAGE_H
 #define T5_STAGE_H
 
@@ -40,6 +38,7 @@ struct T5Stage {
     const T5WallQuad *walls;
     int32_t wall_count;
     T5StartList start[T5_START_LISTS];
+    bool infinite;  // no walls and a flat floor at 0 (the game's stage mode 2); the fighters walk on forever
 };
 
 // The floor queries on w->stage. They read w's stage_depth, floor_disabled and stage_state.

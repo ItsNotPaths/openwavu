@@ -16,6 +16,7 @@ enum {
     START_HEALTH = 180,        // health points; the start_health param's fallback
 };
 static const float STAGE_DEPTH = 10000.0f;  // mm: past it the arena pass counts a fighter as out of range
+static const int32_t STAGE_MODE_INFINITE = 2;  // the game's floor word on infinite stages (0x6abbc): no walls, flat floor
 
 T5MatchState t5_match;
 static T5View *view;  // on the heap: built from the state when asked, so it is no part of it
@@ -54,6 +55,7 @@ void t5_match_begin(uint64_t seed) {
     w->battle_state = BATTLE_FIGHT;
     w->stage = &t5_match_data.stage;
     w->stage_depth = STAGE_DEPTH;
+    w->floor_disabled = w->stage->infinite ? STAGE_MODE_INFINITE : 0;
     w->rng.x = (uint32_t)seed;
     w->round_seed = (uint32_t)seed;
     w->reactions = (T5ReactionHooks){t5_reaction_list, w};
