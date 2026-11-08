@@ -107,6 +107,13 @@ odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict
 # make those the vendored static libs.
 sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf -Lvendor/enet -Lvendor/curl"
 odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style "$sdl_libs"
+# Stage viewer title pack: build/stageview.tar.
+mkdir -p build/stageview
+vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -mexec-model=reactor -s -Wl,--import-symbols \
+	-Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/sdl3/include \
+	-o build/stageview/stageview.wasm modules/stageview/*.c build/sdk/libow_db.a
+cp modules/stageview/pack.toml build/stageview/
+build/openwavu --package build/stageview >/dev/null
 odin build src/tools/bot -out:build/openwavu-bot "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
