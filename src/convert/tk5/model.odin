@@ -21,6 +21,7 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 	skin: Maybe(int)
 	if s, has := skeleton.?; has {
 		append(&scene.nodes, ..add_skin(&g, s, max_joint(meshes) + 1)[:])
+		add_springs(&g, s, meshes)
 		skin = 0
 	}
 	materials := Materials{glb = file, files = textures, by_look = make(map[Material_Look]int)}
@@ -125,9 +126,8 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 	return materials.by_look[look]
 }
 
-// Joint nodes in bind pose plus the skin. Returns the root nodes.
-// (hole helper-joint-re :tags (port fighter-detail)) TK5 SPLJNT block (section 8) and kkhelperjoint (0x1e96c4) are not decoded: twist rules and swing params (king tail, kazuya belt ends) for the helper and costume joints.
-// (hole mop-joints :tags (importer fighter-detail) :needs helper-joint-re) costume joints past the skeleton (MOP, model section 13) get an identity bind under bone 0; cloth does not animate.
+// Joint nodes in bind pose plus the skin. Returns the root nodes. Joints past the skeleton get an identity bind under bone 0.
+// (hole helper-joint-re :tags (port fighter-detail)) TK5 SPLJNT block (section 8) and kkhelperjoint (0x1e96c4) are not decoded: twist rules for the helper joints.
 @(private = "file")
 add_skin :: proc(g: ^gltf.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dynamic]int) {
 	bones := len(s.bones)
@@ -155,6 +155,79 @@ add_skin :: proc(g: ^gltf.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dy
 	for i in 0 ..< len(world) do append(&sk.joints, i)
 	append(&g.skins, sk)
 	return roots
+}
+
+SWING_FIRST :: 111  // bon bones from here swing: tails, straps, belt ends; the bon list gives each its MOP id
+LEG_BONES :: [4]int{15, 16, 18, 19}  // thighs and shins; the bone after each is its end
+FIRST_LEG_BONE :: 15  // legs to the body's end, then helpers
+LEG_RADIUS :: 0.08  // metres
+// (hole mop-swing :tags (importer fighter-detail)) MOP (model section 13) is not mapped: every chain swings with these.
+SWING_STIFFNESS :: 1.0
+SWING_GRAVITY :: 0.1
+SWING_DRAG :: 0.35
+SWING_HIT_RADIUS :: 0.02
+
+// Each chain of swing bones as a spring, with a tail node at the farthest vertex of its last bone, kept out of the
+// legs but the one it hangs from. A lone bone on a leg or a helper is a pant leg or cuff: it follows its parent.
+@(private = "file")
+add_springs :: proc(g: ^gltf.Gltf, s: formats.Skeleton, meshes: []formats.Mesh) {
+	bones := len(s.bones)
+	if bones <= SWING_FIRST do return
+	world := world_matrices(s)
+	springs := gltf.Spring_Bone{specVersion = "1.0"}
+	for leg, group in LEG_BONES {
+		end := linalg.inverse(world[leg]) * world[leg + 1]
+		tail := [3]f32{f32(end[0, 3] / MM), f32(end[1, 3] / MM), f32(end[2, 3] / MM)}
+		append(&springs.colliders, gltf.Collider{node = leg, shape = {capsule = gltf.Capsule{tail = tail, radius = LEG_RADIUS}}})
+		append(&springs.colliderGroups, gltf.Collider_Group{})
+		append(&springs.colliderGroups[group].colliders, group)
+	}
+	ends := farthest_vertices(meshes, world)
+	next :: proc(s: formats.Skeleton, bone: int) -> int {
+		for b, child in s.bones[SWING_FIRST:] do if int(b.parent) == bone do return SWING_FIRST + child
+		return -1
+	}
+	for first in SWING_FIRST ..< bones {
+		parent := int(s.bones[first].parent)
+		if parent >= SWING_FIRST && next(s, parent) == first do continue  // inside a chain
+		spring: gltf.Spring
+		for leg, group in LEG_BONES do if leg != parent do append(&spring.colliderGroups, group)
+		if next(s, first) < 0 && parent >= FIRST_LEG_BONE do continue
+		last := first
+		for bone := first; bone >= 0; bone = next(s, bone) {
+			append(&spring.joints, swing_joint(bone))
+			last = bone
+		}
+		if end, found := ends[last].?; found {
+			local := linalg.inverse(world[last]) * [4]f64{end.x, end.y, end.z, 1}
+			append(&g.nodes, gltf.Node{name = fmt.tprintf("bone%d_end", last), translation = slice.clone([]f32{f32(local.x / MM), f32(local.y / MM), f32(local.z / MM)})})
+			append(&g.nodes[last].children, len(g.nodes) - 1)
+			append(&spring.joints, swing_joint(len(g.nodes) - 1))
+		}
+		if len(spring.joints) > 1 do append(&springs.springs, spring)
+	}
+	if len(springs.springs) > 0 do gltf.set_springs(g, springs)
+}
+
+@(private = "file")
+swing_joint :: proc(node: int) -> gltf.Spring_Joint {
+	return {node = node, hitRadius = SWING_HIT_RADIUS, stiffness = SWING_STIFFNESS, gravityPower = SWING_GRAVITY, dragForce = SWING_DRAG, gravityDir = {0, -1, 0}}
+}
+
+// Per bone, the vertex mostly on it farthest from it, file units; none for a bone no vertex is mostly on.
+@(private = "file")
+farthest_vertices :: proc(meshes: []formats.Mesh, world: []matrix[4, 4]f64) -> []Maybe([3]f64) {
+	ends := make([]Maybe([3]f64), len(world))
+	reach := make([]f64, len(world))
+	for m in meshes do for p in m.polys do for joints, vertex in p.joints do for k in 0 ..< 4 {
+		bone := int(joints[k])
+		if p.weights[vertex][k] < 0.5 || bone >= len(world) do continue
+		position := [3]f64{f64(p.positions[vertex].x), f64(p.positions[vertex].y), f64(p.positions[vertex].z)}
+		if d := linalg.length(position - [3]f64{world[bone][0, 3], world[bone][1, 3], world[bone][2, 3]}); d > reach[bone] {
+			reach[bone], ends[bone] = d, position
+		}
+	}
+	return ends
 }
 
 // Bind pose, file units. R = Rz*Ry*Rx (data.md §6.1).
