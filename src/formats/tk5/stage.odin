@@ -1,12 +1,16 @@
 // Stages: 21-section file at entry 2132 + 3*id. Wall quads from MHO (section 15), floor zones from
-// UNDN (section 17), start points from sections 14 and 13. Little endian, file units (mm). tk5decomp docs/stages.md.
+// UNDN (section 17), start points from sections 14 and 13, period and radius from the header (section 0, part 0).
+// Little endian, file units (mm). tk5decomp docs/stages.md.
 package tk5_formats
 
 
 STAGE_FIRST :: 2132
 STAGE_COUNT :: 38
 STAGE_SECTIONS :: 21
+STAGE_HEADER :: 0
+STAGE_HEADER_VERSION :: 0x20050905
 STAGE_MESHES :: 2  // container of NDP3, one MIF record each in STAGE_NODES
+STAGE_LAYERS :: 6  // the NDP3s of STAGE_MESHES: sky, far scene, props (floor tiles when infinite), arena, extra, shadow
 STAGE_NODES :: 3
 STAGE_MHO :: 15
 STAGE_UNDN :: 17
@@ -63,6 +67,8 @@ Stage :: struct {
 	quads:    []Stage_Quad,  // of object kinds 3 and 9, in object order
 	floors:   []Floor_Zone,
 	start:    [2]Start_Slot,
+	period:   f32,  // the floor tile cell of an infinite stage
+	radius:   f32,  // the floor patch kept around the focus; 0: a walled stage
 }
 
 read_stage :: proc(data: []byte, allocator := context.allocator) -> (s: Stage, ok: bool) {
@@ -71,6 +77,10 @@ read_stage :: proc(data: []byte, allocator := context.allocator) -> (s: Stage, o
 	read_mho(&s, s.sections[STAGE_MHO], allocator) or_return
 	s.floors = read_undn(s.sections[STAGE_UNDN], allocator) or_return
 	for &slot, k in s.start do slot = read_start(s.sections[STAGE_START_SECTIONS[k]], k, allocator) or_return
+	header, _ := sections(s.sections[STAGE_HEADER], allocator)
+	if len(header) > 0 && len(header[0]) >= 0x10 && le_u32(header[0], 0) == STAGE_HEADER_VERSION {
+		s.period, s.radius = le_f32(header[0], 0x04), le_f32(header[0], 0x0c)
+	}
 	return s, true
 }
 

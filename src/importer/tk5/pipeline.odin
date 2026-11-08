@@ -344,11 +344,14 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 	for t in list do textures[t.hash] = t
 	meshes: [dynamic]formats.Mesh
 	matrices: [dynamic]Maybe([16]f32)
+	layers: [dynamic]int
+	tiles: [dynamic]Stage_Tile
 	meshes.allocator, matrices.allocator = context.temp_allocator, context.temp_allocator
+	layers.allocator, tiles.allocator = context.temp_allocator, context.temp_allocator
 	nuds, _ := formats.sections(s.sections[formats.STAGE_MESHES], context.temp_allocator)
 	mifs, _ := formats.sections(s.sections[formats.STAGE_NODES], context.temp_allocator)
 	for nud, i in nuds {
-		if len(nud) == 0 || i >= len(mifs) do continue
+		if len(nud) == 0 || i >= len(mifs) || i >= formats.STAGE_LAYERS do continue
 		group, read := formats.read_ndp3(nud, context.temp_allocator)
 		nodes, nodes_read := formats.read_mif_nodes(mifs[i], context.temp_allocator)
 		if !read || !nodes_read || len(nodes) != len(group) do continue
@@ -357,7 +360,9 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 			mesh.name = nodes[k].name  // _DRWOFF_ in the name: a broken state, hidden at start
 			// (hole stage-shadows :tags (importer render look) :sev polish) the shadow receiver plane (_O_SMAP_, slot 5) is left out, so fighters cast no shadow on the floor.
 			if strings.contains(mesh.name, "_O_SMAP_") do continue
+			if i == STAGE_TILE_LAYER && s.radius > 0 do append(&tiles, Stage_Tile{len(meshes), nodes[k].transform[12], nodes[k].transform[14]})
 			append(&meshes, mesh)
+			append(&layers, i)
 			transform: Maybe([16]f32)
 			if mesh.single_bind >= 0 do transform = nodes[k].transform  // unbound meshes are in world space
 			append(&matrices, transform)
@@ -367,11 +372,20 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 	// (hole stage-break-pieces :tags importer :sev polish) section 4 (flying pieces of breakable props) is not exported.
 	file := fmt.tprintf("stages/%s.glb", id)
 	texture_files := write_textures(im, id, textures)
-	if len(meshes) > 0 && !convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:]) do return
+	if len(meshes) > 0 && !convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:], layers[:]) do return
 	collision, surfaces := fmt.tprintf("stages/%s.collision.glb", id), fmt.tprintf("stages/%s.surfaces", id)
 	if !convert.write_stage_collision(join(im.root, collision), join(im.root, surfaces), s) do return
 	music: db.Value = music_track >= 0 ? fmt.tprintf("%d", music_track) : db.Null{}
-	db.insert(&im.w, "stage", id, id, i64(index), file, collision, surfaces, music)
+	db.insert(&im.w, "stage", id, id, i64(index), file, collision, surfaces, music, f64(s.period / convert.MM), f64(s.radius / convert.MM))
+	for tile in tiles do db.insert(&im.w, "stage_tile", id, i64(formats.STAGE_LAYERS + tile.mesh + 1), f64(tile.home_x / convert.MM), f64(tile.home_z / convert.MM))
+}
+
+STAGE_TILE_LAYER :: 2  // tk5decomp docs/stages.md 8.3
+
+// mesh: index in the stage's meshes; home: the MIF matrix translation, mm.
+Stage_Tile :: struct {
+	mesh:           int,
+	home_x, home_z: f32,
 }
 
 // The shared banks and each stage's bank; the costumes' banks come with their character.

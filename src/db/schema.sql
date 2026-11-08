@@ -69,7 +69,18 @@ CREATE TABLE stage (
 	file       TEXT NOT NULL,
 	collision  TEXT NOT NULL,
 	surfaces   TEXT NOT NULL,
-	music      TEXT REFERENCES music(id)  -- NULL: none
+	music      TEXT REFERENCES music(id),  -- NULL: none
+	period     REAL NOT NULL,  -- infinite stages: the floor tiles repeat this far apart
+	radius     REAL NOT NULL   -- infinite stages: tiles farther than this from the fighters are hidden; 0: a walled stage
+);
+
+-- The floor tiles of an infinite stage. part: glb node index + 1 in the stage file; home: where the file places it.
+CREATE TABLE stage_tile (
+	stage  TEXT NOT NULL REFERENCES stage(id),
+	part   INTEGER NOT NULL,
+	home_x REAL NOT NULL,
+	home_z REAL NOT NULL,
+	PRIMARY KEY (stage, part)
 );
 
 -- FLAC files. A bank is one of the game's sound packs; idx: the game's record number. Loops in samples, NULL: none.

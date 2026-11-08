@@ -14,7 +14,8 @@ MM :: 1000.0  // file millimetres per glTF metre
 BODY_BONES :: 23  // animated by the 23 channels; the rest are helpers
 
 // Writes root/file. skeleton: nil for unskinned (stage) geometry. matrices: per mesh, row vectors in file units, or nil.
-write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Texture_Files, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil) -> (ok: bool) {
+// layers: per mesh of a stage, or nil; glb node k is then the root of layer k (all STAGE_LAYERS), the meshes its children.
+write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Texture_Files, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil, layers: []int = nil) -> (ok: bool) {
 	context.allocator = context.temp_allocator
 	g: gltf.Gltf
 	scene: gltf.Scene
@@ -23,6 +24,10 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 		append(&scene.nodes, ..add_skin(&g, s, max_joint(meshes) + 1)[:])
 		add_springs(&g, s, meshes)
 		skin = 0
+	}
+	for layer in 0 ..< (layers != nil ? formats.STAGE_LAYERS : 0) {
+		append(&g.nodes, gltf.Node{name = fmt.tprintf("layer_%d", layer)})
+		append(&scene.nodes, layer)
 	}
 	materials := Materials{glb = file, files = textures, by_look = make(map[Material_Look]int)}
 	for mesh, mesh_index in meshes {
@@ -54,7 +59,8 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 			}
 		}
 		append(&g.nodes, node)
-		append(&scene.nodes, len(g.nodes) - 1)
+		parent := layers != nil ? &g.nodes[layers[mesh_index]].children : &scene.nodes
+		append(parent, len(g.nodes) - 1)
 	}
 	append(&g.scenes, scene)
 	path, _ := filepath.join({root, file})
