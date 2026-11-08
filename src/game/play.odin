@@ -110,7 +110,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, 
 			running.scene.sent = false
 		}
 		alpha: f32 = game != nil && settings.frame_cap > 60 ? match.tick_alpha(game) : 1  // at 60 fps every frame is a tick: no blending
-		if !render.draw_scene(r, &running.scene.assets, alpha) {
+		if !render.draw_scene(r, &running.scene.assets, alpha, f32(dt) / 1e9) {
 			fmt.eprintfln("openwavu: the 3D did not draw: %s", sdl.GetError())
 			return
 		}

@@ -10,10 +10,13 @@ import "../../vendor/cgltf"
 import "../gltf"
 
 Model :: struct {
-	nodes:  []Model_Node,   // glTF order
-	roots:  []int,          // the default scene's
-	meshes: [][]Primitive,  // glTF order; nodes share them
-	skins:  []Model_Skin,
+	nodes:           []Model_Node,      // glTF order
+	roots:           []int,             // the default scene's
+	meshes:          [][]Primitive,     // glTF order; nodes share them
+	skins:           []Model_Skin,
+	swings:          []Swing_Joint,     // a joint before the joints under it
+	colliders:       []Swing_Collider,
+	swing_colliders: []int,             // the joints' collider lists, into colliders
 }
 
 Model_Node :: struct {
@@ -76,6 +79,9 @@ model_destroy :: proc(gpu: ^Gpu, model: ^Model) {
 	delete(model.roots)
 	delete(model.meshes)
 	delete(model.skins)
+	delete(model.swings)
+	delete(model.colliders)
+	delete(model.swing_colliders)
 	free(model)
 }
 
@@ -129,6 +135,7 @@ model_fill :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, model: ^Model, fi
 		if accessor.type != .mat4 || cgltf.accessor_unpack_floats(accessor, cast([^]f32)raw_data(binds), floats) != floats do return false
 	}
 	if len(model.skins) > 0 do for joint, bone in model.skins[0].joints do model.nodes[joint].bone = bone
+	swings_read(model, file) or_return
 	for node in model.nodes {
 		if node.mesh < 0 do continue
 		joints := node.skin < 0 ? 1 : len(model.skins[node.skin].joints)

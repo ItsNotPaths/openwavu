@@ -9,15 +9,18 @@ import "core:strings"
 // (hole render-quad :tags (render look)) image assets and pack texture quads are not drawn, and billboard nodes do not face the camera.
 // (hole material-override :tags (render look)) a node's material texture, shader and params are not applied; only its tint is.
 // (hole node-clip :tags (render look)) a node's glb animation clip is not played at its clip time.
-scene_draws :: proc(scene: ^Scene, assets: ^Assets, gpu: ^Gpu, allocator := context.temp_allocator) -> []Draw {
+// swings: the spring bones' state, stepped by swings.seconds; nil draws them at rest.
+scene_draws :: proc(scene: ^Scene, assets: ^Assets, gpu: ^Gpu, swings: ^Swings = nil, allocator := context.temp_allocator) -> []Draw {
 	draws := make([dynamic]Draw, allocator)
+	if swings != nil do swings.frame += 1
 	for &node in scene.nodes {
 		if .Hidden in node.flags do continue
 		model := asset_model(assets, gpu, node.asset)
 		if model == nil do continue
 		left_out := node.part == 0 ? whole_glb_left_out(model, scene.nodes[:], node.asset, allocator) : nil
-		node_draws(&draws, model, &node, left_out, allocator)
+		node_draws(&draws, model, &node, left_out, swings, allocator)
 	}
+	if swings != nil do swings_sweep(swings)
 	return draws[:]
 }
 
@@ -33,11 +36,10 @@ whole_glb_left_out :: proc(model: ^Model, scene_nodes: []Node, asset: u32, alloc
 }
 
 // The meshes of one scene node: the glb's roots, or its part, each skipping what left_out marks (nil: none).
-node_draws :: proc(draws: ^[dynamic]Draw, model: ^Model, node: ^Node, left_out: []bool, allocator := context.temp_allocator) {
+node_draws :: proc(draws: ^[dynamic]Draw, model: ^Model, node: ^Node, left_out: []bool, swings: ^Swings = nil, allocator := context.temp_allocator) {
 	if int(node.part) > len(model.nodes) do return
-	placed := posed_world(model, node.bones, allocator)
-	place := transform_matrix(node.transform)
-	for &world in placed do world = place * world
+	placed := posed_world(model, node.bones, transform_matrix(node.transform), allocator)
+	if swings != nil do swing(swings, node, model, node.bones, placed)
 	shared := Draw{tint = node.material.tint == 0 ? 1 : node.material.tint, scenery = node.class == .Scenery}
 	if node.part > 0 {
 		subtree_draws(draws, model, placed, int(node.part) - 1, left_out, shared, allocator)
@@ -46,20 +48,22 @@ node_draws :: proc(draws: ^[dynamic]Draw, model: ^Model, node: ^Node, left_out: 
 	for root in model.roots do subtree_draws(draws, model, placed, root, left_out, shared, allocator)
 }
 
-// Model space per glb node: its rest pose under its parent, or the bone the scene gives its joint. A bone with a zero
-// rotation, and a joint past the bones given, keeps its rest pose under its parent.
-posed_world :: proc(model: ^Model, bones: []Transform, allocator := context.temp_allocator) -> []matrix[4, 4]f32 {
+// Per glb node, placed by place: its rest pose under its parent, or the bone the scene gives its joint. A bone with a
+// zero rotation, and a joint past the bones given, keeps its rest pose under its parent.
+posed_world :: proc(model: ^Model, bones: []Transform, place: matrix[4, 4]f32 = 1, allocator := context.temp_allocator) -> []matrix[4, 4]f32 {
 	world := make([]matrix[4, 4]f32, len(model.nodes), allocator)
-	pose :: proc(model: ^Model, bones: []Transform, world: []matrix[4, 4]f32, index: int, parent: matrix[4, 4]f32) {
-		model_node := model.nodes[index]
-		world[index] = parent * model_node.local
-		if model_node.bone >= 0 && model_node.bone < len(bones) && bones[model_node.bone].rotation != 0 {
-			world[index] = transform_matrix(bones[model_node.bone])
-		}
-		for child in model_node.children do pose(model, bones, world, child, world[index])
-	}
-	for model_node, index in model.nodes do if model_node.parent < 0 do pose(model, bones, world, index, 1)
+	for model_node, index in model.nodes do if model_node.parent < 0 do pose(model, bones, world, index, place, place)
 	return world
+}
+
+// The node at index and its subtree under parent.
+pose :: proc(model: ^Model, bones: []Transform, world: []matrix[4, 4]f32, index: int, parent, place: matrix[4, 4]f32) {
+	model_node := model.nodes[index]
+	world[index] = parent * model_node.local
+	if model_node.bone >= 0 && model_node.bone < len(bones) && bones[model_node.bone].rotation != 0 {
+		world[index] = place * transform_matrix(bones[model_node.bone])
+	}
+	for child in model_node.children do pose(model, bones, world, child, world[index], place)
 }
 
 transform_matrix :: proc(transform: Transform) -> matrix[4, 4]f32 {

@@ -11,6 +11,7 @@ Renderer :: struct {
 	gpu:         Gpu,
 	scenes:      Scene_Ring,      // what the pack sent, kept until the next; the newest is drawn
 	blend:       Blend,           // what is drawn: toward the newest between ticks
+	swings:      Swings,          // spring bones of the drawn nodes
 	scene_image: ^sdl.Texture,    // gpu.color for the 2D renderer
 	image_of:    ^sdl.GPUTexture, // the gpu.color scene_image wraps
 }
@@ -43,6 +44,7 @@ init :: proc(title: cstring, width, height: i32) -> (renderer: Renderer, ok: boo
 destroy :: proc(renderer: ^Renderer) {
 	scene_ring_destroy(&renderer.scenes)
 	blend_destroy(&renderer.blend)
+	swings_destroy(&renderer.swings)
 	if renderer.scene_image != nil do sdl.DestroyTexture(renderer.scene_image)
 	gpu_destroy(&renderer.gpu)
 	sdl.DestroyRenderer(renderer.renderer_2d)
@@ -81,6 +83,7 @@ forget_scenes :: proc(renderer: ^Renderer) {
 	scene_ring_destroy(&renderer.scenes)
 	renderer.scenes = scene_ring_create()
 	blend_restart(&renderer.blend, nil)
+	swings_clear(&renderer.swings)  // their models go with the pack
 }
 
 // Queues the frame's 3D image as the first 2D draw, so the pack's 2D lands on top. draw_scene renders that image later
@@ -105,12 +108,13 @@ queue_scene :: proc(renderer: ^Renderer) -> (ok: bool) {
 }
 
 // alpha: how far the display is from the last tick's scene to the newest. assets: the pack's, which the scene names;
-// nil draws no nodes.
-draw_scene :: proc(renderer: ^Renderer, assets: ^Assets, alpha: f32) -> (ok: bool) {
+// nil draws no nodes. seconds: since the last frame, for the spring bones.
+draw_scene :: proc(renderer: ^Renderer, assets: ^Assets, alpha, seconds: f32) -> (ok: bool) {
 	command := sdl.AcquireGPUCommandBuffer(renderer.device)
 	if command == nil do return false
 	shown := blend_scenes(&renderer.blend, scene_ring_back(&renderer.scenes, 1), scene_ring_back(&renderer.scenes, 0), alpha)
-	draws := assets != nil ? scene_draws(shown, assets, &renderer.gpu) : nil
+	renderer.swings.seconds = seconds
+	draws := assets != nil ? scene_draws(shown, assets, &renderer.gpu, &renderer.swings) : nil
 	effects := assets != nil ? fx_quads(&renderer.scenes, shown, assets, &renderer.gpu) : {}
 	if !draw_3d(&renderer.gpu, command, renderer.gpu.size, shown, draws, effects) {
 		_ = sdl.CancelGPUCommandBuffer(command)

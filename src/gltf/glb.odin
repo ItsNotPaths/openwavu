@@ -36,7 +36,41 @@ Gltf :: struct {
 	buffers:            [dynamic]Buffer `json:",omitempty"`,
 	extensionsUsed:     [dynamic]string `json:",omitempty"`,
 	extensionsRequired: [dynamic]string `json:",omitempty"`,
+	extensions:         Maybe(Gltf_Extensions) `json:",omitempty"`,
 	bin:                [dynamic]byte `json:"-"`,
+}
+
+Gltf_Extensions :: struct {springs: Maybe(Spring_Bone) `json:"VRMC_springBone,omitempty"`}
+
+// VRMC_springBone 1.0: chains of joints that swing behind the pose, and the shapes they keep out of.
+SPRING_EXTENSION :: "VRMC_springBone"
+Spring_Bone :: struct {
+	specVersion:    string,
+	colliders:      [dynamic]Collider `json:",omitempty"`,
+	colliderGroups: [dynamic]Collider_Group `json:",omitempty"`,
+	springs:        [dynamic]Spring,
+}
+Collider :: struct {node: int, shape: Collider_Shape}
+Collider_Shape :: struct {
+	sphere:  Maybe(Sphere) `json:",omitempty"`,
+	capsule: Maybe(Capsule) `json:",omitempty"`,
+}
+Sphere :: struct {offset: [3]f32, radius: f32}
+Capsule :: struct {offset, tail: [3]f32, radius: f32}  // node space, metres
+Collider_Group :: struct {colliders: [dynamic]int}
+Spring :: struct {
+	joints:         [dynamic]Spring_Joint,  // each the child of the one before; the last is only the tail
+	colliderGroups: [dynamic]int `json:",omitempty"`,
+}
+Spring_Joint :: struct {
+	node:                                       int,
+	hitRadius, stiffness, gravityPower, dragForce: f32,
+	gravityDir:                                 [3]f32,
+}
+
+set_springs :: proc(g: ^Gltf, springs: Spring_Bone) {
+	g.extensions = Gltf_Extensions{springs = springs}
+	if !slice.contains(g.extensionsUsed[:], SPRING_EXTENSION) do append(&g.extensionsUsed, SPRING_EXTENSION)
 }
 
 Scene :: struct {nodes: [dynamic]int}

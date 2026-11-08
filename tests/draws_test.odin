@@ -1,5 +1,6 @@
 package tests
 
+import "core:math/linalg"
 import "core:testing"
 import "../src/render"
 
@@ -109,4 +110,52 @@ bones_pose_the_first_skin_in_node_space :: proc(t: ^testing.T) {
 	body = mesh_draw(draws, 1)
 	testing.expect_value(t, position(body.joints[0]), [3]f32{10, 1, 0})
 	testing.expect_value(t, position(body.joints[1]), [3]f32{11, 1, 0})
+}
+
+// A spring bone: when the bone it hangs from moves, its tail trails behind at the same length, then swings back to
+// rest; a no-blend node (a cut) starts at rest.
+@(test)
+spring_bones_trail_and_settle :: proc(t: ^testing.T) {
+	translate :: proc(x, y, z: f32) -> matrix[4, 4]f32 {
+		return {1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z, 0, 0, 0, 1}
+	}
+	nodes := []render.Model_Node{
+		{name = "hips", parent = -1, children = {1}, local = 1, mesh = -1, skin = -1, bone = 0},
+		{name = "strap", parent = 0, children = {2}, local = translate(0, -0.1, 0), mesh = -1, skin = -1, bone = 1},
+		{name = "strap_end", parent = 1, local = translate(0, -0.5, 0), mesh = -1, skin = -1, bone = 2},
+		{name = "body", parent = -1, local = 1, mesh = 0, skin = 0, bone = -1},
+	}
+	skins := []render.Model_Skin{{joints = {0, 1, 2}, inverse_binds = {1, 1, 1}}}
+	model := model_of(nodes, 1, skins)
+	model.swings = {{node = 1, tail = 2, stiffness = 1, drag = 0.5}}
+
+	assets := render.assets_create({})
+	defer render.assets_destroy(&assets, nil)
+	assets.models[1] = &model
+	defer delete_key(&assets.models, 1)
+	swings: render.Swings
+	defer render.swings_destroy(&swings)
+	swings.seconds = 1.0 / 60
+	bones := []render.Transform{{rotation = 1, scale = 1}}
+	scene := render.Scene{nodes = make([dynamic]render.Node, context.temp_allocator)}
+	append(&scene.nodes, render.Node{asset = 1, transform = {rotation = 1, scale = 1}, bones = bones})
+	strap_end :: proc(scene: ^render.Scene, assets: ^render.Assets, swings: ^render.Swings) -> (strap, end: [3]f32) {
+		draws := render.scene_draws(scene, assets, nil, swings)
+		return position(draws[0].joints[1]), position(draws[0].joints[2])
+	}
+	_, end := strap_end(&scene, &assets, &swings)
+	testing.expect_value(t, end, [3]f32{0, -0.6, 0})
+
+	bones[0].position = {1, 0, 0}
+	strap: [3]f32
+	strap, end = strap_end(&scene, &assets, &swings)
+	testing.expect(t, end.x < 0.9, "the tail trails behind")
+	testing.expect(t, abs(linalg.length(end - strap) - 0.5) < 1e-4, "the strap keeps its length")
+	for _ in 0 ..< 600 do _, end = strap_end(&scene, &assets, &swings)
+	testing.expect(t, linalg.length(end - [3]f32{1, -0.6, 0}) < 0.01, "the tail settles at rest")
+
+	bones[0].position = {5, 0, 0}
+	scene.nodes[0].flags = {.No_Blend}
+	_, end = strap_end(&scene, &assets, &swings)
+	testing.expect(t, linalg.length(end - [3]f32{5, -0.6, 0}) < 1e-5, "a cut starts at rest")
 }

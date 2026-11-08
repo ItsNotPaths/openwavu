@@ -124,7 +124,7 @@ node_bone_matrix :: proc(node: ^Node, bone: u32, assets: ^Assets, gpu: ^Gpu) -> 
 	place := transform_matrix(node.transform)
 	model := asset_model(assets, gpu, node.asset)
 	if model == nil || len(model.skins) == 0 || int(bone) >= len(model.skins[0].joints) do return place
-	return place * posed_world(model, node.bones)[model.skins[0].joints[bone]]
+	return posed_world(model, node.bones, place)[model.skins[0].joints[bone]]
 }
 
 // The anchor some time back: the same node in the ring's scene of then, found by id; the oldest held when past the ring.
