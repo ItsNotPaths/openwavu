@@ -102,6 +102,7 @@ alpha_cutoff :: proc(pass: formats.Material) -> f32 {
 
 // One glTF material per first-pass texture and alpha test; every pass goes to extras as stored, texture hashes included.
 // (hole texture-second-layer :tags (importer look)) only a pass's first texture is used; a pass with two (flags 0x41110003, NU_vUVset; kazuya_1 materials 3 and 4) has a blurry highlight map second, likely shine masked by the first texture's alpha.
+// (hole stage-env-map :tags (importer render look) :sev gap) stage materials with NU_mEnvMap and two textures (flags 0x48131003, 0x48131011, 0x10114103; 29, e.g. acid_rain puddles 43 and wet floor 138) draw only their base: how the game maps and mixes the reflection texture is not found.
 // (hole stage-white-models :tags (importer render look)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
 @(private = "file")
 material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material, unlit: bool) -> int {
