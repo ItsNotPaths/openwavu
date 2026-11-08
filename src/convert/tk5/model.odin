@@ -74,7 +74,7 @@ Materials :: struct {
 	by_look: map[Material_Look]int,
 }
 
-// What a glTF material is made from: the first pass's first texture, its alpha test, and whether its mesh is lit.
+// What a glTF material is made from: the first pass's base texture, its alpha test, whether its mesh is lit, its reflection.
 @(private = "file")
 Material_Look :: struct {
 	hash:   u32,
@@ -82,6 +82,29 @@ Material_Look :: struct {
 	blend:  bool,  // a blend factor: drawn over what is behind
 	additive: bool,  // dst factor 2: added onto what is behind
 	unlit:  bool,  // a mesh with no normals (stages): its vertex colours are the baked light
+	reflection: Reflection,
+}
+
+// A sphere map added onto the base texture, from the camera-to-vertex direction turned by NU_mEnvMap (no normals).
+// Only the shaders keyed by these flags read NU_mEnvMap; tk5decomp docs/render.md has the decode.
+@(private = "file")
+Reflection :: struct {
+	hash:        u32,  // the sphere map: the pass's first texture; the second is then the base
+	orientation: [16]f32,  // NU_mEnvMap rows as stored
+	masked:      bool,  // scaled by the base alpha
+}
+
+@(private = "file")
+reflection :: proc(pass: formats.Material) -> (out: Reflection, ok: bool) {
+	REFLECT_ADDED :: 0x48131011  // acid_rain puddles
+	REFLECT_MASKED :: 0x48131003  // acid_rain wet floor
+	if pass.flags != REFLECT_ADDED && pass.flags != REFLECT_MASKED || len(pass.textures) < 2 do return
+	for property in pass.properties {
+		if property.name != "NU_mEnvMap" || len(property.values) != 16 do continue
+		copy(out.orientation[:], property.values)
+		return {pass.textures[0].hash, out.orientation, pass.flags == REFLECT_MASKED}, true
+	}
+	return
 }
 
 // A pass's alpha test as a glTF cutoff (drop alpha below it), from the GL compare function and ref_alpha; 0 when it has
@@ -102,17 +125,29 @@ alpha_cutoff :: proc(pass: formats.Material) -> f32 {
 
 // One glTF material per first-pass texture and alpha test; every pass goes to extras as stored, texture hashes included.
 // (hole texture-second-layer :tags (importer look)) only a pass's first texture is used; a pass with two (flags 0x41110003, NU_vUVset; kazuya_1 materials 3 and 4) has a blurry highlight map second, likely shine masked by the first texture's alpha.
-// (hole stage-env-map :tags (importer render look) :sev gap) stage materials with NU_mEnvMap and two textures (flags 0x48131003, 0x48131011, 0x10114103; 29, e.g. acid_rain puddles 43 and wet floor 138) draw only their base: how the game maps and mixes the reflection texture is not found.
+// (hole stage-reflection-variants :tags (importer render look) :sev polish) reflection shaders 0x48131103 (vertex colour also scales the sphere map) and 0x4813000f, 0x4813010f (four textures) are not decoded: they draw their first texture only.
 // (hole stage-white-models :tags (importer render look)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
 @(private = "file")
 material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material, unlit: bool) -> int {
 	DST_ONE :: 2  // additive glows; the other factors are not decoded
 	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = alpha_cutoff(passes[0]), blend = passes[0].dst_factor != 0, additive = passes[0].dst_factor == DST_ONE, unlit = unlit}
+	reflects: bool
+	if look.reflection, reflects = reflection(passes[0]); reflects do look.hash = passes[0].textures[1].hash
 	if m, seen := materials.by_look[look]; seen do return m
 	out: gltf.Material
 	out.doubleSided = true
 	if file, has := materials.files[look.hash]; has && len(passes[0].textures) > 0 {
 		out.pbrMetallicRoughness.baseColorTexture = gltf.Texture_Info{gltf.add_dds_texture(g, gltf.relative_uri(materials.glb, file))}
+	}
+	extras := make(json.Object)
+	if file, has := materials.files[look.reflection.hash]; has && reflects {
+		orientation := make(json.Array)
+		for value in look.reflection.orientation do append(&orientation, json.Float(value))
+		entry := make(json.Object)
+		entry["texture"] = json.Integer(gltf.add_dds_texture(g, gltf.relative_uri(materials.glb, file)))
+		entry["orientation"] = orientation
+		entry["masked"] = json.Boolean(look.reflection.masked)
+		extras["reflection"] = entry
 	}
 	if look.cutoff > 0 {
 		out.alphaMode = "MASK"
@@ -121,7 +156,6 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 	// (hole material-blend :tags (render importer look)) dst 2 draws additive (extras blend = "additive"); the other factors (dst 4, 7, 10; src 257, 513) draw as plain alpha blend.
 	if look.blend do out.alphaMode = "BLEND"
 	if look.unlit do gltf.set_unlit(g, &out)
-	extras := make(json.Object)
 	pass_values := make(json.Array)
 	for p in passes {
 		v, _ := json.marshal(p, allocator = context.temp_allocator)

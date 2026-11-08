@@ -1,5 +1,5 @@
 #version 450
-// Base color texture times vertex color and tint, lit by the scene's ambient and lights, then its fog. A cut-out
+// Base color texture times vertex color and tint, lit by the scene's ambient and lights, plus a reflection, then its fog. A cut-out
 // draw drops pixels with alpha below its cutoff. Scenery above the fighters' feet, between the camera and them, fades.
 // SDL_GPU SPIR-V sets: fragment textures in set 2, fragment uniforms in set 3.
 
@@ -9,8 +9,10 @@ layout(location = 0) in vec3 world_position;
 layout(location = 1) in vec3 world_normal;
 layout(location = 2) in vec2 texture_uv;
 layout(location = 3) in vec4 vertex_color;
+layout(location = 4) in vec2 reflection_uv;
 
 layout(set = 2, binding = 0) uniform sampler2D base_color;
+layout(set = 2, binding = 1) uniform sampler2D reflection_map;
 layout(std140, set = 3, binding = 0) uniform Lighting {
     vec4 ambient;
     vec4 light_position[LIGHTS];   // w: 0 directional, 1 point
@@ -28,6 +30,7 @@ layout(std140, set = 3, binding = 1) uniform Material {
     float scenery;  // 1: fades where it hides a fighter
     float unlit;    // 1: base color only (baked lighting), no scene lights
     float blend;    // 1: drawn by the blend pipeline, which reads the alpha
+    float reflection;  // 0: none, 1: reflection_map added, 2: added times the base alpha
 };
 
 layout(location = 0) out vec4 color;
@@ -59,6 +62,7 @@ void main() {
         light += light_color[i].rgb * light_color[i].a * falloff * max(dot(n, normalize(to_light)), 0.0);
     }
     color = vec4(unlit > 0.5 ? base.rgb : base.rgb * light, blend > 0.5 ? base.a : 1.0);
+    if (reflection > 0.5) color.rgb += texture(reflection_map, reflection_uv).rgb * (reflection > 1.5 ? base.a : 1.0);
     if (fog_range.y > 0.0) {
         float fog = clamp((distance(world_position, camera_position.xyz) - fog_range.x) / (fog_range.y - fog_range.x), 0.0, 1.0);
         color.rgb = mix(color.rgb, fog_color.rgb, fog * fog_color.a);

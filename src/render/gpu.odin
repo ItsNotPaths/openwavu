@@ -40,6 +40,27 @@ Draw :: struct {
 	blend:   bool,  // drawn over what is behind, after the opaque draws, far to near
 	additive: bool,  // a blended draw added onto what is behind
 	unlit:   bool,  // base color only, no scene lights
+	reflection: Reflection,
+}
+
+// A sphere map added onto the base color, looked up by the camera-to-vertex direction (TK5 NU_mEnvMap shaders).
+Reflection :: struct {
+	texture:     ^sdl.GPUTexture,  // nil: none
+	orientation: [16]f32,  // turns that direction first; rows as stored, which the shader reads as columns
+	masked:      bool,  // scaled by the base alpha
+}
+
+// scene.vert's Frame and Draw blocks.
+@(private = "file")
+Frame :: struct {
+	view_projection: matrix[4, 4]f32,
+	camera_position: [4]f32,
+}
+@(private = "file")
+Draw_Block :: struct {
+	reflection_orientation: [16]f32,
+	joint_base: u32,
+	_: [3]u32,
 }
 
 // scene.frag's Material block.
@@ -50,6 +71,7 @@ Material :: struct {
 	scenery: f32,
 	unlit:   f32,
 	blend:   f32,
+	reflection: f32,
 }
 
 Gpu :: struct {
@@ -74,7 +96,7 @@ gpu_create :: proc(device: ^sdl.GPUDevice) -> (gpu: Gpu, ok: bool) {
 	defer if !ok do gpu_destroy(&gpu)
 	vertex_shader := shader(device, #load("../../build/shaders/scene.vert.spv"), .VERTEX, storage_buffers = 1, uniform_buffers = 2) or_return
 	defer sdl.ReleaseGPUShader(device, vertex_shader)
-	fragment_shader := shader(device, #load("../../build/shaders/scene.frag.spv"), .FRAGMENT, samplers = 1, uniform_buffers = 2) or_return
+	fragment_shader := shader(device, #load("../../build/shaders/scene.frag.spv"), .FRAGMENT, samplers = 2, uniform_buffers = 2) or_return
 	defer sdl.ReleaseGPUShader(device, fragment_shader)
 	buffers := []sdl.GPUVertexBufferDescription{{slot = 0, pitch = size_of(Vertex), input_rate = .VERTEX}}
 	attributes := []sdl.GPUVertexAttribute {
@@ -198,8 +220,9 @@ draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: 
 	color := sdl.GPUColorTargetInfo{texture = gpu.color, clear_color = sdl.FColor(clear), load_op = .CLEAR, store_op = .STORE}
 	depth := sdl.GPUDepthStencilTargetInfo{texture = gpu.depth, clear_depth = 1, load_op = .CLEAR, store_op = .DONT_CARE}
 	pass := sdl.BeginGPURenderPass(command, &color, 1, &depth)
-	view_projection := camera_matrix(scene.camera, f32(size.x) / f32(size.y))
-	sdl.PushGPUVertexUniformData(command, 0, &view_projection, size_of(view_projection))
+	camera := scene.camera.position
+	frame := Frame{camera_matrix(scene.camera, f32(size.x) / f32(size.y)), {camera.x, camera.y, camera.z, 1}}
+	sdl.PushGPUVertexUniformData(command, 0, &frame, size_of(frame))
 	lighting := scene_lighting(scene)
 	sdl.PushGPUFragmentUniformData(command, 0, &lighting, size_of(lighting))
 	if joint_count > 0 do sdl.BindGPUVertexStorageBuffers(pass, 0, &gpu.joints, 1)
@@ -314,12 +337,13 @@ upload_fx :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, vertices: []Fx_Vert
 
 @(private = "file")
 draw_one :: proc(command: ^sdl.GPUCommandBuffer, pass: ^sdl.GPURenderPass, gpu: ^Gpu, draw: Draw, joint_base: u32) {
-	joint_base := joint_base
-	material := Material{tint = draw.tint, cutoff = draw.cutoff, scenery = draw.scenery ? 1 : 0, unlit = draw.unlit ? 1 : 0, blend = draw.blend ? 1 : 0}
-	sdl.PushGPUVertexUniformData(command, 1, &joint_base, size_of(joint_base))
+	block := Draw_Block{reflection_orientation = draw.reflection.orientation, joint_base = joint_base}
+	reflection: f32 = draw.reflection.texture == nil ? 0 : draw.reflection.masked ? 2 : 1
+	material := Material{tint = draw.tint, cutoff = draw.cutoff, scenery = draw.scenery ? 1 : 0, unlit = draw.unlit ? 1 : 0, blend = draw.blend ? 1 : 0, reflection = reflection}
+	sdl.PushGPUVertexUniformData(command, 1, &block, size_of(block))
 	sdl.PushGPUFragmentUniformData(command, 1, &material, size_of(material))
-	binding := sdl.GPUTextureSamplerBinding{draw.texture != nil ? draw.texture : gpu.white, gpu.sampler}
-	sdl.BindGPUFragmentSamplers(pass, 0, &binding, 1)
+	bindings := [2]sdl.GPUTextureSamplerBinding{{draw.texture != nil ? draw.texture : gpu.white, gpu.sampler}, {draw.reflection.texture != nil ? draw.reflection.texture : gpu.white, gpu.sampler}}
+	sdl.BindGPUFragmentSamplers(pass, 0, &bindings[0], len(bindings))
 	vertices := sdl.GPUBufferBinding{draw.mesh.vertices, 0}
 	sdl.BindGPUVertexBuffers(pass, 0, &vertices, 1)
 	sdl.BindGPUIndexBuffer(pass, {draw.mesh.indices, 0}, ._32BIT)

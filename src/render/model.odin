@@ -37,6 +37,7 @@ Primitive :: struct {
 	blend:   bool,             // alpha BLEND: drawn over what is behind, after the opaque draws
 	additive: bool,            // blended by adding onto what is behind: extras blend = "additive"
 	unlit:   bool,             // KHR_materials_unlit: base color only, no scene lights
+	reflection: Reflection,    // extras reflection = {texture, orientation, masked}
 }
 
 Model_Skin :: struct {
@@ -179,15 +180,22 @@ texture_of :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cgltf.data
 	return asset_texture(gpu, upload, assets, path)
 }
 
-// Whether a material's extras say blend = "additive".
+// What a material's extras add: blend = "additive", a reflection.
 @(private = "file")
-additive :: proc(extras: cgltf.extras_t) -> bool {
-	if extras.data == nil do return false
-	read: struct {
-		blend: string,
-	}
-	if json.unmarshal_string(string(cstring(extras.data)), &read, allocator = context.temp_allocator) != nil do return false
-	return read.blend == "additive"
+Material_Extras :: struct {
+	blend:      string,
+	reflection: Maybe(struct {
+		texture:     int,
+		orientation: [16]f32,
+		masked:      bool,
+	}),
+}
+
+@(private = "file")
+material_extras :: proc(extras: cgltf.extras_t) -> (read: Material_Extras) {
+	if extras.data == nil do return
+	if json.unmarshal_string(string(cstring(extras.data)), &read, allocator = context.temp_allocator) != nil do return {}
+	return read
 }
 
 // Each vertex reads its attributes as floats (normalized integers too); joints need weights, weights need joints.
@@ -220,7 +228,11 @@ primitive_upload :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cglt
 		out.texture = texture_of(gpu, upload, assets, file, material.pbr_metallic_roughness.base_color_texture.texture, path)
 		if material.alpha_mode == .mask do out.cutoff = material.alpha_cutoff
 		out.blend = material.alpha_mode == .blend
-		out.additive = out.blend && additive(material.extras)
+		extras := material_extras(material.extras)
+		out.additive = out.blend && extras.blend == "additive"
+		if reflection, has := extras.reflection.?; has && reflection.texture >= 0 && reflection.texture < len(file.textures) {
+			out.reflection = {texture_of(gpu, upload, assets, file, &file.textures[reflection.texture], path), reflection.orientation, reflection.masked}
+		}
 		out.unlit = bool(material.unlit)
 	}
 	out.mesh = mesh_upload(gpu, upload, vertices, indices) or_return
