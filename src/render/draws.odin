@@ -80,7 +80,7 @@ subtree_draws :: proc(draws: ^[dynamic]Draw, model: ^Model, world: []matrix[4, 4
 		for primitive in model.meshes[model_node.mesh] {
 			draw := shared
 			draw.mesh, draw.joints, draw.texture = primitive.mesh, joints, primitive.texture
-			draw.cutoff, draw.blend, draw.unlit = primitive.cutoff, primitive.blend, primitive.unlit
+			draw.cutoff, draw.blend, draw.additive, draw.unlit = primitive.cutoff, primitive.blend, primitive.additive, primitive.unlit
 			append(draws, draw)
 		}
 	}

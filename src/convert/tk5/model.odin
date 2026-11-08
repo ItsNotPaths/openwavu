@@ -80,6 +80,7 @@ Material_Look :: struct {
 	hash:   u32,
 	cutoff: f32,   // 0: no alpha test
 	blend:  bool,  // a blend factor: drawn over what is behind
+	additive: bool,  // dst factor 2: added onto what is behind
 	unlit:  bool,  // a mesh with no normals (stages): its vertex colours are the baked light
 }
 
@@ -104,7 +105,8 @@ alpha_cutoff :: proc(pass: formats.Material) -> f32 {
 // (hole stage-white-models :tags (importer render look)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
 @(private = "file")
 material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material, unlit: bool) -> int {
-	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = alpha_cutoff(passes[0]), blend = passes[0].dst_factor != 0, unlit = unlit}
+	DST_ONE :: 2  // additive glows; the other factors are not decoded
+	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = alpha_cutoff(passes[0]), blend = passes[0].dst_factor != 0, additive = passes[0].dst_factor == DST_ONE, unlit = unlit}
 	if m, seen := materials.by_look[look]; seen do return m
 	out: gltf.Material
 	out.doubleSided = true
@@ -115,7 +117,7 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 		out.alphaMode = "MASK"
 		out.alphaCutoff = look.cutoff
 	}
-	// (hole material-blend :tags (render importer look)) every pass with a dst factor draws as plain alpha blend; additive glows (dst 2) and the other factors (4, 7, 10; src 257, 513) are not decoded.
+	// (hole material-blend :tags (render importer look)) dst 2 draws additive (extras blend = "additive"); the other factors (dst 4, 7, 10; src 257, 513) draw as plain alpha blend.
 	if look.blend do out.alphaMode = "BLEND"
 	if look.unlit do gltf.set_unlit(g, &out)
 	extras := make(json.Object)
@@ -126,6 +128,7 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 		append(&pass_values, parsed)
 	}
 	extras["tk5_passes"] = pass_values
+	if look.additive do extras["blend"] = "additive"
 	out.extras = extras
 	append(&g.materials, out)
 	materials.by_look[look] = len(g.materials) - 1

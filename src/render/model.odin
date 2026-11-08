@@ -35,6 +35,7 @@ Primitive :: struct {
 	texture: ^sdl.GPUTexture,  // nil: white; owned by Assets
 	cutoff:  f32,              // alpha MASK: drop alpha below it; 0 keeps all
 	blend:   bool,             // alpha BLEND: drawn over what is behind, after the opaque draws
+	additive: bool,            // blended by adding onto what is behind: extras blend = "additive"
 	unlit:   bool,             // KHR_materials_unlit: base color only, no scene lights
 }
 
@@ -178,6 +179,17 @@ texture_of :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cgltf.data
 	return asset_texture(gpu, upload, assets, path)
 }
 
+// Whether a material's extras say blend = "additive".
+@(private = "file")
+additive :: proc(extras: cgltf.extras_t) -> bool {
+	if extras.data == nil do return false
+	read: struct {
+		blend: string,
+	}
+	if json.unmarshal_string(string(cstring(extras.data)), &read, allocator = context.temp_allocator) != nil do return false
+	return read.blend == "additive"
+}
+
 // Each vertex reads its attributes as floats (normalized integers too); joints need weights, weights need joints.
 @(private = "file")
 primitive_upload :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cgltf.data, source: ^cgltf.primitive, path: string) -> (out: Primitive, ok: bool) {
@@ -208,6 +220,7 @@ primitive_upload :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cglt
 		out.texture = texture_of(gpu, upload, assets, file, material.pbr_metallic_roughness.base_color_texture.texture, path)
 		if material.alpha_mode == .mask do out.cutoff = material.alpha_cutoff
 		out.blend = material.alpha_mode == .blend
+		out.additive = out.blend && additive(material.extras)
 		out.unlit = bool(material.unlit)
 	}
 	out.mesh = mesh_upload(gpu, upload, vertices, indices) or_return

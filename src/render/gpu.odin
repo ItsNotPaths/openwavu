@@ -38,6 +38,7 @@ Draw :: struct {
 	cutoff:  f32,  // drop pixels with alpha below it; 0 keeps all
 	scenery: bool,  // fades where it hides a fighter
 	blend:   bool,  // drawn over what is behind, after the opaque draws, far to near
+	additive: bool,  // a blended draw added onto what is behind
 	unlit:   bool,  // base color only, no scene lights
 }
 
@@ -54,7 +55,7 @@ Material :: struct {
 Gpu :: struct {
 	device:        ^sdl.GPUDevice,
 	pipeline:      ^sdl.GPUGraphicsPipeline,
-	blend_pipeline: ^sdl.GPUGraphicsPipeline,
+	blend_pipeline, add_pipeline: ^sdl.GPUGraphicsPipeline,
 	sampler:       ^sdl.GPUSampler,
 	white:         ^sdl.GPUTexture,
 	color, depth:  ^sdl.GPUTexture,  // the targets, made at size
@@ -105,6 +106,10 @@ gpu_create :: proc(device: ^sdl.GPUDevice) -> (gpu: Gpu, ok: bool) {
 	info.depth_stencil_state.enable_depth_write = false
 	gpu.blend_pipeline = sdl.CreateGPUGraphicsPipeline(device, info)
 	if gpu.blend_pipeline == nil do return
+	blended[0].blend_state.dst_color_blendfactor = .ONE
+	blended[0].blend_state.src_alpha_blendfactor, blended[0].blend_state.dst_alpha_blendfactor = .ZERO, .ONE
+	gpu.add_pipeline = sdl.CreateGPUGraphicsPipeline(device, info)
+	if gpu.add_pipeline == nil do return
 	gpu.fx_pipeline, gpu.fx_add_pipeline = fx_pipelines(device) or_return
 	gpu.sampler = sdl.CreateGPUSampler(device, {min_filter = .LINEAR, mag_filter = .LINEAR, mipmap_mode = .LINEAR, address_mode_u = .REPEAT, address_mode_v = .REPEAT, address_mode_w = .REPEAT})
 	if gpu.sampler == nil do return
@@ -124,6 +129,7 @@ gpu_destroy :: proc(gpu: ^Gpu) {
 	if gpu.sampler != nil do sdl.ReleaseGPUSampler(gpu.device, gpu.sampler)
 	if gpu.pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.pipeline)
 	if gpu.blend_pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.blend_pipeline)
+	if gpu.add_pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.add_pipeline)
 	if gpu.fx_pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.fx_pipeline)
 	if gpu.fx_add_pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.fx_add_pipeline)
 	if gpu.fx_vertices != nil do sdl.ReleaseGPUBuffer(gpu.device, gpu.fx_vertices)
@@ -215,8 +221,14 @@ draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: 
 		append(&blended, Blended{index, linalg.distance(centre, scene.camera.position)})
 	}
 	slice.sort_by(blended[:], proc(first, second: Blended) -> bool {return first.distance > second.distance})
-	sdl.BindGPUGraphicsPipeline(pass, gpu.blend_pipeline)
-	for entry in blended do draw_one(command, pass, gpu, draws[entry.index], joint_bases[entry.index])
+	bound: ^sdl.GPUGraphicsPipeline
+	for entry in blended {
+		draw := draws[entry.index]
+		pipeline := draw.additive ? gpu.add_pipeline : gpu.blend_pipeline
+		if pipeline != bound do sdl.BindGPUGraphicsPipeline(pass, pipeline)
+		bound = pipeline
+		draw_one(command, pass, gpu, draw, joint_bases[entry.index])
+	}
 	draw_fx(pass, gpu, effects.quads[:])
 	sdl.EndGPURenderPass(pass)
 	return true
