@@ -13,16 +13,16 @@ import formats "../../formats/tk5"
 MM :: 1000.0  // file millimetres per glTF metre
 BODY_BONES :: 23  // animated by the 23 channels; the rest are helpers
 
-// Writes root/file. skeleton: nil for unskinned (stage) geometry. matrices: per mesh, row vectors in file units, or nil.
+// Writes root/file. skeleton: nil for unskinned (stage) geometry; mop: its swing joint values. matrices: per mesh, row vectors in file units, or nil.
 // layers: per mesh of a stage, or nil; glb node k is then the root of layer k (all STAGE_LAYERS), the meshes its children.
-write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Texture_Files, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil, layers: []int = nil) -> (ok: bool) {
+write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Texture_Files, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil, layers: []int = nil, mop: formats.Mop = {}) -> (ok: bool) {
 	context.allocator = context.temp_allocator
 	g: gltf.Gltf
 	scene: gltf.Scene
 	skin: Maybe(int)
 	if s, has := skeleton.?; has {
 		append(&scene.nodes, ..add_skin(&g, s, max_joint(meshes) + 1)[:])
-		add_springs(&g, s, meshes)
+		add_springs(&g, s, meshes, mop)
 		skin = 0
 	}
 	for layer in 0 ..< (layers != nil ? formats.STAGE_LAYERS : 0) {
@@ -201,77 +201,102 @@ add_skin :: proc(g: ^gltf.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dy
 	return roots
 }
 
-SWING_FIRST :: 111  // bon bones from here swing: tails, straps, belt ends; the bon list gives each its MOP id
-LEG_BONES :: [4]int{15, 16, 18, 19}  // thighs and shins; the bone after each is its end
-FIRST_LEG_BONE :: 15  // legs to the body's end, then helpers
-LEG_RADIUS :: 0.08  // metres
-// (hole mop-swing :tags (importer fighter-detail)) MOP (model section 13) is not mapped: every chain swings with these.
-SWING_STIFFNESS :: 1.0
-SWING_GRAVITY :: 0.1
-SWING_DRAG :: 0.35
-SWING_HIT_RADIUS :: 0.02
+SWING_FIRST :: 111  // bon bones from here swing; the bon list gives each its MOP record id
+SWING_STEPS :: 60.0  // the game steps a swing joint once a tick
+MOP_ELLIPSOID :: 1
+MOP_CLAMP_TILT :: 0x20
+MOP_CLAMP_SWING :: 0x40
+MOP_ELLIPSE :: 0x01
+CLOTH_WEIGHT :: 0.15  // a vertex counts toward a joint's cloth from this weight
+// (hole mop-rope :tags (importer fighter-detail) :sev polish) MOP kind 5 ropes (a pull between two joints) are not mapped; they are weak.
 
-// Each chain of swing bones as a spring, with a tail node at the farthest vertex of its last bone, kept out of the
-// legs but the one it hangs from. A lone bone on a leg or a helper is a pant leg or cuff: it follows its parent.
+// Each swing joint with a MOP record as a spring of its own, the tail on its +x axis where its cloth is: the game
+// steps every joint about its own rest frame, a tree as well as a chain. The game's values are per tick on a 1 m
+// lever; the spring's are per second at its tail.
 @(private = "file")
-add_springs :: proc(g: ^gltf.Gltf, s: formats.Skeleton, meshes: []formats.Mesh) {
+add_springs :: proc(g: ^gltf.Gltf, s: formats.Skeleton, meshes: []formats.Mesh, mop: formats.Mop) {
 	bones := len(s.bones)
-	if bones <= SWING_FIRST do return
+	if bones <= SWING_FIRST || len(s.list) < bones - SWING_FIRST do return
 	world := world_matrices(s)
 	springs := gltf.Spring_Bone{specVersion = "1.0"}
-	for leg, group in LEG_BONES {
-		end := linalg.inverse(world[leg]) * world[leg + 1]
-		tail := [3]f32{f32(end[0, 3] / MM), f32(end[1, 3] / MM), f32(end[2, 3] / MM)}
-		append(&springs.colliders, gltf.Collider{node = leg, shape = {capsule = gltf.Capsule{tail = tail, radius = LEG_RADIUS}}})
+	group_of := make([]int, len(mop.shapes))
+	for shape, index in mop.shapes {
+		group_of[index] = -1
+		if shape.kind != MOP_ELLIPSOID || int(shape.target) < 0 || int(shape.target) >= bones do continue
+		append(&springs.colliders, ellipsoid_collider(shape))
 		append(&springs.colliderGroups, gltf.Collider_Group{})
-		append(&springs.colliderGroups[group].colliders, group)
+		append(&springs.colliderGroups[len(springs.colliderGroups) - 1].colliders, len(springs.colliders) - 1)
+		group_of[index] = len(springs.colliderGroups) - 1
 	}
-	ends := farthest_vertices(meshes, world)
-	next :: proc(s: formats.Skeleton, bone: int) -> int {
-		for b, child in s.bones[SWING_FIRST:] do if int(b.parent) == bone do return SWING_FIRST + child
-		return -1
-	}
-	for first in SWING_FIRST ..< bones {
-		parent := int(s.bones[first].parent)
-		if parent >= SWING_FIRST && next(s, parent) == first do continue  // inside a chain
-		spring: gltf.Spring
-		for leg, group in LEG_BONES do if leg != parent do append(&spring.colliderGroups, group)
-		if next(s, first) < 0 && parent >= FIRST_LEG_BONE do continue
-		last := first
-		for bone := first; bone >= 0; bone = next(s, bone) {
-			append(&spring.joints, swing_joint(bone))
-			last = bone
+	reach := cloth_reach(meshes, world)
+	for bone in SWING_FIRST ..< bones {
+		record, has := mop.records[s.list[bone - SWING_FIRST]]
+		if !has do continue
+		length := reach[bone]
+		if length <= 0 do for child in SWING_FIRST ..< bones do if int(s.bones[child].parent) == bone {
+			length = f64(s.bones[child].translation.x)
+			break
 		}
-		if end, found := ends[last].?; found {
-			local := linalg.inverse(world[last]) * [4]f64{end.x, end.y, end.z, 1}
-			append(&g.nodes, gltf.Node{name = fmt.tprintf("bone%d_end", last), translation = slice.clone([]f32{f32(local.x / MM), f32(local.y / MM), f32(local.z / MM)})})
-			append(&g.nodes[last].children, len(g.nodes) - 1)
-			append(&spring.joints, swing_joint(len(g.nodes) - 1))
+		if length <= 0 do length = f64(record.reach)
+		metres := f32(length / MM)
+		append(&g.nodes, gltf.Node{name = fmt.tprintf("bone%d_end", bone), translation = slice.clone([]f32{metres, 0, 0})})
+		append(&g.nodes[bone].children, len(g.nodes) - 1)
+		joint := gltf.Spring_Joint{
+			node = bone,
+			stiffness = record.stiffness * metres * SWING_STEPS,
+			gravityPower = record.gravity / MM * metres * SWING_STEPS,
+			dragForce = 1 - record.drag,
+			gravityDir = {0, -1, 0},
+			extras = swing_limit(record),
 		}
-		if len(spring.joints) > 1 do append(&springs.springs, spring)
+		spring := gltf.Spring{}
+		append(&spring.joints, joint, gltf.Spring_Joint{node = len(g.nodes) - 1})
+		for shape in record.shapes do if int(shape) < len(group_of) && group_of[shape] >= 0 do append(&spring.colliderGroups, group_of[shape])
+		append(&springs.springs, spring)
 	}
 	if len(springs.springs) > 0 do gltf.set_springs(g, springs)
 }
 
 @(private = "file")
-swing_joint :: proc(node: int) -> gltf.Spring_Joint {
-	return {node = node, hitRadius = SWING_HIT_RADIUS, stiffness = SWING_STIFFNESS, gravityPower = SWING_GRAVITY, dragForce = SWING_DRAG, gravityDir = {0, -1, 0}}
+swing_limit :: proc(record: formats.Mop_Record) -> (limit: gltf.Swing_Limit) {
+	if record.flags & MOP_ELLIPSE != 0 {  // high words are 1 / semi-axis, low words the centre
+		if record.angle_a[0] == 0 || record.angle_b[0] == 0 do return
+		limit.ellipse = gltf.Swing_Ellipse{centre = {record.angle_a[1], record.angle_b[1]}, radius = {1 / record.angle_a[0], 1 / record.angle_b[0]}}
+		return
+	}
+	if record.flags & MOP_CLAMP_TILT != 0 do limit.tilt = [2]f32{record.angle_a[1], record.angle_a[0]}
+	if record.flags & MOP_CLAMP_SWING != 0 do limit.swing = [2]f32{record.angle_b[1], record.angle_b[0]}
+	return
 }
 
-// Per bone, the vertex mostly on it farthest from it, file units; none for a bone no vertex is mostly on.
+// A MOP ellipsoid on its body bone; the sphere inside it stands in for readers without the extras.
 @(private = "file")
-farthest_vertices :: proc(meshes: []formats.Mesh, world: []matrix[4, 4]f64) -> []Maybe([3]f64) {
-	ends := make([]Maybe([3]f64), len(world))
-	reach := make([]f64, len(world))
-	for m in meshes do for p in m.polys do for joints, vertex in p.joints do for k in 0 ..< 4 {
-		bone := int(joints[k])
-		if p.weights[vertex][k] < 0.5 || bone >= len(world) do continue
-		position := [3]f64{f64(p.positions[vertex].x), f64(p.positions[vertex].y), f64(p.positions[vertex].z)}
-		if d := linalg.length(position - [3]f64{world[bone][0, 3], world[bone][1, 3], world[bone][2, 3]}); d > reach[bone] {
-			reach[bone], ends[bone] = d, position
-		}
+ellipsoid_collider :: proc(shape: formats.Mop_Shape) -> gltf.Collider {
+	turn := linalg.quaternion_from_matrix3_f32(linalg.matrix3_from_euler_angles_zyx_f32(shape.rotation.z, shape.rotation.y, shape.rotation.x))  // as the bon
+	centre, radii := shape.centre / MM, shape.size / MM
+	return {
+		node = int(shape.target),
+		shape = {sphere = gltf.Sphere{offset = centre, radius = min(radii.x, radii.y, radii.z)}},
+		extras = gltf.Ellipsoid{offset = centre, radii = radii, rotation = {turn.x, turn.y, turn.z, turn.w}},
 	}
-	return ends
+}
+
+// Per bone, how far along its +x axis the vertices weighted to it sit (weighted mean), file units; 0 for none.
+@(private = "file")
+cloth_reach :: proc(meshes: []formats.Mesh, world: []matrix[4, 4]f64) -> []f64 {
+	along := make([]f64, len(world))
+	total := make([]f64, len(world))
+	inverse := make([]matrix[4, 4]f64, len(world))
+	for place, bone in world do inverse[bone] = linalg.inverse(place)
+	for m in meshes do for p in m.polys do for joints, vertex in p.joints do for k in 0 ..< 4 {
+		bone, weight := int(joints[k]), f64(p.weights[vertex][k])
+		if weight < CLOTH_WEIGHT || bone >= len(world) do continue
+		local := inverse[bone] * [4]f64{f64(p.positions[vertex].x), f64(p.positions[vertex].y), f64(p.positions[vertex].z), 1}
+		along[bone] += local.x * weight
+		total[bone] += weight
+	}
+	for &value, bone in along do if total[bone] > 0 do value /= total[bone]
+	return along
 }
 
 // Bind pose, file units. R = Rz*Ry*Rx (data.md §6.1).
@@ -293,7 +318,7 @@ helper_parents :: proc(s: formats.Skeleton, world: []matrix[4, 4]f64) -> []int {
 	parents := make([]int, len(s.bones))
 	for b, i in s.bones do parents[i] = int(b.parent)
 	pos :: proc(m: matrix[4, 4]f64) -> [3]f64 {return {m[0, 3], m[1, 3], m[2, 3]}}
-	for h in BODY_BONES ..< len(s.bones) {
+	for h in BODY_BONES ..< min(len(s.bones), SWING_FIRST) {  // swing joints turn about their own parent
 		p := parents[h]
 		if p < 0 || p >= BODY_BONES do continue
 		best, best_d := p, linalg.length(pos(world[h]) - pos(world[p]))

@@ -19,6 +19,8 @@ GLOBAL_CAMERAS :: 29  // the throw and hit camera tracks
 MOTBIN_FIRST :: 39  // motbin entry = MOTBIN_FIRST + 2 * char id
 GROUP_SIZE :: 7     // per costume: slot 0 anim container (first costume), slot 6 model. data.md §3
 GROUP_MODEL :: 6
+MODEL_COSTUME_BONES :: 3  // model section: block 0 is the costume's bon; section 12 is the base one
+MODEL_SWINGS :: 13  // model section: block 0 is the MOP swing joint values
 CHAR_GROUPS_END :: 2125  // the last character's groups end here
 
 Character :: struct {

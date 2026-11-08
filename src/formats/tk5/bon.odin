@@ -13,7 +13,7 @@ Bone :: struct {
 Skeleton :: struct {
 	scale: f32,
 	bones: []Bone,
-	list:  []u32,  // meaning open
+	list:  []u32,  // per bone from 111 up, its MOP record id
 	ends:  []f32,  // end point offsets (sim skel.c END_POINT), to the section end
 }
 

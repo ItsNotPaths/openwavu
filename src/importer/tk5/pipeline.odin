@@ -191,7 +191,8 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 		case "MIF\x00": formats.read_mif_swaps(s, &swaps)
 		}
 	}
-	skeleton := largest_skeleton(sections)
+	skeleton := costume_skeleton(sections)
+	mop := costume_swings(sections)
 	for placeholder, frame0 in swaps do if t, has := textures[frame0]; has do textures[placeholder] = t
 	if len(nud) < len(parts) || len(skeleton.bones) == 0 do return false
 	texture_files := write_textures(im, owner, textures)
@@ -201,7 +202,7 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 	for part, i in parts {
 		meshes, read := formats.read_ndp3(nud[i], context.temp_allocator)
 		file := fmt.tprintf("parts/%s/%s.glb", owner, part)
-		if !read || !convert.write_model(im.root, file, meshes, texture_files, skeleton) do return false
+		if !read || !convert.write_model(im.root, file, meshes, texture_files, skeleton, mop = mop) do return false
 		db.insert(&im.w, "part", part, owner, i == 0 ? "body" : "lod", parts[0], file)
 	}
 	for b, i in skeleton.bones {
@@ -218,6 +219,26 @@ largest_skeleton :: proc(sections: [][]byte) -> (skeleton: formats.Skeleton) {
 			skeleton = bones
 		}
 	}
+	return
+}
+
+// The costume's own skeleton, with its swing joints; the largest one is the shared base.
+costume_skeleton :: proc(sections: [][]byte) -> formats.Skeleton {
+	if len(sections) > formats.MODEL_COSTUME_BONES {
+		blocks, ok := formats.sections(sections[formats.MODEL_COSTUME_BONES], context.temp_allocator)
+		if ok && len(blocks) > 0 {
+			if skeleton, is_bon := formats.read_skeleton(blocks[0], context.temp_allocator); is_bon do return skeleton
+		}
+	}
+	return largest_skeleton(sections)
+}
+
+// The costume's swing joint values; none for a model without them.
+costume_swings :: proc(sections: [][]byte) -> (mop: formats.Mop) {
+	if len(sections) <= formats.MODEL_SWINGS do return
+	blocks, ok := formats.sections(sections[formats.MODEL_SWINGS], context.temp_allocator)
+	if !ok || len(blocks) == 0 do return
+	mop, _ = formats.read_mop(blocks[0], context.temp_allocator)
 	return
 }
 
