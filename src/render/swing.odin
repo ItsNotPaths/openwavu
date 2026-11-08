@@ -18,13 +18,15 @@ Swing_Joint :: struct {
 	gravity:    [3]f32,  // direction times power
 	drag:       f32,     // share of the speed lost per 1/60 s
 	colliders:  [2]int,  // first and count in Model.swing_colliders
+	limit:      gltf.Swing_Limit,
 }
 
-// A sphere, or a capsule when tail is not offset; node space.
+// A sphere, or a capsule when tail is not offset, or an ellipsoid; node space.
 Swing_Collider :: struct {
 	node:         int,
 	offset, tail: [3]f32,
 	radius:       f32,
+	ellipsoid:    Maybe(gltf.Ellipsoid),
 }
 
 Swings :: struct {
@@ -95,6 +97,7 @@ swing :: proc(swings: ^Swings, node: ^Node, model: ^Model, bones: []Transform, w
 			next += (linalg.normalize(rest - head) * joint.stiffness + joint.gravity) * seconds
 			next = head + linalg.normalize0(next - head) * length
 			for collider in model.swing_colliders[joint.colliders[0]:][:joint.colliders[1]] do next = push_out(model.colliders[collider], world, next, joint.hit_radius, head, length)
+			next = head + limit_turn(joint.limit, world[joint.node], next - head)
 			state.previous[index], state.tails[index] = state.tails[index], next
 		}
 		turn := linalg.quaternion_between_two_vector3(rest - head, state.tails[index] - head)
@@ -105,10 +108,43 @@ swing :: proc(swings: ^Swings, node: ^Node, model: ^Model, bones: []Transform, w
 	state.frame = swings.frame
 }
 
+// The arm from head to tail turned back inside the joint's limit, measured in its rest frame (place, before it swings).
+@(private = "file")
+limit_turn :: proc(limit: gltf.Swing_Limit, place: matrix[4, 4]f32, arm: [3]f32) -> [3]f32 {
+	tilt_range, has_tilt := limit.tilt.?
+	swing_range, has_swing := limit.swing.?
+	ellipse, has_ellipse := limit.ellipse.?
+	if !has_tilt && !has_swing && !has_ellipse do return arm
+	frame := matrix[3, 3]f32{place[0, 0], place[0, 1], place[0, 2], place[1, 0], place[1, 1], place[1, 2], place[2, 0], place[2, 1], place[2, 2]}
+	local := linalg.transpose(frame) * arm
+	tilt := math.atan2(-local.z, math.sqrt(local.x * local.x + local.y * local.y))
+	swing := math.atan2(local.y, local.x)
+	if has_tilt do tilt = clamp(tilt, tilt_range[0], tilt_range[1])
+	if has_swing do swing = clamp(swing, swing_range[0], swing_range[1])
+	if has_ellipse {
+		offset := [2]f32{(tilt - ellipse.centre[0]) / ellipse.radius[0], (swing - ellipse.centre[1]) / ellipse.radius[1]}
+		if reach := linalg.length(offset); reach > 1 {
+			tilt = ellipse.centre[0] + (tilt - ellipse.centre[0]) / reach
+			swing = ellipse.centre[1] + (swing - ellipse.centre[1]) / reach
+		}
+	}
+	return frame * [3]f32{math.cos(tilt) * math.cos(swing), math.cos(tilt) * math.sin(swing), -math.sin(tilt)} * linalg.length(local)
+}
+
 // The tail point moved out of the collider, then back to its length from head.
 @(private = "file")
 push_out :: proc(collider: Swing_Collider, world: []matrix[4, 4]f32, tail: [3]f32, hit_radius: f32, head: [3]f32, length: f32) -> [3]f32 {
 	place := world[collider.node]
+	if shape, is := collider.ellipsoid.?; is {
+		turn := quaternion(x = shape.rotation.x, y = shape.rotation.y, z = shape.rotation.z, w = shape.rotation.w)
+		frame := place * linalg.matrix4_translate(shape.offset) * linalg.matrix4_from_quaternion(turn)
+		local := (linalg.inverse(frame) * [4]f32{tail.x, tail.y, tail.z, 1}).xyz
+		radii := shape.radii + hit_radius
+		if linalg.length(local / radii) >= 1 do return tail
+		surface := linalg.normalize0(local / radii) * radii
+		pushed := (frame * [4]f32{surface.x, surface.y, surface.z, 1}).xyz
+		return head + linalg.normalize0(pushed - head) * length
+	}
 	start := (place * [4]f32{collider.offset.x, collider.offset.y, collider.offset.z, 1}).xyz
 	end := (place * [4]f32{collider.tail.x, collider.tail.y, collider.tail.z, 1}).xyz
 	along := end - start
@@ -123,7 +159,8 @@ push_out :: proc(collider: Swing_Collider, world: []matrix[4, 4]f32, tail: [3]f3
 @(private = "file")
 Spring_File :: struct {
 	colliders:      []struct {
-		node:  int,
+		node:   int,
+		extras: Maybe(gltf.Ellipsoid),
 		shape: struct {
 			sphere:  Maybe(struct {
 				offset: [3]f32,
@@ -146,6 +183,7 @@ Spring_File :: struct {
 			gravityPower: f32,
 			gravityDir:   Maybe([3]f32),
 			dragForce:    Maybe(f32),
+			extras:       gltf.Swing_Limit,
 		},
 		colliderGroups: []int,
 	},
@@ -164,7 +202,7 @@ swings_read :: proc(model: ^Model, file: ^cgltf.data) -> (ok: bool) {
 	for entry, index in springs.colliders {
 		if entry.node < 0 || entry.node >= nodes do return false
 		collider := &model.colliders[index]
-		collider.node = entry.node
+		collider.node, collider.ellipsoid = entry.node, entry.extras
 		if sphere, is := entry.shape.sphere.?; is do collider.offset, collider.tail, collider.radius = sphere.offset, sphere.offset, sphere.radius
 		if capsule, is := entry.shape.capsule.?; is do collider.offset, collider.tail, collider.radius = capsule.offset, capsule.tail, capsule.radius
 	}
@@ -191,6 +229,7 @@ swings_read :: proc(model: ^Model, file: ^cgltf.data) -> (ok: bool) {
 				gravity = (entry.gravityDir.? or_else {0, -1, 0}) * entry.gravityPower,
 				drag = clamp(entry.dragForce.? or_else 0.5, 0, 1),
 				colliders = {first, len(listed) - first},
+				limit = entry.extras,
 			})
 		}
 	}

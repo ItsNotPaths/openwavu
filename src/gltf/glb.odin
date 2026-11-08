@@ -50,7 +50,12 @@ Spring_Bone :: struct {
 	colliderGroups: [dynamic]Collider_Group `json:",omitempty"`,
 	springs:        [dynamic]Spring,
 }
-Collider :: struct {node: int, shape: Collider_Shape}
+Collider :: struct {
+	node:   int,
+	shape:  Collider_Shape,
+	extras: Maybe(Ellipsoid) `json:",omitempty"`,  // the real shape; shape is a sphere inside it for other readers
+}
+Ellipsoid :: struct {offset, radii: [3]f32, rotation: [4]f32}  // node space, metres; rotation a quaternion xyzw
 Collider_Shape :: struct {
 	sphere:  Maybe(Sphere) `json:",omitempty"`,
 	capsule: Maybe(Capsule) `json:",omitempty"`,
@@ -66,7 +71,15 @@ Spring_Joint :: struct {
 	node:                                       int,
 	hitRadius, stiffness, gravityPower, dragForce: f32,
 	gravityDir:                                 [3]f32,
+	extras:                                     Maybe(Swing_Limit) `json:",omitempty"`,
 }
+// How far the joint may turn from rest, radians {low, high}; a missing range is free. tilt: toward local -z, swing:
+// toward local +y. ellipse: both together inside an ellipse around centre, in place of the ranges.
+Swing_Limit :: struct {
+	tilt, swing: Maybe([2]f32) `json:",omitempty"`,
+	ellipse:     Maybe(Swing_Ellipse) `json:",omitempty"`,
+}
+Swing_Ellipse :: struct {centre, radius: [2]f32}  // tilt, swing
 
 set_springs :: proc(g: ^Gltf, springs: Spring_Bone) {
 	g.extensions = Gltf_Extensions{springs = springs}
