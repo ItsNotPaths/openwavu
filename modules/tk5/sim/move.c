@@ -1,5 +1,5 @@
 // The movement step of a fighter, its steps in game order, and the passes over the fighters.
-// (hole port-move-face :tags (port tk5mod) :sev gap) the face and hand calls of the movement step are left out; the face step sets marked_finished to 1 only when the face clip's speed word reaches the length of a face clip minus 4 (a clip of at most 5 frames): left out, so the round flow waits end with the move length (decided 2026-10-12), and the hand step advances the libc rand.
+// (hole port-move-face :tags (port tk5mod alpha) :sev gap) the face and hand calls of the movement step are left out; the face step sets marked_finished to 1 only when the face clip's speed word reaches the length of a face clip minus 4 (a clip of at most 5 frames): left out, so the round flow waits end with the move length (decided 2026-10-12), and the hand step advances the libc rand.
 #include "sim/move.h"
 
 #include "sim/decide.h"

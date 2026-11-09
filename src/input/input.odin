@@ -4,7 +4,7 @@ package input
 
 import sdl "vendor:sdl3"
 
-// (hole button-config :tags input :sev polish) the keys and buttons below are fixed: arrows, U I J K for buttons 1 to 4, Enter, Backspace; on a gamepad the d-pad, the four face buttons, Start and Back.
+// (hole button-config :tags (input alpha) :sev polish) the keys and buttons below are fixed: arrows, U I J K for buttons 1 to 4, Enter, Backspace; on a gamepad the d-pad, the four face buttons, Start and Back.
 // (hole stick-settings :tags (input game) :sev polish) the stick's x and y inner deadzones are fixed, and there is no outer
 // deadzone; the openwavu settings popup should set them.
 PLAYERS :: 2

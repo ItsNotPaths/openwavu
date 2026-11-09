@@ -526,7 +526,7 @@ void t5_decide_object(T5World *w, T5Fighter *f) {
     if (t5_ref_none(f->pending_move)) {  // no pending move yet: look for one
         f->moveset = moveset;  // back to our own move set
         if (f->kind == T5_KIND_FIGHTER) t5_scan_cancels(w, f, opponent);  // only fighters scan cancels
-        // (hole port-extra-scan :tags (port tk5mod) :sev gap) the cancel scan of the extras (kind != 0): not ported, so an extra never picks a move from its cancels.
+        // (hole port-extra-scan :tags (port tk5mod alpha) :sev gap) the cancel scan of the extras (kind != 0): not ported, so an extra never picks a move from its cancels.
     }
     if (f->health == 0 && f->clean_hit != 0 && w->mode != T5_MODE_PRACTICE) {  // dead from a clean hit, outside practice mode
         if (ko_cuts(t5_move_at(w, t5_move_lookup(w, f, (uint16_t)f->pending_id))))  // the KO move cuts the pending move

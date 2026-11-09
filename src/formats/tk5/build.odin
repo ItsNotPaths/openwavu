@@ -1,5 +1,5 @@
 // Values that differ per game build. Add a row for each dump that is checked.
-// (hole other-builds :tags importer) only NPUB30009 is mapped; EU/JP builds (NPEA00019, ...) are refused.
+// (hole other-builds :tags importer :sev polish) only NPUB30009 is mapped; EU/JP builds (NPEA00019, ...) are refused with no hint of what the files are.
 package tk5_formats
 
 Build :: struct {

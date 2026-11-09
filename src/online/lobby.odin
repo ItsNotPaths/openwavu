@@ -143,7 +143,6 @@ lobby_create :: proc(client: ^Lobby_Client, pack, mode, params, hash: string) {
 }
 
 // The caller checks the lobby hash first (titlepack.lobby_hash_text).
-// (hole lobby-fetch :tags net) joining a lobby of a pack that is not installed does not fetch it from the network's files host.
 lobby_join :: proc(client: ^Lobby_Client, id: string) {
 	command(client, "JOIN", {id})
 }
