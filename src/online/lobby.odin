@@ -15,6 +15,7 @@ CONNECT_TIMEOUT_MS :: 5000
 
 Lobby :: struct {
 	id, pack, mode, params, hash, host: string,  // pack: id@version; params: the host's picks; host: a player key
+	locked:  bool,  // joining takes a password
 	players: [dynamic]Lobby_Player,  // join order
 	match:   Maybe(Lobby_Match),
 }
@@ -142,9 +143,9 @@ lobby_create :: proc(client: ^Lobby_Client, pack, mode, params, hash: string) {
 	command(client, "CREATE", {pack}, {"mode", mode}, {"params", params}, {"hash", hash})
 }
 
-// The caller checks the lobby hash first (titlepack.lobby_hash_text).
-lobby_join :: proc(client: ^Lobby_Client, id: string) {
-	command(client, "JOIN", {id})
+// The caller checks the lobby hash first (titlepack.lobby_hash_text). password: "" for an open lobby.
+lobby_join :: proc(client: ^Lobby_Client, id, password: string) {
+	command(client, "JOIN", {id}, {"password", password})
 }
 
 lobby_leave :: proc(client: ^Lobby_Client) {
@@ -159,6 +160,16 @@ lobby_queue :: proc(client: ^Lobby_Client, on: bool) {
 // The host's new picks; both seats are unready again.
 lobby_params :: proc(client: ^Lobby_Client, params, hash: string) {
 	command(client, "PARAMS", nil, {"params", params}, {"hash", hash})
+}
+
+// The host's new password, "" for none.
+lobby_lock :: proc(client: ^Lobby_Client, password: string) {
+	command(client, "LOCK", nil, {"password", password})
+}
+
+// The host puts a member out; a ban keeps them out.
+lobby_kick :: proc(client: ^Lobby_Client, key: string, ban: bool) {
+	command(client, "KICK", {key}, {"ban", ban ? "1" : "0"})
 }
 
 lobby_ready :: proc(client: ^Lobby_Client, loadout: []byte) {
@@ -255,6 +266,7 @@ apply_lobby :: proc(client: ^Lobby_Client, line: kipp.Line) {
 	replace(&lobby.params, line.attributes["params"])
 	replace(&lobby.hash, line.attributes["hash"])
 	replace(&lobby.host, line.attributes["host"])
+	lobby.locked = line.attributes["locked"] == "1"
 }
 
 // player <lobby id> <key>

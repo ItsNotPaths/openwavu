@@ -65,7 +65,7 @@ stay :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack,
 		lobby := online.lobby_joined(client)
 		switch {
 		case lobby == nil:
-			if open := open_lobby(client, tp, &hashes); open != "" do online.lobby_join(client, open)
+			if open := open_lobby(client, tp, &hashes); open != "" do online.lobby_join(client, open, "")
 		case len(lobby.players) == 1:
 			online.lobby_leave(client)  // everyone else left: wait for the next lobby
 		case online.lobby_player(lobby, client.key).side < 0 || seated(lobby) < wire.SIDES:
@@ -87,9 +87,9 @@ seated :: proc(lobby: ^online.Lobby) -> (count: int) {
 	return
 }
 
-// A lobby this pack can join; "" when there is none.
+// A lobby this pack can join with no password; "" when there is none.
 open_lobby :: proc(client: ^online.Lobby_Client, tp: titlepack.Title_Pack, hashes: ^online.Lobby_Hashes) -> string {
-	for &lobby in client.lobbies do if online.lobby_joinable(hashes, tp, &lobby) do return lobby.id
+	for &lobby in client.lobbies do if !lobby.locked && online.lobby_joinable(hashes, tp, &lobby) do return lobby.id
 	return ""
 }
 

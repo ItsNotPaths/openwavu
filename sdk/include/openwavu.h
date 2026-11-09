@@ -106,7 +106,7 @@ OW_EXPORT(ow_bot_pad) uint32_t ow_bot_pad(uint32_t side);
 
 // The host's state, read any time; returns its length and copies as much as fits. Fields are only added at the end:
 // size says how many bytes this host fills.
-#define OW_HOST_VIEW_VERSION 3
+#define OW_HOST_VIEW_VERSION 4
 enum { OW_CONNECTION_OFFLINE = 0, OW_CONNECTION_CONNECTING = 1, OW_CONNECTION_ONLINE = 2, OW_CONNECTION_FAILED = 3 };
 enum { OW_MATCH_NONE = 0, OW_MATCH_RUNNING = 1, OW_MATCH_ENDED = 2 };
 enum { OW_LOBBIES_MAX = 16, OW_NAME_MAX = 32, OW_PARAMS_MAX = 128, OW_REFUSED_MAX = 64, OW_WATCHERS_MAX = 6 };
@@ -147,6 +147,9 @@ typedef struct {
 	uint32_t queued;      // 1 when this player is in line for a seat
 	uint32_t watcher_count;
 	OwWatcher watchers[OW_WATCHERS_MAX];  // the members without a seat: the line first, in its order, then the others
+	// Version 4.
+	uint32_t locked_lobbies;  // bit k: lobbies[k] takes a password
+	uint32_t password;        // hosting: the password as this player set it, 0 for none
 } OwHostView;
 // (hole lobby-regions-view :tags (sdk net) :needs lobby-regions) the lobby list has no region or ping.
 OW_IMPORT(host_view) int32_t ow_host_view(OwHostView *view, uint32_t cap);
@@ -166,13 +169,19 @@ OW_IMPORT(online) void ow_online(uint32_t on);
 // Hosts a lobby of a pack.toml mode with these picks (as ow_match_local's params); -1 when refused (offline, already in
 // a lobby, an unknown mode, picks the pack does not allow).
 OW_IMPORT(lobby_create) int32_t ow_lobby_create(const char *mode, uint32_t mode_len, const char *params, uint32_t params_len);
-OW_IMPORT(lobby_join) void ow_lobby_join(uint32_t id);
+// password: four digits, 0..9999; 0 for an open lobby.
+OW_IMPORT(lobby_join) void ow_lobby_join(uint32_t id, uint32_t password);
 OW_IMPORT(lobby_leave) void ow_lobby_leave(void);
 // 1: into line for a seat. 0: back to watching, from a seat (outside a match) or the line.
 OW_IMPORT(lobby_queue) void ow_lobby_queue(uint32_t on);
 // The host's new picks (as ow_lobby_create's) for the next match; both seats are unready again. -1 when not hosting, a
 // match is running, or picks the pack does not allow.
 OW_IMPORT(lobby_params) int32_t ow_lobby_params(const char *params, uint32_t params_len);
+// The host's password for joining, 0..9999; 0 for none. -1 when not hosting or over four digits.
+OW_IMPORT(lobby_lock) int32_t ow_lobby_lock(uint32_t password);
+// The host puts a member out of the lobby; ban 1 keeps them out. member: 0 and 1 are the seats by side, 2 + k is
+// watchers[k]. -1 when not hosting.
+OW_IMPORT(lobby_kick) int32_t ow_lobby_kick(uint32_t member, uint32_t ban);
 // The pack.toml params a lobby host may change (expose = true), in pack.toml's order (sorted by name). Text fields are
 // NUL terminated, cut to fit.
 enum { OW_PARAM_NUMBER = 0, OW_PARAM_TEXT = 1 };

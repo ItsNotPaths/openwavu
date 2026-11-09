@@ -5,6 +5,7 @@ import "core:slice"
 import "core:strconv"
 import "../imports"
 import "../online"
+import "../online/wire"
 import "../titlepack"
 
 // The network's lobby server during one pack visit: the entry module's online intents go to it, and the host view
@@ -19,6 +20,7 @@ Lobbies :: struct {
 	hashes:     online.Lobby_Hashes,
 	played:   u32,                   // the token of the last match started here
 	joined:   string,                // the id of the lobby this player is in; "" for none
+	password: u32,                   // as this player last set it as host; 0 for none
 }
 
 lobbies_close :: proc(l: ^Lobbies) {
@@ -41,11 +43,23 @@ lobbies_apply :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, entry: ^imports.Ent
 		}
 		if l.connection != .Online do continue
 		#partial switch asked in intent {
-		case imports.Create_Lobby: online.lobby_create(l.client, titlepack.pack_name(tp.id, tp.version), asked.mode, asked.picks, online.picks_hash(&l.hashes, tp, asked.picks))
-		case imports.Join_Lobby:   online.lobby_join(l.client, fmt.tprintf("%08x", asked.id))
+		case imports.Create_Lobby:
+			online.lobby_create(l.client, titlepack.pack_name(tp.id, tp.version), asked.mode, asked.picks, online.picks_hash(&l.hashes, tp, asked.picks))
+			l.password = 0
+		case imports.Join_Lobby:
+			online.lobby_join(l.client, fmt.tprintf("%08x", asked.id), password_text(asked.password))
+			l.password = 0
 		case imports.Leave_Lobby:  online.lobby_leave(l.client)
 		case imports.Queue:        online.lobby_queue(l.client, asked.on)
 		case imports.Set_Params:   online.lobby_params(l.client, asked.picks, online.picks_hash(&l.hashes, tp, asked.picks))
+		case imports.Lock:
+			online.lobby_lock(l.client, password_text(asked.password))
+			l.password = asked.password
+		case imports.Kick:
+			joined := online.lobby_joined(l.client)
+			if joined == nil do continue
+			members := view_members(joined)
+			if int(asked.member) < len(members) && members[asked.member] != nil do online.lobby_kick(l.client, members[asked.member].key, asked.ban)
 		case imports.Ready:        online.lobby_ready(l.client, asked.loadout)
 		}
 	}
@@ -79,6 +93,7 @@ lobbies_new_match :: proc(l: ^Lobbies) -> ^online.Lobby {
 lobbies_view :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, view: ^imports.Host_View) {
 	view.connection = l.connection
 	view.lobby_count, view.joined, view.seat, view.hosting, view.watching, view.queued, view.watcher_count = 0, false, 0, false, false, false, 0
+	view.locked_lobbies, view.password = 0, 0
 	imports.view_text(view.refused[:], l.failed)
 	if l.connection != .Online do return
 	imports.view_text(view.refused[:], l.client.refused)
@@ -87,30 +102,46 @@ lobbies_view :: proc(l: ^Lobbies, tp: titlepack.Title_Pack, view: ^imports.Host_
 		if view.lobby_count == imports.LOBBIES_MAX do break
 		if &lobby == joined || !online.lobby_joinable(&l.hashes, tp, &lobby) do continue
 		view_lobby(l, &lobby, &view.lobbies[view.lobby_count])
+		if lobby.locked do view.locked_lobbies |= 1 << view.lobby_count
 		view.lobby_count += 1
 	}
 	if joined == nil do return
 	view.joined = true
 	view_lobby(l, joined, &view.lobby)
 	view.hosting = joined.host == l.client.key
+	if view.hosting do view.password = l.password
 	view.seats = {}
-	for player in joined.players do if player.side >= 0 {
-		imports.view_text(view.seats[player.side].name[:], player.name)
-		view.seats[player.side].ready = b32(player.ready)
+	members := view_members(joined)
+	for player, side in members[:wire.SIDES] do if player != nil {
+		imports.view_text(view.seats[side].name[:], player.name)
+		view.seats[side].ready = b32(player.ready)
 	}
 	me := online.lobby_player(joined, l.client.key)
 	view.seat, view.watching, view.queued = u32(max(me.side, 0)), me.side < 0, me.queued > 0
-	watchers := make([dynamic]online.Lobby_Player, context.temp_allocator)
-	for player in joined.players do if player.side < 0 do append(&watchers, player)
-	slice.stable_sort_by(watchers[:], proc(a, b: online.Lobby_Player) -> bool {
-		return a.queued != 0 && (b.queued == 0 || a.queued < b.queued)
-	})
-	for player in watchers[:min(len(watchers), imports.WATCHERS_MAX)] {
+	for player in members[wire.SIDES:min(len(members), wire.SIDES + imports.WATCHERS_MAX)] {
 		watcher := &view.watchers[view.watcher_count]
 		imports.view_text(watcher.name[:], player.name)
 		watcher.queued = player.queued > 0
 		view.watcher_count += 1
 	}
+}
+
+// The members as the view numbers them: the seats by side (nil when free), then the watchers, the line first in its order.
+@(private = "file")
+view_members :: proc(lobby: ^online.Lobby) -> []^online.Lobby_Player {
+	members := make([dynamic]^online.Lobby_Player, wire.SIDES, context.temp_allocator)
+	for &player in lobby.players do if player.side >= 0 do members[player.side] = &player
+	for &player in lobby.players do if player.side < 0 do append(&members, &player)
+	slice.stable_sort_by(members[wire.SIDES:], proc(a, b: ^online.Lobby_Player) -> bool {
+		return a.queued != 0 && (b.queued == 0 || a.queued < b.queued)
+	})
+	return members[:]
+}
+
+// A four digit password as the server keeps it; 0 is none.
+@(private = "file")
+password_text :: proc(password: u32) -> string {
+	return password == 0 ? "" : fmt.tprintf("%04d", password)
 }
 
 @(private = "file")

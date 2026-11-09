@@ -12,13 +12,37 @@ static const SDL_Color ROW = {30, 30, 38, 200}, ROW_LIT = {150, 24, 20, 220};
 static const SDL_Color SEAT_COLORS[OW_SIDES] = {{120, 20, 20, 170}, {20, 40, 120, 170}};
 static const char *const CONNECTIONS[] = {"OFFLINE", "CONNECTING...", "ONLINE", "COULD NOT CONNECT"};
 
-// The host's settings are the pack's exposed params (pack.toml), as the host serves them. A text param with allowed
+// The host's settings are the pack's exposed params (pack.toml), as the host serves them, then the password, kick and ban. A text param with allowed
 // values steps through them; the stage param steps through the catalog's stages; numbers step by a hundredth of their range.
 enum { SETTINGS_MAX = 32, NUMBER_STEPS = 100 };
 static const char STAGE[] = "stage";
 
+// A password is four digits, turned like a bike lock: up and down turn a digit, left and right pick which. 0000 is none.
+enum { PASSWORD_DIGITS = 4, DIGIT_VALUES = 10 };
+typedef struct {
+    int digits[PASSWORD_DIGITS];
+    int place;  // the digit being turned
+} Lock;
+
+// The host's rows after the params.
+enum { ROW_PASSWORD, ROW_KICK, ROW_BAN, HOST_ROWS };
+static const char *const HOST_ROW_NAMES[HOST_ROWS] = {"PASSWORD", "KICK", "BAN"};
+enum Picking { PICKING_ROW, PICKING_DIGIT, PICKING_MEMBER };
+
+// A member as ow_lobby_kick numbers them: the seats by side, then OW_SIDES + the watcher's place.
+typedef struct {
+    uint32_t member;
+    const char *name;
+} Member;
+enum { MEMBERS_MAX = OW_SIDES + OW_WATCHERS_MAX };
+
 static int lobby_cursor;  // the list: 0 hosts a lobby, then view->lobbies
-static bool editing;
+static uint32_t unlocking;  // the locked lobby's id while its password is turned in, else 0
+static Lock join_lock;
+static bool editing, was_joined;
+static enum Picking picking;
+static Lock host_lock;
+static int member_cursor;
 static OwParamInfo settings[SETTINGS_MAX];
 static int setting_count, setting_cursor, setting_top;
 static char values[SETTINGS_MAX][OW_NAME_MAX];
@@ -36,11 +60,49 @@ static bool param_of(const char *params, const char *name, char *value, size_t s
     return false;
 }
 
+static uint32_t lock_code(const Lock *lock) {
+    uint32_t code = 0;
+    for (int k = 0; k < PASSWORD_DIGITS; k++) code = code * DIGIT_VALUES + (uint32_t)lock->digits[k];
+    return code;
+}
+
+static void lock_set(Lock *lock, uint32_t code) {
+    for (int k = PASSWORD_DIGITS - 1; k >= 0; k--, code /= DIGIT_VALUES) lock->digits[k] = (int)(code % DIGIT_VALUES);
+    lock->place = 0;
+}
+
+static void lock_turn(Lock *lock, uint32_t pressed) {
+    int *digit = &lock->digits[lock->place];
+    if (pressed & OW_PAD_UP) *digit = (*digit + 1) % DIGIT_VALUES;
+    if (pressed & OW_PAD_DOWN) *digit = (*digit + DIGIT_VALUES - 1) % DIGIT_VALUES;
+    if (pressed & OW_PAD_LEFT) lock->place = (lock->place + PASSWORD_DIGITS - 1) % PASSWORD_DIGITS;
+    if (pressed & OW_PAD_RIGHT) lock->place = (lock->place + 1) % PASSWORD_DIGITS;
+}
+
+// The digits, the turned one in brackets while turning.
+static void lock_text(const Lock *lock, bool turning, char *text, size_t size) {
+    int length = 0;
+    for (int k = 0; k < PASSWORD_DIGITS; k++) {
+        bool turned = turning && k == lock->place;
+        length += snprintf(text + length, size - (size_t)length, turned ? " [%d]" : "  %d ", lock->digits[k]);
+    }
+}
+
+static int members_of(const OwHostView *view, Member members[MEMBERS_MAX]) {
+    int count = 0;
+    for (int side = 0; side < OW_SIDES; side++) {
+        if (view->seats[side].name[0]) members[count++] = (Member){(uint32_t)side, view->seats[side].name};
+    }
+    for (uint32_t k = 0; k < view->watcher_count; k++) members[count++] = (Member){OW_SIDES + k, view->watchers[k].name};
+    return count;
+}
+
 static void settings_read(const OwHostView *view) {
     setting_count = SDL_min(ow_exposed_params(settings, SETTINGS_MAX), SETTINGS_MAX);
     for (int k = 0; k < setting_count; k++) {
         if (!param_of(view->lobby.params, settings[k].name, values[k], sizeof values[k])) snprintf(values[k], sizeof values[k], "%s", settings[k].fallback);
     }
+    lock_set(&host_lock, view->password);
 }
 
 static void settings_send(void) {
@@ -83,9 +145,23 @@ static void setting_change(const T5Catalog *catalog, int direction) {
     snprintf(value, OW_NAME_MAX, "%s", choices[((at < count ? at : 0) + count + direction) % count]);
 }
 
-// Back goes offline. Pick on the first row hosts a lobby (its stage first), on a lobby joins it.
+static enum Online_Step join(uint32_t id, uint32_t password) {
+    ow_lobby_join(id, password);
+    editing = false;
+    return ONLINE_JOINED;
+}
+
+// Back goes offline. Pick on the first row hosts a lobby (its stage first), on a lobby joins it; a locked lobby takes
+// its password first.
 enum Online_Step lobbies_step(const OwHostView *view, uint32_t pressed) {
     int rows = 1 + (int)view->lobby_count;
+    if (unlocking) {
+        uint32_t id = unlocking;
+        if (pressed & (MENU_PICK | MENU_BACK)) unlocking = 0;
+        if (pressed & MENU_PICK) return join(id, lock_code(&join_lock));
+        if (!(pressed & MENU_BACK)) lock_turn(&join_lock, pressed);
+        return ONLINE_STAY;
+    }
     if (pressed & MENU_BACK) {
         ow_online(0);
         return ONLINE_OFFLINE;
@@ -95,30 +171,67 @@ enum Online_Step lobbies_step(const OwHostView *view, uint32_t pressed) {
     if (lobby_cursor >= rows) lobby_cursor = rows - 1;
     if (!(pressed & MENU_PICK) || view->connection != OW_CONNECTION_ONLINE) return ONLINE_STAY;
     if (lobby_cursor == 0) return ONLINE_HOST;
-    ow_lobby_join(view->lobbies[lobby_cursor - 1].id);
-    editing = false;
-    return ONLINE_JOINED;
+    if (!(view->locked_lobbies & (1u << (lobby_cursor - 1)))) return join(view->lobbies[lobby_cursor - 1].id, 0);
+    unlocking = view->lobbies[lobby_cursor - 1].id;
+    lock_set(&join_lock, 0);
+    return ONLINE_STAY;
+}
+
+// Pick on a param row sends the params, on the password row turns the lock, on kick or ban picks a member.
+static void settings_step(const OwHostView *view, const T5Catalog *catalog, uint32_t pressed) {
+    int host_row = setting_cursor - setting_count;
+    if (picking == PICKING_DIGIT) {
+        if ((pressed & MENU_PICK) && ow_lobby_lock(lock_code(&host_lock)) != 0) snprintf(refused, sizeof refused, "the host refused the password");
+        if (pressed & MENU_BACK) lock_set(&host_lock, view->password);
+        if (pressed & (MENU_PICK | MENU_BACK)) picking = PICKING_ROW;
+        else lock_turn(&host_lock, pressed);
+        return;
+    }
+    if (picking == PICKING_MEMBER) {
+        Member members[MEMBERS_MAX];
+        int count = members_of(view, members);
+        if ((pressed & MENU_PICK) && member_cursor < count) ow_lobby_kick(members[member_cursor].member, host_row == ROW_BAN);
+        if (pressed & (MENU_PICK | MENU_BACK)) picking = PICKING_ROW;
+        if (count == 0) return;
+        if (pressed & OW_PAD_UP) member_cursor = (member_cursor + count - 1) % count;
+        if (pressed & OW_PAD_DOWN) member_cursor = (member_cursor + 1) % count;
+        member_cursor = SDL_min(member_cursor, count - 1);
+        return;
+    }
+    if (pressed & MENU_BACK) editing = false;
+    if (pressed & MENU_PICK) {
+        if (host_row < 0) {
+            editing = false;
+            settings_send();
+        } else {
+            picking = host_row == ROW_PASSWORD ? PICKING_DIGIT : PICKING_MEMBER;
+            member_cursor = 0;
+        }
+        return;
+    }
+    int rows = setting_count + HOST_ROWS;
+    if (pressed & OW_PAD_UP) setting_cursor = (setting_cursor + rows - 1) % rows;
+    if (pressed & OW_PAD_DOWN) setting_cursor = (setting_cursor + 1) % rows;
+    if (setting_cursor < setting_count && (pressed & OW_PAD_LEFT)) setting_change(catalog, -1);
+    if (setting_cursor < setting_count && (pressed & OW_PAD_RIGHT)) setting_change(catalog, 1);
+    setting_top = SDL_clamp(setting_top, setting_cursor - ROWS_SHOWN + 1, setting_cursor);
 }
 
 // Back leaves the lobby. Pick: a seated player picks a fighter, a watcher gets in line. Button 1: back to watching.
-// Button 2: the host's settings, where pick sends them and back drops them.
+// Button 2: the host's settings, where back drops them. A player put out of the lobby is back at the list.
 enum Online_Step lobby_step(const OwHostView *view, const T5Catalog *catalog, uint32_t pressed) {
+    if (!view->joined && was_joined) {
+        was_joined = editing = false;
+        return ONLINE_LEFT;
+    }
+    was_joined = view->joined;
     if (editing) {
-        if (pressed & MENU_BACK) editing = false;
-        if (pressed & MENU_PICK) {
-            editing = false;
-            settings_send();
-        }
-        if (setting_count == 0) return ONLINE_STAY;
-        if (pressed & OW_PAD_UP) setting_cursor = (setting_cursor + setting_count - 1) % setting_count;
-        if (pressed & OW_PAD_DOWN) setting_cursor = (setting_cursor + 1) % setting_count;
-        if (pressed & OW_PAD_LEFT) setting_change(catalog, -1);
-        if (pressed & OW_PAD_RIGHT) setting_change(catalog, 1);
-        setting_top = SDL_clamp(setting_top, setting_cursor - ROWS_SHOWN + 1, setting_cursor);
+        settings_step(view, catalog, pressed);
         return ONLINE_STAY;
     }
     if (pressed & MENU_BACK) {
         ow_lobby_leave();
+        was_joined = false;
         return ONLINE_LEFT;
     }
     if (!view->joined) return ONLINE_STAY;
@@ -126,6 +239,7 @@ enum Online_Step lobby_step(const OwHostView *view, const T5Catalog *catalog, ui
         settings_read(view);
         refused[0] = 0;
         editing = true;
+        picking = PICKING_ROW;
     }
     if (pressed & MENU_PICK) {
         if (!view->watching && !view->seats[view->seat].ready) return ONLINE_PICK;
@@ -157,16 +271,25 @@ static void stage_draw(const char *id) {
 
 void lobbies_draw(const OwHostView *view) {
     header_draw(view);
+    if (unlocking) {
+        char digits[32];
+        lock_text(&join_lock, true, digits, sizeof digits);
+        text_draw(LIST_X, ROW_TOP - 52, 40, ALIGN_LEFT, WHITE, "THIS LOBBY IS LOCKED");
+        row_draw(0, true, "PASSWORD", digits);
+        text_hint("UP/DOWN: TURN   LEFT/RIGHT: DIGIT   3: JOIN   4: CANCEL");
+        return;
+    }
     int rows = 1 + (int)view->lobby_count;
     int first = SDL_max(0, SDL_min(lobby_cursor - ROWS_SHOWN / 2, rows - ROWS_SHOWN - 4));
     for (int row = first; row < rows && row < first + ROWS_SHOWN + 4; row++) {
-        char host[OW_NAME_MAX + 8] = "HOST A LOBBY", detail[16 + OW_NAME_MAX] = "";
+        char host[OW_NAME_MAX + 8] = "HOST A LOBBY", detail[32 + OW_NAME_MAX] = "";
         if (row > 0) {
             const OwLobby *lobby = &view->lobbies[row - 1];
             char stage[OW_NAME_MAX] = "";
             param_of(lobby->params, STAGE, stage, sizeof stage);
             snprintf(host, sizeof host, "%s", lobby->host);
-            snprintf(detail, sizeof detail, "%s   %u/8", shown(stage), lobby->players);
+            bool locked = view->locked_lobbies & (1u << (row - 1));
+            snprintf(detail, sizeof detail, "%s%s   %u/8", locked ? "LOCKED   " : "", shown(stage), lobby->players);
         }
         float y = 240 + (float)(row - first) * 64;
         canvas_fill(LIST_X, y, LIST_WIDTH, 56, row == lobby_cursor ? ROW_LIT : ROW);
@@ -198,18 +321,39 @@ static void watchers_draw(const OwHostView *view) {
     }
 }
 
-static void settings_draw(void) {
+static void members_draw(const OwHostView *view) {
+    Member members[MEMBERS_MAX];
+    int count = members_of(view, members);
+    int first = SDL_max(0, member_cursor - ROWS_SHOWN + 1);
+    text_draw(LIST_X, ROW_TOP - 52, 40, ALIGN_LEFT, WHITE, setting_cursor - setting_count == ROW_BAN ? "BAN WHO?" : "KICK WHO?");
+    for (int k = first; k < count && k < first + ROWS_SHOWN; k++) row_draw(k - first, k == member_cursor, members[k].name, NULL);
+}
+
+static void settings_draw(const OwHostView *view) {
+    if (picking == PICKING_MEMBER) {
+        members_draw(view);
+        return;
+    }
     text_draw(LIST_X, ROW_TOP - 52, 40, ALIGN_LEFT, WHITE, "LOBBY SETTINGS");
-    for (int k = setting_top; k < setting_count && k < setting_top + ROWS_SHOWN; k++) {
-        char label[OW_NAME_MAX], value[OW_NAME_MAX + 8];
-        snprintf(label, sizeof label, "%s", shown(settings[k].name));
-        snprintf(value, sizeof value, k == setting_cursor ? "<  %s  >" : "%s", shown(values[k]));
-        row_draw(k - setting_top, k == setting_cursor, label, value);
+    for (int k = setting_top; k < setting_count + HOST_ROWS && k < setting_top + ROWS_SHOWN; k++) {
+        char label[OW_NAME_MAX], value[OW_NAME_MAX + 8] = "";
+        bool lit = k == setting_cursor;
+        if (k < setting_count) {
+            snprintf(label, sizeof label, "%s", shown(settings[k].name));
+            snprintf(value, sizeof value, lit ? "<  %s  >" : "%s", shown(values[k]));
+        } else {
+            snprintf(label, sizeof label, "%s", HOST_ROW_NAMES[k - setting_count]);
+            if (k - setting_count == ROW_PASSWORD && (picking == PICKING_DIGIT || lock_code(&host_lock))) lock_text(&host_lock, picking == PICKING_DIGIT, value, sizeof value);
+            else if (k - setting_count == ROW_PASSWORD) snprintf(value, sizeof value, "NONE");
+        }
+        row_draw(k - setting_top, lit, label, value[0] ? value : NULL);
     }
 }
 
 static const char *lobby_hint(const OwHostView *view) {
     static char line[128];
+    if (editing && picking == PICKING_DIGIT) return "UP/DOWN: TURN   LEFT/RIGHT: DIGIT   3: SET   4: DROP";
+    if (editing && picking == PICKING_MEMBER) return "3: PICK   4: BACK";
     if (editing) return "3: SEND   4: DROP";
     int length = 0;
     if (!view->watching && !view->seats[view->seat].ready) length += snprintf(line + length, sizeof line - (size_t)length, "3: PICK YOUR FIGHTER   ");
@@ -234,7 +378,7 @@ void lobby_draw(const OwHostView *view, const T5Catalog *catalog) {
     }
     stage_draw(stage);
     for (int side = 0; side < OW_SIDES; side++) seat_draw(view, side);
-    if (editing) settings_draw();
+    if (editing) settings_draw(view);
     else watchers_draw(view);
     if (refused[0]) text_draw(LIST_X + LIST_WIDTH, ROW_TOP - 52, 36, ALIGN_RIGHT, YELLOW, refused);
     text_hint(lobby_hint(view));

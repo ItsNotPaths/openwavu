@@ -15,6 +15,8 @@ Lobby_Intent :: union {
 	Leave_Lobby,
 	Queue,
 	Set_Params,
+	Lock,
+	Kick,
 	Ready,
 }
 
@@ -28,7 +30,19 @@ Create_Lobby :: struct {
 }
 
 Join_Lobby :: struct {
-	id: u32,
+	id, password: u32,
+}
+
+PASSWORD_MAX :: 9999  // four digits; 0 is none
+
+Lock :: struct {
+	password: u32,
+}
+
+// member: as the view numbers them, the seats by side, then the watchers.
+Kick :: struct {
+	member: u32,
+	ban:    bool,
 }
 
 Leave_Lobby :: struct {}
@@ -62,10 +76,12 @@ lobby_intent_destroy :: proc(intent: Lobby_Intent, allocator: runtime.Allocator)
 define_lobby :: proc(l: wasm.Linker, entry: ^Entry) -> (err: string) {
 	if err = wasm.define_func(l, "online", {wasm.I32}, {}, online_import, entry); err != "" do return
 	if err = wasm.define_func(l, "lobby_create", {wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, lobby_create, entry); err != "" do return
-	if err = wasm.define_func(l, "lobby_join", {wasm.I32}, {}, lobby_join, entry); err != "" do return
+	if err = wasm.define_func(l, "lobby_join", {wasm.I32, wasm.I32}, {}, lobby_join, entry); err != "" do return
 	if err = wasm.define_func(l, "lobby_leave", {}, {}, lobby_leave, entry); err != "" do return
 	if err = wasm.define_func(l, "lobby_queue", {wasm.I32}, {}, lobby_queue, entry); err != "" do return
 	if err = wasm.define_func(l, "lobby_params", {wasm.I32, wasm.I32}, {wasm.I32}, lobby_params, entry); err != "" do return
+	if err = wasm.define_func(l, "lobby_lock", {wasm.I32}, {wasm.I32}, lobby_lock, entry); err != "" do return
+	if err = wasm.define_func(l, "lobby_kick", {wasm.I32, wasm.I32}, {wasm.I32}, lobby_kick, entry); err != "" do return
 	if err = wasm.define_func(l, "exposed_params", {wasm.I32, wasm.I32}, {wasm.I32}, exposed_params, entry); err != "" do return
 	if err = wasm.define_func(l, "exposed_param_value", {wasm.I32, wasm.I32, wasm.I32, wasm.I32}, {wasm.I32}, exposed_param_value, entry); err != "" do return
 	return wasm.define_func(l, "ready", {wasm.I32, wasm.I32}, {wasm.I32}, ready, entry)
@@ -179,7 +195,32 @@ lobby_queue :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val,
 lobby_join :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
 	context = runtime.default_context()
 	entry := (^Entry)(env)
-	append(&entry.intents, Join_Lobby{u32(args[0].of.i32)})
+	append(&entry.intents, Join_Lobby{u32(args[0].of.i32), u32(args[1].of.i32)})
+	return nil
+}
+
+// lobby_lock(password) -> 0, or -1 when not hosting a lobby or the password is over four digits.
+@(private = "file")
+lobby_lock :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	entry := (^Entry)(env)
+	password := u32(args[0].of.i32)
+	results[0] = wasm.i32_val(-1)
+	if !entry.view.hosting || password > PASSWORD_MAX do return nil
+	append(&entry.intents, Lock{password})
+	results[0] = wasm.i32_val(0)
+	return nil
+}
+
+// lobby_kick(member, ban) -> 0, or -1 when not hosting a lobby.
+@(private = "file")
+lobby_kick :: proc "c" (env: rawptr, caller: ^wasm.C_Caller, args: [^]wasm.Val, nargs: uint, results: [^]wasm.Val, nresults: uint) -> ^wasm.C_Trap {
+	context = runtime.default_context()
+	entry := (^Entry)(env)
+	results[0] = wasm.i32_val(-1)
+	if !entry.view.hosting do return nil
+	append(&entry.intents, Kick{u32(args[0].of.i32), args[1].of.i32 != 0})
+	results[0] = wasm.i32_val(0)
 	return nil
 }
 

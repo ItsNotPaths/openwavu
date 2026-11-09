@@ -33,6 +33,8 @@ Host_View :: struct {
 	queued:        b32,  // in line for a seat
 	watcher_count: u32,
 	watchers:      [WATCHERS_MAX]View_Watcher,  // the line first, in its order, then the others
+	locked_lobbies: u32,  // bit k: lobbies[k] takes a password
+	password:       u32,  // the host's, as it set it; 0 for none
 }
 
 LOBBIES_MAX :: 16
@@ -79,7 +81,7 @@ Entry :: struct {
 	intents:   [dynamic]Lobby_Intent, // online asks, in order, until the host applies them
 }
 
-HOST_VIEW_VERSION :: 3
+HOST_VIEW_VERSION :: 4
 
 entry_create :: proc(tp: titlepack.Title_Pack) -> Entry {
 	return {view = {version = HOST_VIEW_VERSION, size = size_of(Host_View)}, modes = tp.modes, params = tp.params, allocator = context.allocator}

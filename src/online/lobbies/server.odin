@@ -7,6 +7,7 @@ import "core:crypto"
 import "core:encoding/hex"
 import "core:fmt"
 import "core:math/rand"
+import "core:slice"
 import "core:sync"
 import enet "vendor:ENet"
 import "../../kipp"
@@ -42,6 +43,8 @@ Readiness :: enum {
 
 Lobby :: struct {
 	id, pack, mode, params, hash: string,
+	password: string,  // "" for none
+	banned:   [dynamic]string,  // player keys
 	host:     ^Player,
 	players:  [dynamic]^Player,  // join order
 	seats:    [wire.SIDES]^Player,
@@ -122,6 +125,8 @@ obey :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	case "PARAMS": change_params(server, player, line)
 	case "READY":  ready(server, player, line)
 	case "DONE":   done(server, player)
+	case "LOCK":   lock(server, player, line)
+	case "KICK":   kick(server, player, line)
 	case:          refuse(player, line.kind, "badcmd", "unknown command")
 	}
 }
@@ -180,7 +185,7 @@ create :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	enter(server, player, lobby)
 }
 
-// JOIN <lobby id>
+// JOIN <lobby id> password=
 @(private = "file")
 join :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	lobby: ^Lobby
@@ -188,8 +193,41 @@ join :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
 	switch {
 	case player.lobby != nil:                         refuse(player, "JOIN", "badarg", "leave the lobby first")
 	case lobby == nil:                                refuse(player, "JOIN", "badarg", "no such lobby")
+	case slice.contains(lobby.banned[:], player.key): refuse(player, "JOIN", "badarg", "banned from this lobby")
+	case line.attributes["password"] != lobby.password: refuse(player, "JOIN", "badarg", "wrong password")
 	case len(lobby.players) >= wire.LOBBY_MEMBERS_MAX: refuse(player, "JOIN", "badarg", "the lobby is full")
 	case:                                             enter(server, player, lobby)
+	}
+}
+
+// LOCK password=: the host's new password, "" for none.
+@(private = "file")
+lock :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
+	lobby := player.lobby
+	if lobby == nil || lobby.host != player {
+		refuse(player, "LOCK", "badarg", "only the lobby's host sets its password")
+		return
+	}
+	delete(lobby.password)
+	lobby.password = fmt.aprint(line.attributes["password"])
+	broadcast(server, lobby_line(lobby))
+}
+
+// KICK <player key> ban=1: the host puts a member out of its lobby; a ban keeps them out.
+@(private = "file")
+kick :: proc(server: ^Server, player: ^Player, line: kipp.Line) {
+	lobby := player.lobby
+	kicked: ^Player
+	if lobby != nil && len(line.subject) > 0 do for member in lobby.players do if member.key == line.subject[0] do kicked = member
+	switch {
+	case lobby == nil || lobby.host != player: refuse(player, "KICK", "badarg", "only the lobby's host kicks")
+	case kicked == player:                     refuse(player, "KICK", "badarg", "the host can not kick itself")
+	case kicked == nil:                        refuse(player, "KICK", "badarg", "no such member")
+	case:
+		banned := line.attributes["ban"] == "1"
+		if banned do append(&lobby.banned, fmt.aprint(kicked.key))
+		refuse(kicked, "KICK", "kicked", banned ? "the host banned you" : "the host kicked you")
+		leave(server, kicked)
 	}
 }
 
@@ -368,7 +406,8 @@ forward :: proc(player: ^Player, packet: []byte) {
 
 @(private = "file")
 lobby_line :: proc(lobby: ^Lobby) -> string {
-	return write("lobby", {lobby.id}, {"pack", lobby.pack}, {"mode", lobby.mode}, {"params", lobby.params}, {"hash", lobby.hash}, {"host", lobby.host.key})
+	return write("lobby", {lobby.id}, {"pack", lobby.pack}, {"mode", lobby.mode}, {"params", lobby.params}, {"hash", lobby.hash}, {"host", lobby.host.key},
+		{"locked", lobby.password != "" ? "1" : "0"})
 }
 
 @(private = "file")
@@ -423,7 +462,9 @@ connected :: proc(server: ^Server) -> []^Player {
 
 @(private = "file")
 lobby_free :: proc(lobby: ^Lobby) {
-	for text in ([]string{lobby.id, lobby.pack, lobby.mode, lobby.params, lobby.hash}) do delete(text)
+	for text in ([]string{lobby.id, lobby.pack, lobby.mode, lobby.params, lobby.hash, lobby.password}) do delete(text)
+	for key in lobby.banned do delete(key)
+	delete(lobby.banned)
 	delete(lobby.players)
 	free(lobby)
 }

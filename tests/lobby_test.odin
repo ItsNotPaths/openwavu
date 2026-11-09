@@ -42,9 +42,9 @@ lobby_match_and_rematch :: proc(t: ^testing.T) {
 	online.lobby_create(host, "tekken5dr@1", "versus", "stage=dragons_nest", "00")
 	if !testing.expect(t, pump_until(clients[:], lobby_shown), "the lobby did not show") do return
 	id := joiner.lobbies[0].id
-	online.lobby_join(joiner, id)
+	online.lobby_join(joiner, id, "")
 	if !testing.expect(t, pump_until(clients[:], lobby_filled), "the joiner did not show") do return
-	online.lobby_join(late, id)
+	online.lobby_join(late, id, "")
 	if !testing.expect(t, pump_until(clients[:], late_in_line), "the late player is not in line") do return
 
 	for client in clients[:2] do online.lobby_ready(client, loadout_bytes(client == host ? "paul" : "kazuya"))
