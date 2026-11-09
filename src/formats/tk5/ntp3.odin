@@ -2,6 +2,8 @@
 // The game uses DXT5 only; DXT1, DXT3 and ARGB8 decode too. MIF maps 0x104n placeholders to 0x001n frames.
 package tk5_formats
 
+import "core:strings"
+
 Texture :: struct {
 	hash:          u32,
 	width, height: int,
@@ -44,6 +46,36 @@ read_mif_swaps :: proc(section: []byte, swaps: ^map[u32]u32) -> (ok: bool) {
 		if a >> 20 == 0x104 && b >> 20 == 0x001 && a not_in swaps do swaps[a] = b
 	}
 	return true
+}
+
+// One entry of a costume's CHARMOTHS block: the meshes (NDP3 mesh indices) a move set shows. The first entry, move set
+// MOVESET_EVERYONE, lists the meshes hidden by default (Mokujin's sword and tail). The game applies it at 0x1382e8.
+Moveset_Meshes :: struct {
+	moveset: int,
+	meshes:  []u8,
+}
+
+MOVESET_EVERYONE :: -1
+
+// The CHARMOTHS block of a MIF section; none when it has no block.
+read_mif_moveset_meshes :: proc(section: []byte, allocator := context.allocator) -> (entries: []Moveset_Meshes, ok: bool) {
+	BLOCK_DATA :: 0x10  // from the block name: name, version, size
+	name := strings.index(string(section), "CHARMOTHS\x00")
+	if name < 0 do return nil, true
+	at := name + BLOCK_DATA
+	if at >= len(section) do return
+	list := make([dynamic]Moveset_Meshes, allocator)
+	count := int(section[at])
+	at += 1
+	for _ in 0 ..< count {
+		if at + 2 > len(section) do return
+		moveset, mesh_count := int(i8(section[at])), int(section[at + 1])
+		at += 2
+		if at + mesh_count > len(section) do return
+		append(&list, Moveset_Meshes{moveset, section[at:][:mesh_count]})
+		at += mesh_count
+	}
+	return list[:], true
 }
 
 decode_rgba :: proc(t: Texture, allocator := context.allocator) -> (rgba: []byte, ok: bool) {

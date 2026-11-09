@@ -192,6 +192,21 @@ import_costumes :: proc(im: ^Import, c: formats.Character, owner: string) {
 	}
 }
 
+// A part's CHARMOTHS rows: the meshes hidden by default, and the move sets that show each.
+write_moveset_meshes :: proc(im: ^Import, part: string, mif: []byte, first_mesh_node: int) -> bool {
+	entries := formats.read_mif_moveset_meshes(mif, context.temp_allocator) or_return
+	for entry in entries {
+		character: db.Value = db.Null{}
+		if entry.moveset != formats.MOVESET_EVERYONE {
+			if entry.moveset < 0 || entry.moveset >= len(formats.CHARACTERS) do return false
+			characters := formats.CHARACTERS
+			character = characters[entry.moveset].id
+		}
+		for mesh in entry.meshes do db.insert(&im.w, "part_moveset_mesh", part, i64(first_mesh_node + int(mesh) + 1), character)
+	}
+	return true
+}
+
 // Mokujin: his skeleton, body row, costumes and effects; no move set.
 import_mokujin :: proc(im: ^Import) -> (err: string) {
 	c := formats.MOKUJIN
@@ -216,8 +231,8 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 	if !ok do return false
 	textures := make(convert.Textures, context.temp_allocator)
 	swaps := make(map[u32]u32, context.temp_allocator)
-	nud: [dynamic][]byte
-	nud.allocator = context.temp_allocator
+	nud, mif: [dynamic][]byte
+	nud.allocator, mif.allocator = context.temp_allocator, context.temp_allocator
 	for s in sections {
 		if len(s) < 4 do continue
 		switch string(s[:4]) {
@@ -225,7 +240,9 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 		case "NTP3":
 			list, _ := formats.read_ntp3(s, context.temp_allocator)
 			for t in list do textures[t.hash] = t
-		case "MIF\x00": formats.read_mif_swaps(s, &swaps)
+		case "MIF\x00":
+			formats.read_mif_swaps(s, &swaps)
+			append(&mif, s)  // one after each NDP3
 		}
 	}
 	skeleton := costume_skeleton(sections)
@@ -239,8 +256,11 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 	for part, i in parts {
 		meshes, read := formats.read_ndp3(nud[i], context.temp_allocator)
 		file := fmt.tprintf("parts/%s/%s.glb", owner, part)
-		if !read || !convert.write_model(im.root, file, meshes, texture_files, skeleton, mop = mop) do return false
+		if !read do return false
+		first_mesh_node, written := convert.write_model(im.root, file, meshes, texture_files, skeleton, mop = mop)
+		if !written do return false
 		db.insert(&im.w, "part", part, owner, i == 0 ? "body" : "lod", parts[0], file)
+		if i < len(mif) && !write_moveset_meshes(im, part, mif[i], first_mesh_node) do return false
 	}
 	for b, i in skeleton.bones {
 		name := i < len(SKELETON_NAMES) ? SKELETON_NAMES[i] : fmt.tprintf("helper_%d", i)
@@ -474,9 +494,11 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 	// (hole stage-break-pieces :tags importer :sev polish) section 4 (flying pieces of breakable props) is not exported.
 	file := fmt.tprintf("stages/%s.glb", id)
 	texture_files := write_textures(im, id, textures)
-	if len(meshes) > 0 && !convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:], layers[:]) {
-		fail(im, "stage %s: model did not write", id)
-		return
+	if len(meshes) > 0 {
+		if _, written := convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:], layers[:]); !written {
+			fail(im, "stage %s: model did not write", id)
+			return
+		}
 	}
 	collision, surfaces := fmt.tprintf("stages/%s.collision.glb", id), fmt.tprintf("stages/%s.surfaces", id)
 	if !convert.write_stage_collision(join(im.root, collision), join(im.root, surfaces), s) {

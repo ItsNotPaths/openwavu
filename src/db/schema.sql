@@ -52,6 +52,12 @@ CREATE TABLE costume_part (
 	FOREIGN KEY (character, costume) REFERENCES costume(character, id)
 );
 
+CREATE TABLE part_moveset_mesh (  -- part meshes that go with a move set: Mokujin shows Yoshimitsu's sword only with his moves
+	part      TEXT NOT NULL REFERENCES part(id),
+	node      INTEGER NOT NULL,                -- glb node index + 1
+	character TEXT REFERENCES character(id)  -- NULL: hidden by default; else shown while this character's move set runs
+);
+
 CREATE TABLE anim (  -- rows with the same file are one anim: the game compares them by record
 	character TEXT NOT NULL,  -- bank owner: a character, <char>/embedded, or common
 	idx       INTEGER NOT NULL,

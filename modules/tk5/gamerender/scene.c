@@ -15,11 +15,12 @@
 
 enum {
     PARTS_MAX = 8,      // per fighter
+    HIDDEN_MESHES_MAX = 32,  // per fighter: part meshes its move set does not show
     BODY_JOINTS = 23,   // glb joints 0..22: the root, then the body bones the sim's skeleton B moves
     FIRST_FINGER_JOINT = FIRST_FINGER_BONE + 4,  // glb joints 55..84 are A bones 51..80
     POSED_BONES = FIRST_FINGER_JOINT + FINGER_BONES,  // joints 23..54 are left zero: they keep their rest pose
     STAGE_NODES_MAX = 256,  // layers and floor tiles
-    NODES_MAX = T5_FIGHTER_COUNT * PARTS_MAX + STAGE_NODES_MAX,
+    NODES_MAX = T5_FIGHTER_COUNT * (PARTS_MAX + HIDDEN_MESHES_MAX) + STAGE_NODES_MAX,
     FX_MAX = 128,
 };
 
@@ -28,12 +29,20 @@ static const int BODY_SLOT[BODY_JOINTS] = {-1, 0, 1, 2, 13, 3, 4, 5, 6, 7, 8, 9,
 static const char DB_PATH[] = "tk5.db";
 
 typedef struct {
-    char id[32];
+    char id[32];       // the scene node's
+    char row[32];      // the part row's
     uint32_t asset;
 } Part;
 
+typedef struct {
+    char id[32];  // the scene node's
+    uint32_t asset, node;  // node: glb node index + 1
+} HiddenMesh;
+
 static Part parts[T5_FIGHTER_COUNT][PARTS_MAX];
 static int part_count[T5_FIGHTER_COUNT];
+static HiddenMesh hidden_meshes[T5_FIGHTER_COUNT][HIDDEN_MESHES_MAX];
+static int hidden_mesh_count[T5_FIGHTER_COUNT];
 static T5Visual visual;
 
 static struct {
@@ -60,7 +69,8 @@ static void load_parts(sqlite3 *db, int side, const T5Loadout *loadout) {
     sqlite3_bind_text(rows, 2, costume, -1, SQLITE_STATIC);
     while (part_count[side] < PARTS_MAX && sqlite3_step(rows) == SQLITE_ROW) {
         Part *part = &parts[side][part_count[side]];
-        snprintf(part->id, sizeof part->id, "%d:%s", side + 1, (const char *)sqlite3_column_text(rows, 0));
+        snprintf(part->row, sizeof part->row, "%s", (const char *)sqlite3_column_text(rows, 0));
+        snprintf(part->id, sizeof part->id, "%d:%s", side + 1, part->row);
         part->asset = t5_asset_of(sqlite3_column_text(rows, 1));
         if (part->asset) part_count[side]++;
     }
@@ -78,9 +88,32 @@ static void load_hands(sqlite3 *db, int side, const char *moveset) {
     visual.fighter[side].banks = failed ? (T5HandBanks){0} : banks;
 }
 
+// The part meshes hidden by default that the move set does not show (Mokujin's sword unless he runs Yoshimitsu's moves).
+// (hole moveset-mesh-mirror :tags (tk5mod look) :sev polish) the host hides part meshes by asset, so two sides in the same costume hide each other's.
+static void load_hidden_meshes(sqlite3 *db, int side, const char *moveset) {
+    sqlite3_stmt *rows;
+    const char *query = "SELECT node FROM part_moveset_mesh WHERE part = ?1 AND character IS NULL "
+                        "AND node NOT IN (SELECT node FROM part_moveset_mesh WHERE part = ?1 AND character = ?2)";
+    hidden_mesh_count[side] = 0;
+    if (sqlite3_prepare_v2(db, query, -1, &rows, NULL) != SQLITE_OK) return;
+    for (int at = 0; at < part_count[side]; at++) {
+        const Part *part = &parts[side][at];
+        sqlite3_reset(rows);
+        sqlite3_bind_text(rows, 1, part->row, -1, SQLITE_STATIC);
+        sqlite3_bind_text(rows, 2, moveset, -1, SQLITE_STATIC);
+        while (hidden_mesh_count[side] < HIDDEN_MESHES_MAX && sqlite3_step(rows) == SQLITE_ROW) {
+            HiddenMesh *hidden = &hidden_meshes[side][hidden_mesh_count[side]++];
+            hidden->asset = part->asset;
+            hidden->node = (uint32_t)sqlite3_column_int(rows, 0);
+            snprintf(hidden->id, sizeof hidden->id, "%s/%u", part->id, hidden->node);
+        }
+    }
+    sqlite3_finalize(rows);
+}
+
 static char loaded_movesets[T5_FIGHTER_COUNT][T5_NAME_BYTES];
 
-// The hands and camera shots of each side's move set; again when a round brings another (Mokujin).
+// The hands, camera shots and hidden part meshes of each side's move set; again when a round brings another (Mokujin).
 // (hole moveset-reload-leak :tags (tk5mod round-show) :sev polish) each reload takes a new hand arena and never frees the last.
 static void load_movesets(sqlite3 *db, const T5View *view) {
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
@@ -89,6 +122,7 @@ static void load_movesets(sqlite3 *db, const T5View *view) {
         memcpy(loaded_movesets[side], moveset, T5_NAME_BYTES);
         load_hands(db, side, moveset);
         t5_camera_load(db, side, moveset);
+        load_hidden_meshes(db, side, moveset);
     }
 }
 
@@ -168,6 +202,12 @@ void t5_scene_send(const T5View *view, float seconds) {
                 .class = OW_CLASS_GAMEPLAY,
             };
             memcpy(node->id, parts[side][at].id, sizeof node->id);
+        }
+        for (int at = 0; at < hidden_mesh_count[side]; at++) {
+            const HiddenMesh *hidden = &hidden_meshes[side][at];
+            OwNode *node = &block.nodes[count++];
+            *node = (OwNode){.asset = hidden->asset, .part = hidden->node, .flags = OW_NODE_HIDDEN, .class = OW_CLASS_GAMEPLAY};
+            memcpy(node->id, hidden->id, sizeof node->id);
         }
     }
     OW_SCENE_SIZES(scene);
