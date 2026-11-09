@@ -115,6 +115,10 @@ jobs:
           mkdir release
           cp artifacts/openwavu-linux/openwavu release/openwavu-linux
           cp artifacts/openwavu-windows.exe/openwavu.exe release/openwavu-windows.exe
+          # Archives for people: a browser drops the execute bit of a bare binary. The bare ones are for the updater.
+          chmod +x artifacts/openwavu-linux/openwavu
+          tar czf release/openwavu-linux.tar.gz -C artifacts/openwavu-linux openwavu
+          (cd artifacts/openwavu-windows.exe && zip -q ../../release/openwavu-windows.zip openwavu.exe)
           {
             echo "$VERSION"
             for binary in openwavu-linux openwavu-windows.exe; do
