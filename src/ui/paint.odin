@@ -21,6 +21,7 @@ Paint :: union {
 	Front_Button,
 	Progress,
 	Badge,
+	Round,
 }
 
 // A raised or recessed steel face. lit adds the LED glow of a hovered or focused button.
@@ -55,6 +56,11 @@ Progress :: struct {
 Badge :: struct {
 	icon:        Icon,
 	on, hovered: bool,
+}
+
+// A round raised steel face; lit adds the LED glow.
+Round :: struct {
+	lit: bool,
 }
 
 Icon :: enum u8 {
@@ -126,6 +132,8 @@ paint :: proc(ui: ^Ui, rect: sdl.FRect, p: Paint) {
 		if p.fraction > 0 do led_strip(ui.renderer, {strip.x, strip.y, strip.w * min(p.fraction, 1), strip.h}, true)
 	case Badge:
 		badge(ui, rect, p)
+	case Round:
+		round(ui, rect, p.lit)
 	}
 }
 
@@ -241,6 +249,19 @@ badge :: proc(ui: ^Ui, rect: sdl.FRect, b: Badge) {
 	case .Star: star(r, icon, c)
 	case .Lock: lock(r, icon, c)
 	}
+}
+
+// Raised steel as nested dots: shadow, glow, rim, the bevel's light top and dark bottom, then the face.
+@(private)
+round :: proc(ui: ^Ui, rect: sdl.FRect, lit: bool) {
+	center := [2]f32{rect.x + rect.w / 2, rect.y + rect.h / 2}
+	radius := min(rect.w, rect.h) / 2
+	dot(ui, center + {0, 5}, radius + 3, color(0x000000aa))
+	if lit do for ring in 1 ..= 4 do dot(ui, center, radius + f32(ring) * 3, lit_color(0.12))
+	dot(ui, center, radius, color(RIM))
+	dot(ui, center - {0, 1}, radius - 1, color(STEEL_TOP))
+	dot(ui, center + {0, 1}, radius - 2, color(STEEL_BOTTOM))
+	dot(ui, center, radius - 2, color(STEEL_MID))
 }
 
 // A five-pointed star filling rect, as a fan from its centre.

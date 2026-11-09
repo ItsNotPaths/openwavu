@@ -63,6 +63,9 @@ LIFT_RATE  :: 21
 UNDERSIDE  :: 5
 PLATE_PAD  :: 18  // plate edge to name, clears the LED
 BADGE       :: 26
+KEY         :: 64
+KEY_GAP     :: 12
+KEY_TEXT_SIZE :: 11
 BADGE_ICON  :: 15
 BADGE_GAP   :: 6
 BADGE_INSET :: 20 - SLOT_FRAME  // 20 from the slot's top and side

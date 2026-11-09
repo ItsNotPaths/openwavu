@@ -220,3 +220,24 @@ plate_name :: proc(ui: ^Ui, name: string) {
 		}))
 	}
 }
+
+Key_Shape :: enum u8 {
+	Square,
+	Round,
+}
+
+// A fixed-size raised key; lit holds the glow and lights the text, as while it waits for a press.
+key_button :: proc(ui: ^Ui, id: clay.ElementId, text: string, shape: Key_Shape, lit: bool) -> bool {
+	s := interact(ui, id)
+	glow := lit || s.hovered || s.focused
+	face: Paint = Steel{face = .Raised, lit = glow}
+	if shape == .Round do face = Round{lit = glow}
+	if clay.UI()({
+		id = id,
+		layout = {sizing = {clay.SizingFixed(KEY), clay.SizingFixed(KEY)}, padding = clay.PaddingAll(4), childAlignment = {.Center, .Center}},
+		custom = painted(face),
+	}) {
+		label(text, KEY_TEXT_SIZE, lit ? LED : TEXT, face = .Display)
+	}
+	return s.clicked
+}
