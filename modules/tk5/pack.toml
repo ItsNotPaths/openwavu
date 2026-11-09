@@ -32,11 +32,11 @@ min = 0
 max = 1000
 expose = true
 
-[params.rounds_to_win]
+[params.rounds_to_win]  # ft3, ft7, ...
 kind = "number"
 default = 2
 min = 1
-max = 5
+max = 10
 expose = true
 
 [params.round_time]  # seconds; 0 = no clock

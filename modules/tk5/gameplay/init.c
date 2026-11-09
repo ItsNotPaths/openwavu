@@ -12,8 +12,6 @@ static const char DB_PATH[] = "tk5.db";
 
 T5MatchData t5_match_data;
 
-// (hole mod-rounds :tags (tk5mod alpha)) the round reset is not from params.
-
 static const char *load_side(sqlite3 *db, uint32_t side) {
     T5SideData *picked = &t5_match_data.sides[side];
     if (ow_loadout(side, &picked->loadout, sizeof picked->loadout) != (int32_t)sizeof picked->loadout) return "a loadout is missing or not a T5Loadout";
