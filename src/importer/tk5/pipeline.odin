@@ -41,8 +41,8 @@ Import :: struct {
 
 Progress :: titlepack.Progress
 
-// One step per character, stage, 2D art entry and font, one each for the music, the sounds, the select renders, the rest and the pack file.
-PROGRESS_STEPS :: len(formats.CHARACTERS) + formats.STAGE_COUNT + len(formats.ART_ENTRIES) + len(formats.FONTS) + 5
+// One step per character (Mokujin too), stage, 2D art entry and font, one each for the music, the sounds, the select renders, the rest and the pack file.
+PROGRESS_STEPS :: len(formats.CHARACTERS) + 1 + formats.STAGE_COUNT + len(formats.ART_ENTRIES) + len(formats.FONTS) + 5
 
 // The banks every match shares, by archive entry.
 SHARED_SOUND_BANKS := [?]struct {bank: string, entry: int}{
@@ -125,6 +125,8 @@ import_characters :: proc(im: ^Import) -> (err: string) {
 		free_all(context.temp_allocator)
 		step(im)
 	}
+	if err = import_mokujin(im); err != "" do return strings.clone(err)
+	step(im)
 	return ""
 }
 
@@ -133,10 +135,8 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 	db.insert(w, "character", c.id, c.name, i64(char_index), i64(c.model))
 	owner := formats.container_owner(c.container)
 
-	packed := read_entry(im, formats.MOTBIN_FIRST + 2 * char_index) or_else nil
-	data, unpacked := formats.unlz(packed, context.temp_allocator)
-	m, read := formats.read_motbin(data, context.temp_allocator)
-	if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
+	m, data, read := read_character_motbin(im, char_index)
+	if !read do return fmt.tprintf("%s: motbin did not read", c.id)
 	if err = convert.write_moveset_rows(w, c.id, owner, char_index, m); err != "" do return err
 	if bank, has := formats.embedded_bank(m, data, 0); has do write_bank(im, convert.embedded_owner(c.id), bank)
 	if bank, has := formats.embedded_bank(m, data, formats.BANK_HANDS); has do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), bank)
@@ -148,6 +148,23 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 	if !measured do return fmt.tprintf("%s: standing idle did not read", c.id)
 	if err = convert.write_stock_rows(w, c.id, char_index, m, top); err != "" do return err
 
+	import_costumes(im, c, owner)
+	if owner == c.id {
+		container := read_entry(im, c.container) or_else nil
+		sections, read_sections := formats.sections(container, context.temp_allocator)
+		if !read_sections do fail(im, "%s: container did not read", c.id)
+		// (hole face-anims :tags (importer fighter-detail)) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
+		if len(sections) > 0 do write_bank(im, owner, sections[0])
+		if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
+		if len(sections) > formats.BANK_CAMERAS do write_camera_bank(im, fmt.tprintf("%s/cameras", owner), sections[formats.BANK_CAMERAS], .Scaled)
+	}
+	if !import_character_effects(im, c, owner) do fail(im, "%s: effects did not read", c.id)
+	return ""
+}
+
+// Each costume of the container: its parts and voices (only from the container's owner), and its rows.
+import_costumes :: proc(im: ^Import, c: formats.Character, owner: string) {
+	w := &im.w
 	first, count := formats.costume_groups(c.container)
 	for k in 0 ..< count {
 		model, has := read_entry(im, first + k * formats.GROUP_SIZE + formats.GROUP_MODEL)
@@ -173,16 +190,23 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 		db.insert(w, "costume_voice", c.id, costume, i64(voice))
 		for p in parts do db.insert(w, "costume_part", c.id, costume, p)
 	}
-	if owner == c.id {
-		container := read_entry(im, c.container) or_else nil
-		sections, read_sections := formats.sections(container, context.temp_allocator)
-		if !read_sections do fail(im, "%s: container did not read", c.id)
-		// (hole face-anims :tags (importer fighter-detail)) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
-		if len(sections) > 0 do write_bank(im, owner, sections[0])
-		if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
-		if len(sections) > formats.BANK_CAMERAS do write_camera_bank(im, fmt.tprintf("%s/cameras", owner), sections[formats.BANK_CAMERAS], .Scaled)
-	}
-	if !import_character_effects(im, c, owner) do fail(im, "%s: effects did not read", c.id)
+}
+
+// Mokujin: his skeleton, body row, costumes and effects; no move set.
+import_mokujin :: proc(im: ^Import) -> (err: string) {
+	c := formats.MOKUJIN
+	db.insert(&im.w, "character", c.id, c.name, db.Null{}, i64(c.model))
+	skeleton, has_skeleton := character_skeleton(im, c)
+	if !has_skeleton do return fmt.tprintf("%s: skeleton did not read", c.id)
+	convert.write_skeleton_rows(&im.w, c.id, skeleton)
+	stand_in := formats.CHARACTERS[0]  // his head top measured in another's standing idle: he has none
+	m, data, read := read_character_motbin(im, 0)
+	if !read do return fmt.tprintf("%s: motbin did not read", stand_in.id)
+	top, measured := idle_head_top(im, stand_in, m, data, &skeleton)
+	if !measured do return fmt.tprintf("%s: standing idle did not read", c.id)
+	convert.write_body(&im.w, c.id, c.model, top)
+	import_costumes(im, c, c.id)
+	if !import_character_effects(im, c, c.id) do fail(im, "%s: effects did not read", c.id)
 	return ""
 }
 
@@ -260,6 +284,14 @@ character_skeleton :: proc(im: ^Import, c: formats.Character) -> (s: convert.Sim
 	model := read_entry(im, c.container + formats.GROUP_MODEL) or_return
 	sections := formats.sections(model, context.temp_allocator) or_return
 	return convert.sim_skeleton(largest_skeleton(sections))
+}
+
+// The unpacked motbin of the character at char_index and its moves.
+read_character_motbin :: proc(im: ^Import, char_index: int) -> (m: formats.Motbin, data: []byte, ok: bool) {
+	packed := read_entry(im, formats.MOTBIN_FIRST + 2 * char_index) or_return
+	data = formats.unlz(packed, context.temp_allocator) or_return
+	m = formats.read_motbin(data, context.temp_allocator) or_return
+	return m, data, true
 }
 
 // Head end height in the standing idle (alias 1). data: the unpacked motbin.

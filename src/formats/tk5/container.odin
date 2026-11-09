@@ -45,10 +45,14 @@ CHARACTERS :: [?]Character{
 	{"eddy", "Eddy Gordo", 1689, 33}, {"jinpachi", "Jinpachi Mishima", 2095, 34}, {"jinpachi2", "Jinpachi Mishima (boss)", 2095, 34},
 }
 
+// No move set of his own: each round he takes another's (game_index NULL).
+MOKUJIN :: Character{"mokujin", "Mokujin", 1843, 18}
+
 // Model groups of the container that starts at `container`.
 costume_groups :: proc(container: int) -> (first, count: int) {
 	next := CHAR_GROUPS_END
 	for c in CHARACTERS do if c.container > container && c.container < next do next = c.container
+	if MOKUJIN.container > container && MOKUJIN.container < next do next = MOKUJIN.container
 	return container, (next - container) / GROUP_SIZE
 }
 

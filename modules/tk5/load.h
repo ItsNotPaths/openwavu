@@ -23,7 +23,7 @@ typedef T5Bytes (*T5ReadFile)(void *context, const char *path);
 
 // Each returns NULL on success, else what went wrong.
 const char *t5_load_motbin_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t5_load_motbin takes
-const char *t5_load_motbin(T5Motbin *motbin, sqlite3 *db, const char *character, T5AnimBases anims, T5Arena *arena);
+const char *t5_load_motbin(T5Motbin *motbin, sqlite3 *db, const char *character, const char *body, T5AnimBases anims, T5Arena *arena);
 const char *t5_load_skeleton(T5Skeleton *skeleton, sqlite3 *db, const char *character);
 // One anim bank by its owner (a character, common, <character>/embedded). Rows with the same file share one anim.
 const char *t5_load_anim_bank_storage(sqlite3 *db, const char *owner, size_t *bytes);
@@ -44,10 +44,12 @@ const char *t5_load_clips(void **clips, uint32_t *count, T5ClipKind kind, sqlite
 enum { T5_OWNER_BYTES = 128 };
 // The owner of the character's own anim bank: the one its moves name that is neither common nor embedded.
 const char *t5_own_anim_bank(sqlite3 *db, const char *character, char owner[T5_OWNER_BYTES]);
-// The whole fighter of a character: its anim banks, moves and skeleton, and the steps after them (t5_fighter_finish).
+// A fighter: the anim banks and moves of one character on the skeleton and body row of `body`, and the steps after them (t5_fighter_finish).
 const char *t5_load_fighter_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t5_load_fighter takes
-const char *t5_load_fighter(T5FighterData *data, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena);
-// A character's move set id and body model id (T5Fighter.chara, chara_40).
+const char *t5_load_fighter(T5FighterData *data, sqlite3 *db, const char *character, const char *body, T5ReadFile read, void *context,
+                            T5Arena *arena);
+enum { T5_CHARA_NONE = 0xff };  // a character with no move set of its own (Mokujin): he takes another's each round
+// A character's move set id (or T5_CHARA_NONE) and body model id (T5Fighter.chara, chara_40).
 const char *t5_load_character(sqlite3 *db, const char *character, uint8_t *chara, int16_t *model);
 // A stage's collision: the collision glb and .surfaces file of its stage row.
 const char *t5_load_stage_storage(sqlite3 *db, const char *stage, T5ReadFile read, void *context, size_t *bytes);

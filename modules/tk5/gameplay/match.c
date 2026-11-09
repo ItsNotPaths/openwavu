@@ -21,6 +21,22 @@ static const int32_t STAGE_MODE_INFINITE = 2;  // the game's floor word on infin
 T5MatchState t5_match;
 static T5View *view;  // on the heap: built from the state when asked, so it is no part of it
 
+// Round 0 the first; the intros run the first round's.
+static const T5Moveset *round_moveset(uint32_t side, uint32_t round) {
+    return t5_match_data.sides[side].round_movesets[round < ROUNDS_MAX ? round : ROUNDS_MAX - 1];
+}
+
+// A fresh copy of the round's move set.
+static void take_moveset(T5Fighter *f, uint32_t side, uint32_t round) {
+    const T5Moveset *moveset = round_moveset(side, round);
+    T5FighterData *data = &t5_match_data.sides[side].data;
+    *data = moveset->data;
+    f->chara = moveset->chara;
+    f->body = t5_motbin_body(&data->moves);
+    f->body_points = t5_motbin_body_points(&data->moves);
+    f->gaze = t5_motbin_gaze(&data->moves);
+}
+
 // The fields the passes read of a fresh fighter on a side (no position, no move: the round init places it).
 static void fighter_init(T5World *w, T5Fighter *f, uint32_t side) {
     T5SideData *picked = &t5_match_data.sides[side];
@@ -28,6 +44,7 @@ static void fighter_init(T5World *w, T5Fighter *f, uint32_t side) {
     w->data[side] = data;
     w->fighters[side] = f;
     t5_fighter_clear_refs(f);
+    take_moveset(f, side, 0);
     f->force_update = true;  // the move change sets update_divider -1, which would whiff every hit
     f->rig = data->bind;
     f->scale_base = data->skeleton.scale;
@@ -36,14 +53,20 @@ static void fighter_init(T5World *w, T5Fighter *f, uint32_t side) {
     f->side_index = (int16_t)side;
     f->opponent = f->target = (int16_t)(1 - side);
     f->health = f->max_health = (int32_t)ow_param(OW_STR("start_health"), START_HEALTH) << 16;  // 16.16 fixed point
-    f->chara = picked->chara;
     f->chara_40 = picked->model;
-    f->body = t5_motbin_body(&data->moves);
-    f->body_points = t5_motbin_body_points(&data->moves);
-    f->gaze = t5_motbin_gaze(&data->moves);
     f->input.mode = T5_INPUT_LIVE;
     f->input.direction_held = T5_DIRECTION_N;
     f->base_position_w = 1.0f;
+}
+
+// A counted round starts on its move set when it is another than the last round's (Mokujin); the same one keeps the
+// aliases properties set.
+static void round_init(T5World *w, T5RoundSetup setup) {
+    uint32_t round = w->round.round;  // the round about to be counted, 0 the first
+    for (uint32_t side = 0; side < T5_FIGHTER_COUNT; side++)
+        if (setup.counts_round && round > 0 && round_moveset(side, round) != round_moveset(side, round - 1))
+            take_moveset(w->fighters[side], side, round);
+    t5_default_hooks.round_init(w, setup);
 }
 
 void t5_match_begin(uint64_t seed) {
@@ -69,6 +92,7 @@ void t5_match_begin(uint64_t seed) {
     w->rules.untimed = seconds == 0;  // 0: no clock
     if (seconds > 0) w->rules.round_time = (T5Frames){seconds * FRAMES_PER_SECOND};
     t5_hooks = t5_default_hooks;
+    t5_hooks.round_init = round_init;
     m->view_normal[0] = -1;  // the camera on -x: side 1, at -z, is on the left
     m->view_normal[1] = 0;
     t5_match_start(w);
@@ -145,6 +169,8 @@ OW_EXPORT(ow_sim_state_size) uint32_t ow_sim_state_size(void) { return (uint32_t
 static void view_fighter(T5ViewFighter *out, uint32_t side) {
     const T5Fighter *f = &t5_match.fighters[side];
     out->loadout = t5_match_data.sides[side].loadout;
+    uint32_t round = t5_match.world.round.round;
+    memcpy(out->moveset, round_moveset(side, round ? round - 1 : 0)->character, sizeof out->moveset);
     out->health = f->health;
     out->max_health = f->max_health;
     out->wins = f->wins;

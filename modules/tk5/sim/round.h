@@ -5,7 +5,6 @@
 
 #include "sim/world.h"
 
-// (hole round-mokujin :tags (port tk5mod alpha) :sev gap) Mokujin  saves, restores and re-rolls its move set per round: not ported, and the round end does not wait for its reload.
 // (hole round-match-setup :tags (port tk5mod alpha) :sev gap) the match setup, the mode rules and the start health are not ported: the host sets T5World.rules, no_damage and max_health, then calls t5_match_start.
 extern const T5MatchFlow T5_STANDARD_MATCH;
 extern const T5MatchRules T5_STANDARD_RULES;  // wins needed, round time, side 1 wins a tie

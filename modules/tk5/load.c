@@ -850,12 +850,18 @@ static const char *load_move_ai(sqlite3 *db, const char *character, T5Motbin *mo
     return failed;
 }
 
-const char *t5_load_motbin(T5Motbin *motbin, sqlite3 *db, const char *character, T5AnimBases anims, T5Arena *arena) {
+// The body row goes with the body model (Mokujin keeps his own with any move set); every other table with the move set.
+static const char *table_owner(const Table *table, const char *character, const char *body) {
+    return table->items == offsetof(T5Motbin, body) ? body : character;
+}
+
+const char *t5_load_motbin(T5Motbin *motbin, sqlite3 *db, const char *character, const char *body, T5AnimBases anims, T5Arena *arena) {
     memset(motbin, 0, sizeof *motbin);
     Refs refs = {.bases = anims};
     const char *failed = load_aliases(db, character, motbin);
     if (!failed) failed = read_refs(db, character, &refs);
-    for (size_t index = 0; index < TABLE_COUNT && !failed; index++) failed = load_table(db, character, &tables[index], &refs, arena, motbin);
+    for (size_t index = 0; index < TABLE_COUNT && !failed; index++)
+        failed = load_table(db, table_owner(&tables[index], character, body), &tables[index], &refs, arena, motbin);
     if (!failed) failed = load_move_ai(db, character, motbin);
     if (!failed) failed = load_inputs(db, character, arena, motbin);
     if (!failed) set_options(motbin);
@@ -991,12 +997,13 @@ const char *t5_load_fighter_storage(sqlite3 *db, const char *character, size_t *
     return failed;
 }
 
-const char *t5_load_fighter(T5FighterData *data, sqlite3 *db, const char *character, T5ReadFile read, void *context, T5Arena *arena) {
+const char *t5_load_fighter(T5FighterData *data, sqlite3 *db, const char *character, const char *body, T5ReadFile read, void *context,
+                            T5Arena *arena) {
     memset(data, 0, sizeof *data);
     T5FighterFiles files = {0};
     const char *failed = t5_load_anims(&files, db, character, read, context, arena);
-    if (!failed) failed = t5_load_motbin(&data->moves, db, character, t5_anim_bases(&files), arena);
-    if (!failed) failed = t5_load_skeleton(&data->skeleton, db, character);
+    if (!failed) failed = t5_load_motbin(&data->moves, db, character, body, t5_anim_bases(&files), arena);
+    if (!failed) failed = t5_load_skeleton(&data->skeleton, db, body);
     if (!failed && t5_fighter_finish(data, &files, arena)) failed = fail("fighter %s: a move has no anim, or the arena is full", character);
     return failed;
 }
@@ -1046,7 +1053,7 @@ const char *t5_load_character(sqlite3 *db, const char *character, uint8_t *chara
     const char *failed = prepare(db, "SELECT game_index, model FROM character WHERE id = ?1", character, &row);
     if (failed) return failed;
     if (sqlite3_step(row) == SQLITE_ROW) {
-        *chara = (uint8_t)sqlite3_column_int(row, 0);
+        *chara = sqlite3_column_type(row, 0) == SQLITE_NULL ? T5_CHARA_NONE : (uint8_t)sqlite3_column_int(row, 0);
         *model = (int16_t)sqlite3_column_int(row, 1);
     } else {
         failed = fail("no character %s", character);

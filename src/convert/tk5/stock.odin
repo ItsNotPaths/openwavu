@@ -96,7 +96,8 @@ JOINT_REQUIREMENTS :: [?]u16{0x106, 0x113}  // param is a joint of skeleton A
 // Body, points and gaze rows of one move set. Fails on requirement params the sim can not read.
 // head_top: head end height of the standing idle (head_top in pose.odin).
 write_stock_rows :: proc(w: ^db.Writer, char: string, moveset: int, m: formats.Motbin, head_top: f32) -> (err: string) {
-	write_body(w, char, moveset, head_top)
+	write_body(w, char, model_of(moveset), head_top)
+	write_body_points(w, char, moveset)
 	write_gaze(w, char, moveset)
 	for r in m.requirements {
 		if is_category_requirement(r.id) && r.param >= ATTACK_BONES {
@@ -140,9 +141,8 @@ model_of :: proc(moveset: int) -> int {
 	return moveset
 }
 
-@(private = "file")
-write_body :: proc(w: ^db.Writer, char: string, moveset: int, head_top: f32) {
-	model := model_of(moveset)
+// The body row of a body model: the game picks hurt and push radii, the throw range cut and the head probe by model.
+write_body :: proc(w: ^db.Writer, char: string, model: int, head_top: f32) {
 	hurt, push, cut := HURT_DEFAULT, PUSH_DEFAULT, f32(0)
 	switch model {
 	case KUMA: hurt, push, cut = HURT_KUMA, PUSH_KUMA, THROW_CUT_KUMA
@@ -154,15 +154,19 @@ write_body :: proc(w: ^db.Writer, char: string, moveset: int, head_top: f32) {
 	case KUMA: probe = {0.1, 0.2, 0.45}
 	case 3: probe = {0.2, 0.45, 0.45}
 	}
-	hitscan := moveset == DEVIL_JIN ? EYE_LASER : 0
-	projectile := moveset == JINPACHI || moveset == JINPACHI_BOSS ? FIRE : 0
 	body := make([dynamic]db.Value, context.temp_allocator)
 	append(&body, char)
 	for i in 0 ..< len(hurt) do append(&body, i64(hurt[i]), i64(HURT_BONE[i]), f64(HURT_LIFT[i]))
 	for i in 0 ..< len(push) do append(&body, f64(push[i]), i64(PUSH_BONE[i]))
 	append(&body, f64(cut), f64(probe.x), f64(probe.z), f64(probe.radius), f64(head_top))
 	db.insert(w, "body", ..body[:])
+}
 
+// The special points of a move set, and its hitscan and projectile.
+@(private = "file")
+write_body_points :: proc(w: ^db.Writer, char: string, moveset: int) {
+	hitscan := moveset == DEVIL_JIN ? EYE_LASER : 0
+	projectile := moveset == JINPACHI || moveset == JINPACHI_BOSS ? FIRE : 0
 	used := body_points(moveset)
 	points: [BODY_POINTS]Body_Point
 	copy(points[:], used)

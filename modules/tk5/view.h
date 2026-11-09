@@ -8,7 +8,7 @@
 #include "sim/skel.h"
 #include "sim/world.h"
 
-enum { T5_VIEW_VERSION = 4 };
+enum { T5_VIEW_VERSION = 5 };
 
 typedef struct {  // the fighter fields the presenter's hand poses read
     T5PoseProp right_pose, left_pose;  // the hand channel properties
@@ -25,6 +25,7 @@ typedef struct {  // the fighter fields the presenter's hand poses read
 
 typedef struct {
     T5Loadout loadout;
+    char moveset[T5_NAME_BYTES]; // the db character whose moves run this round (Mokujin takes another's)
     int32_t health, max_health;  // 16.16 fixed point
     int16_t wins;                // rounds won
     bool on_right;               // right of the opponent on screen

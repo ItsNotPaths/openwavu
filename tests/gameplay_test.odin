@@ -2,6 +2,7 @@ package tests
 
 import "core:log"
 import "core:os"
+import "core:strings"
 import "core:testing"
 import "../src/content"
 import "../src/imports"
@@ -99,7 +100,7 @@ stock_sim_plays_a_match :: proc(t: ^testing.T) {
 	log.infof("the match ended after %d frames, winner side %d", frames, end.a)
 	view, view_err := sim.view(w)
 	testing.expect_value(t, view_err, "")
-	T5_VIEW_VERSION :: 4  // modules/tk5/view.h, its first field
+	T5_VIEW_VERSION :: 5  // modules/tk5/view.h, its first field
 	testing.expect(t, len(view) >= 4 && (^u32le)(raw_data(view))^ == T5_VIEW_VERSION, "the view starts with its version")
 }
 
@@ -164,4 +165,62 @@ events_copy :: proc(w: ^sim.World) -> []imports.Event {
 	events := make([]imports.Event, len(w.inputs.events), context.temp_allocator)
 	copy(events, w.inputs.events[:])
 	return events
+}
+
+// modules/tk5/view.h T5View up to the first fighter's move set; T5ViewFighter holds 16-aligned matrices.
+T5_View_Head :: struct {
+	version, frame: u32,
+	phase:          u8,
+	phase_frame:    i32,
+	round:          u32,
+	timer:          i32,
+	wins_needed:    u32,
+	stage:          [32]u8,
+	first:          struct #align(16) {loadout: T5_Loadout, moveset: [32]u8},
+}
+
+// Mokujin (side 1) against Paul to 3 wins: the move set the view names in each round, and whether the match ended.
+mokujin_rounds :: proc(t: ^testing.T, stock: ^Stock_Sim, seed: u64) -> (movesets: [dynamic]string, ended: bool) {
+	movesets.allocator = context.temp_allocator
+	params := stage_params()
+	params["start_health"] = "1"
+	params["rounds_to_win"] = "3"
+	w, err := sim.create(stock.engine, stock.module, &stock.pack, params, {loadout_bytes("mokujin"), loadout_bytes("paul")}, seed)
+	if !testing.expect_value(t, err, "") do return
+	defer sim.destroy(w)
+	for _ in 0 ..< 60_000 {
+		pads: [2]sim.Input
+		for side in 0 ..< 2 {
+			pads[side], err = sim.bot_pad(w, side)
+			if !testing.expect_value(t, err, "") do return
+		}
+		if !testing.expect_value(t, sim.step(w, pads), "") do return
+		view, view_err := sim.view(w)
+		if !testing.expect_value(t, view_err, "") || !testing.expect(t, len(view) >= size_of(T5_View_Head)) do return
+		head := (^T5_View_Head)(raw_data(view))
+		if head.round > u32(len(movesets)) do append(&movesets, strings.clone(string(cstring(&head.first.moveset[0])), context.temp_allocator))
+		for event in w.inputs.events do if event.kind == .Match_End do return movesets, true
+	}
+	return
+}
+
+// Mokujin plays a match to its end on a move set lent by another character each round, the same ones for the same seed.
+@(test)
+stock_sim_mokujin_takes_a_move_set_per_round :: proc(t: ^testing.T) {
+	stock, opened := stock_sim_open(t)
+	if !opened do return
+	defer stock_sim_close(stock)
+	first, ended := mokujin_rounds(t, stock, 7)
+	if !testing.expect(t, ended, "the Mokujin match did not end") do return
+	testing.expect(t, len(first) >= 3, "a match to 3 wins took fewer than 3 rounds")
+	changed := false
+	for moveset in first {
+		testing.expect(t, moveset != "" && moveset != "mokujin", "a round ran no lent move set")
+		changed ||= moveset != first[0]
+	}
+	testing.expect(t, changed, "Mokujin kept one move set every round")
+	again, _ := mokujin_rounds(t, stock, 7)
+	testing.expect_value(t, len(again), len(first))
+	for moveset, round in first do if round < len(again) do testing.expect_value(t, again[round], moveset)
+	log.infof("Mokujin's move sets: %v", first[:])
 }

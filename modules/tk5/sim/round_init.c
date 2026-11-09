@@ -1,5 +1,6 @@
-// The round init as a phase starts it (T5RoundSetup). Camera, HUD, sound, effects, scene objects, stats and the
-// Mokujin move set swap are left out. The world has no mobs (a deviation, docs/rewrite.md) and no extras.
+// The round init as a phase starts it (T5RoundSetup). Camera, HUD, sound, effects, scene objects and stats are left
+// out; the Mokujin move set swap is the gameplay module's round_init hook. The world has no mobs (a deviation,
+// docs/rewrite.md) and no extras.
 #include "sim/round.h"
 
 #include "sim/blend.h"

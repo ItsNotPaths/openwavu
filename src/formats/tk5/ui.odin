@@ -32,7 +32,7 @@ FONTS :: [?]Font_Entry{
 	{19, "text_big", 0, 36},  // Latin, Cyrillic, Japanese
 }
 
-// One 1008x1080 character select render per entry from 1474, named by eye. Mokujin has no character row.
+// One 1008x1080 character select render per entry from 1474, named by eye.
 SELECT_RENDERS_FIRST :: 1474
 
 Select_Render :: struct {

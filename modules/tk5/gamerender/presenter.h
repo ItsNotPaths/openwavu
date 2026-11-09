@@ -19,8 +19,8 @@ uint32_t t5_asset_of(const unsigned char *path);
 void t5_stage_init(sqlite3 *db, const T5View *view);
 // The stage nodes of this frame, at most max; returns how many. midpoint: the fighters', metres.
 uint32_t t5_stage_nodes(const T5View *view, OwCamera camera, float midpoint_x, float midpoint_z, OwNode *nodes, uint32_t max);
-// The camera shots of both sides' moves.
-void t5_camera_init(sqlite3 *db, const T5View *view);
+// The camera shots of a side's moves, from the db character whose move set it runs.
+void t5_camera_load(sqlite3 *db, int side, const char *character);
 // A move's camera shot while it plays, else the fight camera: behind the line between the fighters, on the sim's camera
 // side, eased over the `seconds` since the last frame.
 OwCamera t5_camera(const T5View *view, float seconds);

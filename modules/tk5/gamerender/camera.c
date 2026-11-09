@@ -39,7 +39,8 @@ static int shot_count[T5_FIGHTER_COUNT];
 static T5KeyKind camera_channel_kind(int32_t channel) { return channel < 2 ? T5_KEY_POSITION : T5_KEY_VALUES; }
 
 // Moves are numbered in sheet order, as the sim's loader lays them out.
-static void load_shots(sqlite3 *db, int side, const char *character) {
+void t5_camera_load(sqlite3 *db, int side, const char *character) {
+    shot_count[side] = 0;
     sqlite3_stmt *rows;
     const char *query = "SELECT move.number, move_camera.frame, anim.file FROM "
                         "(SELECT key, row_number() OVER (ORDER BY rowid) - 1 AS number FROM move WHERE character = ?1) AS move "
@@ -56,10 +57,6 @@ static void load_shots(sqlite3 *db, int side, const char *character) {
             (int16_t)sqlite3_column_int(rows, 0), (int16_t)sqlite3_column_int(rows, 1), frames, (const CameraKey *)keys};
     }
     sqlite3_finalize(rows);
-}
-
-void t5_camera_init(sqlite3 *db, const T5View *view) {
-    for (int side = 0; side < T5_FIGHTER_COUNT; side++) load_shots(db, side, view->fighters[side].loadout.character);
 }
 
 static float screen_aspect(void) {

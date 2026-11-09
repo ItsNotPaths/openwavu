@@ -28,7 +28,9 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 		db.step(s)
 		return db.column_int64(s, 0)
 	}
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM character"), 36)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM character"), 37)
+	// A fighter with no body row would have no hurtboxes; Mokujin has his own whatever move set he takes.
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM character WHERE id NOT IN (SELECT character FROM body)"), 0)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part WHERE slot = 'body'"), 85)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 18339)  // 783 of them camera tracks
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM move_camera"), 342)  // every intro and win pose
@@ -57,7 +59,7 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image"), 1913)  // 1773 files, 140 names for one fighter's or stage's art
 	// The stock menus find art by stage and character id.
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'stage/*' AND substr(id, 7) NOT IN (SELECT id FROM stage)"), 0)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'face/*' AND substr(id, 6) NOT IN (SELECT id FROM character UNION VALUES ('random'), ('mokujin'))"), 0)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'face/*' AND substr(id, 6) NOT IN (SELECT id FROM character UNION VALUES ('random'))"), 0)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select/*'"), 240)  // unlit menu entries
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_lit/*'"), 240)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM image WHERE id GLOB 'select_renders/*'"), 54)
@@ -90,7 +92,7 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 		testing.expect(t, png_err == nil && image.width > 0 && image.height > 0, file)
 	}
 	testing.expect_value(t, db.step(images), db.DONE)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM texture"), 10938)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM texture"), 11038)
 	textures: ^db.Stmt
 	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT file FROM texture", -1, &textures, nil), db.OK) do return
 	defer db.finalize(textures)

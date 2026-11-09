@@ -68,25 +68,42 @@ static void load_parts(sqlite3 *db, int side, const T5Loadout *loadout) {
 }
 
 // No banks: the fighter keeps the sim's fingers.
-static void load_hands(sqlite3 *db, int side, const T5Loadout *loadout) {
+static void load_hands(sqlite3 *db, int side, const char *moveset) {
     size_t bytes;
     T5Arena arena;
     T5HandBanks banks = {0};
-    const char *failed = t5_load_hands_storage(db, loadout->character, &bytes);
+    const char *failed = t5_load_hands_storage(db, moveset, &bytes);
     if (!failed) failed = t5_new_arena(&arena, bytes);
-    if (!failed) failed = t5_load_hands(&banks, db, loadout->character, t5_read_pack_file, NULL, &arena);
-    if (!failed) visual.fighter[side].banks = banks;
+    if (!failed) failed = t5_load_hands(&banks, db, moveset, t5_read_pack_file, NULL, &arena);
+    visual.fighter[side].banks = failed ? (T5HandBanks){0} : banks;
+}
+
+static char loaded_movesets[T5_FIGHTER_COUNT][T5_NAME_BYTES];
+
+// The hands and camera shots of each side's move set; again when a round brings another (Mokujin).
+// (hole moveset-reload-leak :tags (tk5mod round-show) :sev polish) each reload takes a new hand arena and never frees the last.
+static void load_movesets(sqlite3 *db, const T5View *view) {
+    for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
+        const char *moveset = view->fighters[side].moveset;
+        if (strncmp(loaded_movesets[side], moveset, T5_NAME_BYTES) == 0) continue;
+        memcpy(loaded_movesets[side], moveset, T5_NAME_BYTES);
+        load_hands(db, side, moveset);
+        t5_camera_load(db, side, moveset);
+    }
+}
+
+static bool movesets_changed(const T5View *view) {
+    for (int side = 0; side < T5_FIGHTER_COUNT; side++)
+        if (strncmp(loaded_movesets[side], view->fighters[side].moveset, T5_NAME_BYTES) != 0) return true;
+    return false;
 }
 
 bool t5_scene_init(const T5View *view) {
     sqlite3 *db = ow_db_open(DB_PATH, sizeof DB_PATH - 1);
     if (!db) return false;
-    for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
-        load_parts(db, side, &view->fighters[side].loadout);
-        load_hands(db, side, &view->fighters[side].loadout);
-    }
+    for (int side = 0; side < T5_FIGHTER_COUNT; side++) load_parts(db, side, &view->fighters[side].loadout);
+    load_movesets(db, view);
     t5_stage_init(db, view);
-    t5_camera_init(db, view);
     t5_effects_init(db, view);
     t5_sound_init(db, view);
     sqlite3_close(db);
@@ -121,6 +138,13 @@ static void pose_fighter(OwTransform bones[POSED_BONES], const T5Rig *rig) {
 static const OwTransform PLACE_AT_ORIGIN = {.rotation = {0, 0, 0, 1}, .scale = {1, 1, 1}};
 
 void t5_scene_send(const T5View *view, float seconds) {
+    if (movesets_changed(view)) {
+        sqlite3 *db = ow_db_open(DB_PATH, sizeof DB_PATH - 1);
+        if (db) {
+            load_movesets(db, view);
+            sqlite3_close(db);
+        }
+    }
     t5_visual_step(&visual, view, seconds);
     OwScene *scene = &block.scene;
     scene->camera = t5_camera(view, seconds);
