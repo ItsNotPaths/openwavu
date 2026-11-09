@@ -31,6 +31,7 @@ Action :: enum u8 {
 	Install,
 	Uninstall,
 	Play,
+	Update,
 	Credits,
 	Url,
 	Toggle,
@@ -50,6 +51,21 @@ Element :: struct {
 }
 
 DEFAULT_GLOW :: [4]u8{0xff, 0x5a, 0x4a, 0xff}
+
+// The built-in actions every store front needs a button for (2026-11-08).
+REQUIRED_ACTIONS :: bit_set[Action]{.Install, .Uninstall, .Play, .Update, .Credits}
+
+// The built-in actions front has no button for, as front words: "update credits". "" when none are missing.
+missing_actions :: proc(front: Front) -> string {
+	present: bit_set[Action]
+	for element in front.elements do if element.kind == .Button do present += {element.action}
+	missing := strings.builder_make(context.temp_allocator)
+	for action in REQUIRED_ACTIONS - present {
+		if strings.builder_len(missing) > 0 do strings.write_byte(&missing, ' ')
+		strings.write_string(&missing, strings.to_lower(fmt.tprint(action), context.temp_allocator))
+	}
+	return strings.to_string(missing)
+}
 
 // Front text -> the front, or the first line that does not read. Strings point into text.
 read_front :: proc(text: string, allocator := context.allocator) -> (front: Front, err: string) {
@@ -194,6 +210,7 @@ read_bare :: proc(e: ^Element, w: Word) -> bool {
 	case e.kind == .Button && !w.quoted && w.text == "install": e.action = .Install
 	case e.kind == .Button && !w.quoted && w.text == "uninstall": e.action = .Uninstall
 	case e.kind == .Button && !w.quoted && w.text == "play": e.action = .Play
+	case e.kind == .Button && !w.quoted && w.text == "update": e.action = .Update
 	case e.kind == .Button && !w.quoted && w.text == "credits": e.action = .Credits
 	case: return false
 	}

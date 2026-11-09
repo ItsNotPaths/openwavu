@@ -33,6 +33,8 @@ settings_load :: proc(config_dir: string) -> (settings: Settings) {
 			if value != "" do append(&settings.favourites, strings.clone(value))
 		case "name":
 			strings.write_string(&settings.name, value)
+		case "tk5_files":
+			strings.write_string(&settings.tk5_files, value)
 		case "network":
 			if value == "" do continue
 			delete(settings.network)
@@ -50,6 +52,7 @@ settings_save :: proc(settings: Settings) {
 	fmt.sbprintfln(&text, "blend_fighters=%v", settings.blend_fighters)
 	fmt.sbprintfln(&text, "name=%s", strings.to_string(settings.name))
 	fmt.sbprintfln(&text, "network=%s", settings.network)
+	fmt.sbprintfln(&text, "tk5_files=%s", strings.to_string(settings.tk5_files))
 	for tile in settings.favourites do fmt.sbprintfln(&text, "favourite=%s", tile)
 	if os.write_entire_file(settings.file, strings.to_string(text)) != nil do fmt.eprintln("openwavu: could not save", settings.file)
 }
@@ -74,6 +77,7 @@ settings_destroy :: proc(settings: ^Settings) {
 	for tile in settings.favourites do delete(tile)
 	delete(settings.favourites)
 	strings.builder_destroy(&settings.name)
+	strings.builder_destroy(&settings.tk5_files)
 	delete(settings.network)
 }
 

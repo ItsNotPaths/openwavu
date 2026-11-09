@@ -18,6 +18,7 @@ Popup_Mode :: enum u8 {
 	Install,
 	Credits,
 	Uninstall,
+	Update,
 }
 
 Settings :: struct {
@@ -28,6 +29,7 @@ Settings :: struct {
 	favourites: [dynamic]string,  // tile names
 	name:       strings.Builder,  // the player's name online; free text
 	network:    string,  // the files host's name, or a full URL
+	tk5_files:  strings.Builder,  // what the installer offers to import: an RPCS3 folder, a game folder or a .pkg
 }
 
 // The sim steps at 60; a higher cap draws frames in between.
@@ -51,6 +53,7 @@ popup :: proc(l: ^Launcher, u: ^ui.Ui) -> (remove: bool) {
 		case .Install: install_popup(l, u)
 		case .Credits: credits_popup(l)
 		case .Uninstall: remove = uninstall_popup(l, u)
+		case .Update: if pick, is_pack := l.selected.(int); is_pack do update_popup(l, pick)
 		}
 	}
 	return
@@ -95,6 +98,18 @@ settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 		ui.label("Network", tint = ui.TEXT_DIM)
 		ui.spacer()
 		if settings_field(u, clay.ID("Network"), &l.network_edit, DEFAULT_NETWORK) do l.change = Switch_Network{}
+	}
+	if clay.UI()(ui.row(8)) {
+		ui.label("TK5 files", tint = ui.TEXT_DIM)
+		ui.spacer()
+		before := strings.clone(strings.to_string(l.settings.tk5_files), context.temp_allocator)
+		settings_field(u, clay.ID("Tk5Files"), &l.settings.tk5_files, "RPCS3 folder, game folder or .pkg")
+		if strings.to_string(l.settings.tk5_files) != before do settings_save(l.settings)
+		if ui.button(u, clay.ID("OpenInstaller"), ">") {
+			l.selected = Install_Screen{}
+			l.source = .Game_Files
+			l.popup.open = false
+		}
 	}
 	if l.settings.network != DEFAULT_NETWORK {
 		ui.label(fmt.tprintf("Packs here are approved by %s, not %s.", l.settings.network, DEFAULT_NETWORK), tint = ui.WARN)

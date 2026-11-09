@@ -6,10 +6,11 @@ bg     ui/select/058.png y=440  // the game's own group picture
 
 image  ui/pic0.png x=-94 y=-221 w=900  // its logo is at 364..956 x 279..520 of a clear 1000x560 frame
 
-button play      x=40  y=290 w=200 h=56 label="Play"
-button install   x=280 y=290 w=200 h=56 label="Install"
-button uninstall x=520 y=290 w=200 h=56 label="Uninstall"
-button credits   x=760 y=290 w=200 h=56 label="Credits"
+button play      x=40  y=290 w=176 h=56 label="Play"
+button update    x=232 y=290 w=176 h=56 label="Update"
+button install   x=424 y=290 w=176 h=56 label="Install"
+button uninstall x=616 y=290 w=176 h=56 label="Uninstall"
+button credits   x=808 y=290 w=176 h=56 label="Credits"
 
 rect   x=28 y=364 w=640 h=40 color=#000000b0
 text   "Built on this machine from your own game files." x=40 y=374 w=620 size=16 color=#c8cad0

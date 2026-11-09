@@ -46,7 +46,14 @@ browser_open :: proc(b: ^Browser, dir: string) {
 		return a.name < b.name
 	})
 	b.entries = entries[:]
-	b.is_game = os.exists(join(dir, "PARAM.SFO")) || os.is_dir(join(dir, "dev_hdd0")) || tk5.dir_pkg(dir) != ""
+	b.is_game = game_files(dir)
+}
+
+// An importer input: an RPCS3 folder, a game folder, a .pkg or a folder holding one.
+game_files :: proc(path: string) -> bool {
+	if path == "" do return false
+	if tk5.has_extension(path, ".pkg") do return os.is_file(path)
+	return os.exists(join(path, "PARAM.SFO")) || os.is_dir(join(path, "dev_hdd0")) || tk5.dir_pkg(path) != ""
 }
 
 browser_close :: proc(b: ^Browser) {

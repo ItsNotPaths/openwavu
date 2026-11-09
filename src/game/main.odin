@@ -11,9 +11,8 @@ import "../render"
 import "../titlepack"
 import "../ui"
 
-VERSION :: "openwavu 0.0.0-dev"
 
-// (hole app-shell :tags game) no ROM import, join path for lobby links, or system overlay (controls, video, audio).
+// (hole app-shell :tags game) no join path for lobby links, or system overlay (controls, video, audio).
 main :: proc() {
 	if len(os.args) == 3 && os.args[1] == "--package" {
 		os.exit(package_folder(os.args[2]))
@@ -40,14 +39,13 @@ main :: proc() {
 		os.exit(1)
 	}
 	defer ui.destroy(&u)
-	// (hole stock-rebuild :tags (game importer)) the stock pack is not rebuilt when its pack.toml version differs from this openwavu's importer; the [import] inputs are recorded for it.
 	l := Launcher{packs = titlepack.installed(), settings = settings_load(config)}
 	l.identity, l.identity_err = online.load_identity(titlepack.join_path(data, "identity.key"))
 	strings.write_string(&l.network_edit, l.settings.network)
 	if len(os.args) >= 3 && os.args[1] == "--front" {
 		l.selected = Front_Preview{os.args[2], len(os.args) > 3 ? os.args[3] : ""}
 	}
-	// (hole close-segfault :tags game :sev polish) the -o:speed build segfaulted once on close after an everything_launches 0.0.5 match (2026-11-06); a -debug -sanitize:address build did not repeat it.
+	// (hole close-segfault :tags (game alpha) :sev polish) the -o:speed build segfaulted once on close after an everything_launches 0.0.5 match (2026-11-06); a -debug -sanitize:address build did not repeat it.
 	defer launcher_destroy(&l)
 
 	last := sdl.GetTicksNS()

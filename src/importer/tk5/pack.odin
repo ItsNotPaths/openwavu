@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:sync"
+import "../../release"
 import "../../titlepack"
 
 PACK_ID :: "tekken5dr"
@@ -22,15 +23,17 @@ STOCK_MANIFEST :: #load("../../../modules/tk5/pack.toml", string)  // without ve
 // hash file (titlepack.folder_hash). inputs are recorded so an openwavu update can rebuild it.
 build_pack :: proc(inputs: []string, packs_dir: string, progress: ^Progress = nil) -> (err: string) {
 	if progress != nil do sync.atomic_store(&progress.total, PROGRESS_STEPS)
-	if !make_dir(packs_dir) do return fmt.aprintf("cannot create %s", packs_dir)
-	scratch := strings.clone(join(packs_dir, PACK_ID + ".source"))  // an unpacked .pkg
+	packs := strings.clone(packs_dir)  // run frees temp memory
+	defer delete(packs)
+	if !make_dir(packs) do return fmt.aprintf("cannot create %s", packs)
+	scratch := strings.clone(join(packs, PACK_ID + ".source"))  // an unpacked .pkg
 	defer delete(scratch)
 	os.remove_all(scratch)
 	defer os.remove_all(scratch)
 	game: Game
 	if game, err = find_game(inputs, scratch); err != "" do return
 	defer destroy_game(game)
-	stage := strings.clone(join(packs_dir, PACK_ID + ".part"))  // run frees temp memory
+	stage := strings.clone(join(packs, PACK_ID + ".part"))  // run frees temp memory
 	defer delete(stage)
 	os.remove_all(stage)
 	defer os.remove_all(stage)
@@ -38,7 +41,7 @@ build_pack :: proc(inputs: []string, packs_dir: string, progress: ^Progress = ni
 	if err = write_pack_files(stage, inputs); err != "" do return
 	digest, hash_err := titlepack.folder_hash(stage)
 	if hash_err != "" do return strings.clone(hash_err)
-	pack := join(packs_dir, STOCK_PACK)
+	pack := join(packs, STOCK_PACK)
 	os.remove(titlepack.folder_hash_path(pack))
 	os.remove_all(pack)
 	if os.rename(stage, pack) != nil do return fmt.aprintf("cannot move the pack into %s", pack)
@@ -47,10 +50,20 @@ build_pack :: proc(inputs: []string, packs_dir: string, progress: ^Progress = ni
 	return
 }
 
+// A .mod release: this openwavu's root files over the stock pack's, then its hash again. The game data stays.
+refresh_pack :: proc(pack: string, progress: ^Progress = nil) -> (err: string) {
+	inputs, has_inputs := titlepack.import_inputs(pack, context.temp_allocator)
+	if !has_inputs do return fmt.aprintf("%s has no [import] inputs", pack)
+	if err = write_pack_files(pack, inputs); err != "" do return
+	digest, hash_err := titlepack.folder_hash(pack, progress)
+	if hash_err == "" do hash_err = titlepack.write_folder_hash(pack, digest)
+	return strings.clone(hash_err)
+}
+
 // pack.toml, the front, the modules and the menu font: the files a pack needs at its root.
 write_pack_files :: proc(stage: string, inputs: []string) -> (err: string) {
 	toml := strings.builder_make(context.temp_allocator)
-	fmt.sbprintfln(&toml, "version = %s", quote(IMPORTER_VERSION))
+	fmt.sbprintfln(&toml, "version = %s", quote(release.current()))
 	fmt.sbprint(&toml, STOCK_MANIFEST)
 	fmt.sbprintln(&toml, "\n[import]")
 	fmt.sbprintfln(&toml, "schema = %s", quote(SCHEMA_VERSION))

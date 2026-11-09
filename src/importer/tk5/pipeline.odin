@@ -12,10 +12,11 @@ import "../../audio"
 import "../../db"
 import convert "../../convert/tk5"
 import formats "../../formats/tk5"
+import "../../release"
+import "../../titlepack"
 
 TK5_SCHEMA :: #load("../../db/tk5/schema.sql", string)
 SCHEMA_VERSION :: "1"
-IMPORTER_VERSION :: "0.1.0"
 SKELETON_NAMES := [convert.BODY_BONES]string{
 	"root", "hips", "spine", "chest", "pelvis", "neck", "head",
 	"r_clavicle", "r_upperarm", "r_forearm", "r_hand", "l_clavicle", "l_upperarm", "l_forearm", "l_hand",
@@ -37,10 +38,7 @@ Import :: struct {
 	sound_packs: map[[32]byte]string,  // SHA-256 of a sound pack -> the bank its files were written under
 }
 
-// Steps of one import, counted with atomics so another thread can show them.
-Progress :: struct {
-	done, total: int,
-}
+Progress :: titlepack.Progress
 
 // One step per character, stage, 2D art entry and font, one each for the music, the sounds, the select renders, the rest and the pack file.
 PROGRESS_STEPS :: len(formats.CHARACTERS) + formats.STAGE_COUNT + len(formats.ART_ENTRIES) + len(formats.FONTS) + 5
@@ -84,9 +82,9 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	db.insert(w, "source", "title_id", game.build.title_id)
 	db.insert(w, "source", "elf_sha256", game.build.elf_sha256)
 	db.insert(w, "source", "schema_version", SCHEMA_VERSION)
-	db.insert(w, "source", "importer_version", IMPORTER_VERSION)
+	db.insert(w, "source", "importer_version", release.current())
 
-	// (hole import-skips :tags importer) a part, bank or stage that does not read is skipped without a message; the pack looks complete.
+	// (hole import-skips :tags (importer alpha) :sev blocker) a part, bank or stage that does not read is skipped without a message: its stock hash differs, so it can not play online. It should fail the import with the error, and the player imports again.
 	if err = import_characters(&im); err != "" do return err
 	common := read_entry(im.archive, formats.COMMON_ANIMS) or_else nil
 	write_bank(&im, "common", common)

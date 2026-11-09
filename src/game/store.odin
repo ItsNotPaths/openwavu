@@ -6,6 +6,7 @@ import "core:strings"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
 import "../download"
+import "../release"
 import "../titlepack"
 import "../ui"
 
@@ -16,6 +17,7 @@ Store :: struct {
 	listing:     Listing,  // GET /store, started when the store column first shows
 	versions:    Listing,  // GET /versions/<id> of the picked store pack
 	versions_id: string,
+	release:     ^download.Job,  // GET /release: the network's latest openwavu
 	cache:       map[string]^download.Job,  // by hash; a failed one stays, so it is not tried again
 	install:     Install,
 }
@@ -45,6 +47,7 @@ store_destroy :: proc(store: ^Store) {
 	listing_destroy(&store.listing)
 	listing_destroy(&store.versions)
 	delete(store.versions_id)
+	if store.release != nil do download.destroy(store.release)
 	for hash, job in store.cache {
 		download.destroy(job)
 		delete(hash)
@@ -101,10 +104,14 @@ store_poll :: proc(l: ^Launcher) {
 
 store_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 	if l.store.listing.job == nil do l.store.listing.job = download.start(strings.concatenate({network_url(l.settings.network), "/store"}, context.temp_allocator))
+	if l.store.release == nil do l.store.release = download.start(strings.concatenate({network_url(l.settings.network), "/release"}, context.temp_allocator))
 	err := listing_poll(&l.store.listing)
 	if clay.UI()(side_column()) {
 		column_head(u, "STORE", clay.ID("SearchStore"), &l.search_store)
 		if err != "" do ui.label(fmt.tprintf("The store did not answer: %s", err), tint = ui.TEXT_DIM)
+		if latest, newer := newer_release(&l.store); newer {
+			ui.label(fmt.tprintf("openwavu %s is out; this is %s. Online play needs the latest.", latest, release.current()), tint = ui.WARN)
+		}
 		if clay.UI()(slot_list(u, clay.ID("StoreList"))) {
 			for pack, index in l.store.listing.packs {
 				if !matches(pack.id, strings.to_string(l.search_store)) do continue
@@ -218,4 +225,12 @@ install_start :: proc(install: ^Install, network: string, versions: []titlepack.
 		previous = index + 1 < len(versions) ? strings.clone(versions[index + 1].version) : "",
 		locked   = locked,
 	}
+}
+
+// The network's latest openwavu, when this build does not know it yet.
+@(private = "file")
+newer_release :: proc(store: ^Store) -> (latest: string, newer: bool) {
+	if !download.finished(store.release) || store.release.err != "" do return
+	latest = strings.trim_space(string(store.release.body))
+	return latest, latest != "" && !release.known(latest)
 }

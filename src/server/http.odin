@@ -6,14 +6,15 @@ import "core:net"
 import "core:strings"
 import "core:thread"
 import "core:time"
+import "../release"
 import "../titlepack"
 
-// The files role over HTTP: GET /store, /versions/<id>, /files/<name>. One thread per connection, Connection: close.
+// The files role over HTTP: GET /store, /versions/<id>, /files/<name>, /release. One thread per connection, Connection: close.
 FILES_ENDPOINT :: "127.0.0.1:9280"  // the box's TLS proxy (Caddy) forwards here
 REQUEST_MAX :: 8192
 REQUEST_TIMEOUT :: 30 * time.Second  // a silent client frees its thread after this
 
-// (hole network-files :tags server) the files role has no /release /regions /submit /note, no review CLI, and serves plain HTTP only (TLS is Apache's).
+// (hole network-files :tags server) the files role has no /regions /submit /note, no review CLI, and serves plain HTTP only (TLS is Apache's).
 
 serve_files :: proc(dir: string) -> (ok: bool) {
 	endpoint, _ := net.parse_endpoint(FILES_ENDPOINT)
@@ -56,6 +57,8 @@ answer :: proc(client: net.TCP_Socket, dir: string) {
 		respond(client, "200 OK", "text/plain", pack_lines(listing(dir), strings.trim_prefix(target, "/versions/"), false))
 	case strings.has_prefix(target, "/files/"):
 		send_pack_file(client, dir, strings.trim_prefix(target, "/files/"))
+	case target == "/release":
+		respond(client, "200 OK", "text/plain", fmt.tprintf("%s\n", release.current()))
 	case:
 		respond(client, "404 Not Found", "text/plain", "not found\n")
 	}

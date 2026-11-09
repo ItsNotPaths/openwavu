@@ -24,6 +24,22 @@ Title_Pack :: struct {
 	params:            []Param,   // sorted by name
 }
 
+// A stock folder's [import] inputs: the game files it was built from.
+import_inputs :: proc(pack: string, allocator := context.allocator) -> (inputs: []string, ok: bool) {
+	manifest := read_manifest(pack, context.temp_allocator) or_return
+	if len(manifest) > int(max(c.int)) do return
+	result := toml_parse(raw_data(manifest), c.int(len(manifest)))
+	defer toml_free(result)
+	if !result.ok do return
+	list := toml_get(toml_get(result.top, "import"), "inputs")
+	if list.type != .Array do return
+	paths := make([dynamic]string, allocator)
+	for element in list.array.elements[:list.array.size] {
+		if path, is_text := toml_text(element); is_text do append(&paths, strings.clone(path, allocator))
+	}
+	return paths[:], len(paths) > 0
+}
+
 // pack.toml text -> the pack. id and version are required; name falls back to the id. Each [modes.x] needs both a sim
 // and a presenter.
 read_titlepack :: proc(manifest: string, allocator := context.allocator) -> (tp: Title_Pack, ok: bool) {

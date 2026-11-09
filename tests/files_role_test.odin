@@ -69,3 +69,24 @@ wait_download :: proc(url, sha256, path: string) -> (err: string) {
 	for !download.finished(job) do time.sleep(time.Millisecond)
 	return strings.clone(job.err, context.temp_allocator)
 }
+
+// A store front needs a button for every built-in action; the stock front has them all.
+@(test)
+front_without_builtin_button_is_refused :: proc(t: ^testing.T) {
+	dir :: FILES_DIR + "_buttons"
+	os.remove_all(dir)
+	defer os.remove_all(dir)
+	os.make_directory_all(dir + "/pack")
+	os.make_directory_all(dir + "/store")
+	_ = os.write_entire_file(dir + "/pack/" + titlepack.MANIFEST, transmute([]byte)string("id = \"old\"\nversion = \"1.0\"\n"))
+	_ = os.write_entire_file(dir + "/pack/" + titlepack.FRONT, transmute([]byte)string("button play x=0 y=0\nbutton install x=0 y=60\nbutton uninstall x=0 y=120\n"))
+	if !testing.expect_value(t, titlepack.write_tar(dir + "/pack", dir + "/store/upload.tar"), "") do return
+	server.incorporate_all(dir + "/store")
+	testing.expect_value(t, len(server.listing(dir + "/store")), 0)
+
+	stock, err := os.read_entire_file("modules/tk5/front.owf", context.temp_allocator)
+	if !testing.expect(t, err == nil, "no stock front") do return
+	front, front_err := titlepack.read_front(string(stock), context.temp_allocator)
+	if !testing.expect_value(t, front_err, "") do return
+	testing.expect_value(t, titlepack.missing_actions(front), "")
+}

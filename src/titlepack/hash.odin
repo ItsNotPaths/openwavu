@@ -7,13 +7,20 @@ import "core:encoding/hex"
 import "core:os"
 import "core:slice"
 import "core:strings"
+import "core:sync"
 
 Hash :: [32]u8
 
+// Steps of a long job, counted with atomics so another thread can show them.
+Progress :: struct {
+	done, total: int,
+}
+
 // Every file under dir but pack.toml (its [import] names this machine's paths), as sorted "path NUL sha256" lines.
-folder_hash :: proc(dir: string) -> (digest: Hash, err: string) {
+folder_hash :: proc(dir: string, progress: ^Progress = nil) -> (digest: Hash, err: string) {
 	paths: []string
 	if paths, err = files_under(dir, context.temp_allocator); err != "" do return
+	if progress != nil do sync.atomic_store(&progress.total, len(paths))
 	folder: hash.Context
 	hash.init(&folder, .SHA256)
 	for path in paths {
@@ -23,6 +30,7 @@ folder_hash :: proc(dir: string) -> (digest: Hash, err: string) {
 		hash.update(&folder, transmute([]byte)path)
 		hash.update(&folder, {0})
 		hash.update(&folder, file)
+		if progress != nil do sync.atomic_add(&progress.done, 1)
 	}
 	hash.final(&folder, digest[:])
 	return

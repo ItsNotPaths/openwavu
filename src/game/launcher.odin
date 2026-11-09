@@ -8,6 +8,7 @@ import "core:strings"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
 import "../online"
+import "../release"
 import "../render"
 import "../titlepack"
 import "../ui"
@@ -105,6 +106,7 @@ launcher :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 	}
 	l.change = nil
 	store_poll(l)
+	import_poll(l)
 	path, file := "", ""
 	switch pick in l.selected {
 	case int: path = l.packs[pick].path
@@ -145,6 +147,7 @@ installed_column :: proc(l: ^Launcher, u: ^ui.Ui) {
 						continue
 					}
 					picked, is_pack := l.selected.(int)
+					// (hole stock-lock :tags (game importer) :sev polish) a stock folder has no lock: not taking a stock update keeps no copy of it.
 					lock: Maybe(bool) = strings.has_suffix(pack.path, ".tar") ? pack.locked : nil  // stock folders do not lock
 					if click := ui.installed_slot(u, clay.ID("Pack", u32(i)), tile, installed_thumb(l, u, pack), is_pack && picked == i, favourites, lock); click != .None {
 						clicked, clicked_pack = click, i
@@ -198,6 +201,8 @@ install_screen :: proc(l: ^Launcher, u: ^ui.Ui) {
 		case .Game_Files:
 			if l.importer.thread != nil {
 				import_status(l, u)
+			} else if path, picked := settings_game(l, u).?; picked {
+				import_start(&l.importer, {path})
 			} else if browser(&l.browser, u) {
 				import_start(&l.importer, l.browser.picked[:])
 			}
@@ -216,9 +221,12 @@ install_screen :: proc(l: ^Launcher, u: ^ui.Ui) {
 // The pack's front; without one (or with one that does not read) its name, Play and why.
 pack_page :: proc(l: ^Launcher, u: ^ui.Ui, name: string, pack: Maybe(int)) {
 	if l.front.err == "" {
-		action, target := front_page(&l.front, u, pack != nil)
+		pick, is_pack := pack.?
+		waiting := is_pack && update_waiting(l, l.packs[pick])
+		action, target := front_page(&l.front, u, is_pack, is_pack && !waiting && !importing(&l.importer), waiting)
 		switch action {
 		case .Play: l.play = pack
+		case .Update: update_pack(l, pick)
 		case .Url: _ = sdl.OpenURL(strings.clone_to_cstring(target, context.temp_allocator))
 		case .Install: l.popup = {.Install, true}
 		case .Uninstall: l.popup = {.Uninstall, true}
@@ -232,8 +240,13 @@ pack_page :: proc(l: ^Launcher, u: ^ui.Ui, name: string, pack: Maybe(int)) {
 	}) {
 		ui.label(name, 26, engraved = true, face = .Display)
 		ui.label(l.front.err, tint = ui.TEXT_DIM)
-		if pack != nil && ui.button(u, clay.ID("Play"), "Play") {
-			l.play = pack
+		if pick, is_pack := pack.?; is_pack {
+			waiting := update_waiting(l, l.packs[pick])
+			can_play := !waiting && !importing(&l.importer)
+			if clay.UI()(ui.row(8)) {
+				if ui.button(u, clay.ID("Play"), "Play", can_play ? ui.BUTTON : ui.OFF_BUTTON) && can_play do l.play = pack
+				if waiting && ui.button(u, clay.ID("Update"), "Update") do update_pack(l, pick)
+			}
 		}
 	}
 }
@@ -254,7 +267,7 @@ top_bar :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 		custom = ui.painted(ui.Bar{}),
 		floating = {attachTo = .Root, offset = {0, (shown - 1) * (ui.BAR_HEIGHT + 12)}, zIndex = 1},
 	}) {
-		ui.label(VERSION, tint = ui.TEXT_DIM, face = .Display)
+		ui.label(fmt.tprintf("openwavu %s", release.current()), tint = ui.TEXT_DIM, face = .Display)
 		if clay.UI()({floating = {attachTo = .Parent, attachment = {.CenterCenter, .CenterCenter}}}) {
 			ui.label(clock(), engraved = true, face = .Display)
 		}

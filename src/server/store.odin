@@ -78,6 +78,7 @@ cut_front :: proc(files: titlepack.Pack_Files, out_path: string) -> (err: string
 		append(&paths, titlepack.FRONT)
 		front, front_err := titlepack.read_front(string(text), context.temp_allocator)
 		if front_err != "" do return fmt.tprintf("the front does not read: %s", front_err)
+		if missing := titlepack.missing_actions(front); missing != "" do return fmt.tprintf("the front has no button for: %s", missing)
 		append(&paths, front.font)
 		for element in front.elements do append(&paths, element.file)
 	}

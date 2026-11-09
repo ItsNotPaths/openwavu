@@ -83,7 +83,7 @@ front_changed :: proc(path, file: string) -> time.Time {
 
 // The canvas between the columns. It scrolls under them, and its backgrounds reach behind them.
 // Returns the button the player used.
-front_page :: proc(v: ^Front_View, u: ^ui.Ui, installed: bool) -> (action: titlepack.Action, target: string) {
+front_page :: proc(v: ^Front_View, u: ^ui.Ui, installed, can_play, can_update: bool) -> (action: titlepack.Action, target: string) {
 	scale := (u.size.x - 2 * ui.COLUMN_WIDTH) / titlepack.FRONT_WIDTH
 	layers := make([dynamic]ui.Layer, context.temp_allocator)
 	for e in v.front.elements do if e.kind == .Bg && shown(v, e) && v.textures[e.file] != nil {
@@ -103,7 +103,7 @@ front_page :: proc(v: ^Front_View, u: ^ui.Ui, installed: bool) -> (action: title
 		}) {
 			for e, i in v.front.elements {
 				if e.kind == .Bg || !shown(v, e) do continue
-				if element(v, u, e, u32(i), scale, installed) {
+				if element(v, u, e, u32(i), scale, installed, can_play, can_update) {
 					action, target = e.action, e.target
 				}
 			}
@@ -120,7 +120,7 @@ shown :: proc(v: ^Front_View, e: titlepack.Element) -> bool {
 
 // One element as a box floating on the canvas; true when it is a button and was used.
 @(private = "file")
-element :: proc(v: ^Front_View, u: ^ui.Ui, e: titlepack.Element, index: u32, scale: f32, installed: bool) -> (used: bool) {
+element :: proc(v: ^Front_View, u: ^ui.Ui, e: titlepack.Element, index: u32, scale: f32, installed, can_play, can_update: bool) -> (used: bool) {
 	texture := v.textures[e.file]
 	size := [2]f32{e.w, e.h}
 	switch e.kind {
@@ -166,6 +166,10 @@ element :: proc(v: ^Front_View, u: ^ui.Ui, e: titlepack.Element, index: u32, sca
 				off = !v.can_uninstall
 			case .Uninstall:
 				off = !installed
+			case .Play:
+				off = !can_play
+			case .Update:
+				off = !can_update
 			}
 			glow := [4]f32{f32(v.front.glow.r), f32(v.front.glow.g), f32(v.front.glow.b), f32(v.front.glow.a)} / 255
 			used = ui.front_button(u, clay.ID("FrontButton", index), text, size * scale, u16(ui.TEXT_SIZE * scale), glow, texture, off)
