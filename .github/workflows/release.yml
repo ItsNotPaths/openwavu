@@ -27,7 +27,10 @@ jobs:
         run: |
           odin=$(sed -n 's/^odin = "\(.*\)"/\1/p' mise.toml)
           curl -fL --retry 3 "https://github.com/odin-lang/Odin/releases/download/$odin/odin-linux-amd64-$odin.tar.gz" | tar xz -C /opt
-          echo "$(dirname "$(find /opt -maxdepth 3 -name odin -type f | head -1)")" >> "$GITHUB_PATH"
+          odin_root=$(dirname "$(find /opt -maxdepth 3 -name odin -type f | head -1)")
+          # vendor:stb ships as C source on Linux.
+          "$odin_root/vendor/stb/src/build_stb.sh" unix
+          echo "$odin_root" >> "$GITHUB_PATH"
       # Saved as soon as the deps build, so a failed build still keeps them.
       - id: vendor
         uses: actions/cache/restore@v4
