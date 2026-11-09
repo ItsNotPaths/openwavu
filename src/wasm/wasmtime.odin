@@ -3,11 +3,21 @@ package wasm
 
 import "core:c"
 
-// (hole windows-build :tags (tools alpha)) no Windows build: no wasmtime import here, download-deps.sh and build.sh are bash-only and fetch no Windows libs (wasmtime, clay, sqlite, SDL3, SDL3_ttf).
 when ODIN_OS == .Linux {
 	foreign import lib {"../../vendor/wasmtime/lib/libwasmtime.a", "system:pthread", "system:dl", "system:m"}
 } else when ODIN_OS == .Darwin {
 	foreign import lib {"../../vendor/wasmtime/lib/libwasmtime.a", "system:System.framework"}
+} else when ODIN_OS == .Windows {
+	foreign import lib {
+		"../../vendor/wasmtime/lib/wasmtime.lib",
+		"system:ws2_32.lib",
+		"system:advapi32.lib",
+		"system:userenv.lib",
+		"system:ntdll.lib",
+		"system:shell32.lib",
+		"system:ole32.lib",
+		"system:bcrypt.lib",
+	}
 }
 
 C_Engine :: struct {}

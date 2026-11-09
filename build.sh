@@ -13,46 +13,54 @@ for arg in "$@"; do
 done
 mkdir -p build
 if [ "$only_server" = 1 ]; then ./download-deps.sh server; else ./download-deps.sh; fi
+# Host C libraries: cc, or zig for MSVC on Windows (MSYS2 bash), where Odin links with MSVC.
+c_compiler=(cc -fPIC) archiver=(ar) exe= windows=
+case "$(uname -s)" in
+	MINGW*|MSYS*) c_compiler=(vendor/zig/zig cc -target x86_64-windows-msvc) archiver=(vendor/zig/zig ar) exe=.exe windows=1 ;;
+esac
 if [ ! -f vendor/tomlc17/libtomlc17.a ] || [ vendor/tomlc17/tomlc17.c -nt vendor/tomlc17/libtomlc17.a ]; then
-	cc -O2 -c vendor/tomlc17/tomlc17.c -o vendor/tomlc17/tomlc17.o
-	ar rcs vendor/tomlc17/libtomlc17.a vendor/tomlc17/tomlc17.o
+	"${c_compiler[@]}" -O2 -c vendor/tomlc17/tomlc17.c -o vendor/tomlc17/tomlc17.o
+	"${archiver[@]}" rcs vendor/tomlc17/libtomlc17.a vendor/tomlc17/tomlc17.o
 fi
-odin build src/server -out:build/openwavu-server "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
+# The server runs on Linux only.
+[ -z "$windows" ] && odin build src/server -out:build/openwavu-server "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
 [ "$only_server" = 1 ] && exit 0
 if [ ! -f vendor/sqlite/libsqlite3.a ] || [ vendor/sqlite/sqlite3.c -nt vendor/sqlite/libsqlite3.a ]; then
-	cc -O2 -c vendor/sqlite/sqlite3.c -o vendor/sqlite/sqlite3.o
-	ar rcs vendor/sqlite/libsqlite3.a vendor/sqlite/sqlite3.o
+	"${c_compiler[@]}" -O2 -c vendor/sqlite/sqlite3.c -o vendor/sqlite/sqlite3.o
+	"${archiver[@]}" rcs vendor/sqlite/libsqlite3.a vendor/sqlite/sqlite3.o
 fi
 # The Clay binding links <os dir>/clay.a next to clay.odin.
 case "$(uname -s)-$(uname -m)" in
 	Darwin-arm64) clay_lib=vendor/clay/macos-arm64/clay.a ;;
 	Darwin-*) clay_lib=vendor/clay/macos/clay.a ;;
+	MINGW*|MSYS*) clay_lib=vendor/clay/windows/clay.lib ;;
 	*) clay_lib=vendor/clay/linux/clay.a ;;
 esac
 if [ ! -f "$clay_lib" ] || [ vendor/clay/clay.h -nt "$clay_lib" ]; then
 	mkdir -p "$(dirname "$clay_lib")"
-	cc -O2 -fPIC -DCLAY_IMPLEMENTATION -x c -c vendor/clay/clay.h -o vendor/clay/clay.o
-	ar rcs "$clay_lib" vendor/clay/clay.o
+	"${c_compiler[@]}" -O2 -DCLAY_IMPLEMENTATION -x c -c vendor/clay/clay.h -o vendor/clay/clay.o
+	"${archiver[@]}" rcs "$clay_lib" vendor/clay/clay.o
 fi
-# The cgltf binding links lib/cgltf.a (lib/darwin/cgltf.a on macOS) next to cgltf.odin.
+# The cgltf binding links lib/cgltf.a (lib/darwin/cgltf.a on macOS, lib/cgltf.lib on Windows) next to cgltf.odin.
 case "$(uname -s)" in
 	Darwin) cgltf_lib=vendor/cgltf/lib/darwin/cgltf.a ;;
+	MINGW*|MSYS*) cgltf_lib=vendor/cgltf/lib/cgltf.lib ;;
 	*) cgltf_lib=vendor/cgltf/lib/cgltf.a ;;
 esac
 if [ ! -f "$cgltf_lib" ] || [ vendor/cgltf/src/cgltf.h -nt "$cgltf_lib" ]; then
 	mkdir -p "$(dirname "$cgltf_lib")"
-	cc -O2 -fPIC -c vendor/cgltf/src/cgltf.c -o vendor/cgltf/cgltf.o
-	ar rcs "$cgltf_lib" vendor/cgltf/cgltf.o
+	"${c_compiler[@]}" -O2 -c vendor/cgltf/src/cgltf.c -o vendor/cgltf/cgltf.o
+	"${archiver[@]}" rcs "$cgltf_lib" vendor/cgltf/cgltf.o
 fi
 # ow_input.h is header-only; the Odin binding (src/command) links it.
 if [ ! -f build/libow_input.a ] || [ sdk/include/ow_input.h -nt build/libow_input.a ]; then
-	cc -std=c23 -O2 -DOW_INPUT_IMPLEMENTATION -x c -c sdk/include/ow_input.h -o build/ow_input.o
-	ar rcs build/libow_input.a build/ow_input.o
+	"${c_compiler[@]}" -std=c23 -O2 -DOW_INPUT_IMPLEMENTATION -x c -c sdk/include/ow_input.h -o build/ow_input.o
+	"${archiver[@]}" rcs build/libow_input.a build/ow_input.o
 fi
 # The importer's ffmpeg glue; the Odin binding (src/audio) links it.
 if [ ! -f build/libow_audio.a ] || [ src/audio/ffmpeg.c -nt build/libow_audio.a ]; then
-	cc -std=c23 -O2 -Ivendor/ffmpeg/include -c src/audio/ffmpeg.c -o build/ow_audio.o
-	ar rcs build/libow_audio.a build/ow_audio.o
+	"${c_compiler[@]}" -std=c23 -O2 -Ivendor/ffmpeg/include -c src/audio/ffmpeg.c -o build/ow_audio.o
+	"${archiver[@]}" rcs build/libow_audio.a build/ow_audio.o
 fi
 # The SDK's SQLite for pack modules (sdk/src/ow_db.c has its VFS): SQLITE_OS_OTHER, so only openwavu imports.
 mkdir -p build/sdk
@@ -102,11 +110,18 @@ glue=src/imports/sdl_glue.odin
 if [ -n "$(find src/imports/sdl_allow.txt src/tools/sdlglue vendor/sdl3/dynapi vendor/sdl3_ttf/include -newer "$glue" -print -quit)" ]; then
 	odin run src/tools/sdlglue -vet -strict-style
 fi
-odin build src/importer -out:build/openwavu-import "${optimize[@]}" -vet -strict-style
+odin build src/importer -out:build/openwavu-import$exe "${optimize[@]}" -vet -strict-style
 # vendor:sdl3, vendor:ENet and vendor:curl link "system:SDL3", "system:enet", "system:curl" and "system:z": the -L dirs
 # make those the vendored static libs.
 sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf -Lvendor/enet -Lvendor/curl"
-odin build src/game -out:build/openwavu "${optimize[@]}" -vet -strict-style "$sdl_libs"
+if [ -n "$windows" ]; then
+	# vendor:sdl3 links SDL3.lib and SDL3_ttf.lib from Odin's own folder, the DLL import libs: the static ones go over them.
+	odin_sdl=$(cygpath -u "$(odin root)")/vendor/sdl3
+	cp vendor/sdl3/lib/SDL3-static.lib "$odin_sdl/SDL3.lib"
+	cp vendor/sdl3_ttf/SDL3_ttf*.lib "$odin_sdl/ttf/SDL3_ttf.lib"
+	sdl_libs=-extra-linker-flags:"setupapi.lib winmm.lib imm32.lib version.lib ole32.lib oleaut32.lib gdi32.lib user32.lib shell32.lib advapi32.lib cfgmgr32.lib uuid.lib"
+fi
+odin build src/game -out:build/openwavu$exe "${optimize[@]}" -vet -strict-style "$sdl_libs"
 # Stage viewer title pack: build/stageview.tar.
 mkdir -p build/stageview
 vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -mexec-model=reactor -s -Wl,--import-symbols \
@@ -114,7 +129,7 @@ vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -mexec-model=reactor -s -Wl,
 	-o build/stageview/stageview.wasm modules/stageview/*.c build/sdk/libow_db.a
 cp modules/stageview/pack.toml build/stageview/
 build/openwavu --package build/stageview >/dev/null
-odin build src/tools/bot -out:build/openwavu-bot "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
+odin build src/tools/bot -out:build/openwavu-bot$exe "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
 if [ "$run_tests" = 1 ]; then

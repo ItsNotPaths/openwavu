@@ -35,6 +35,25 @@ MICHROMA_SHA256=b62301163788bc5b7f8fcac0b74b184e34e1827e577b499ecb724da065098f87
 FFMPEG=7.1.1
 FFMPEG_SHA256=733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1
 mkdir -p vendor
+# Windows (MSYS2 bash, MSVC on PATH): Odin ships ENet and curl (schannel) there, so those are not built.
+windows=
+case "$(uname -s)" in MINGW*|MSYS*) windows=1 ;; esac
+# CMake builds: static, PIC, and the static MSVC runtime that Odin links on Windows.
+cmake_flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded)
+
+# unpack <archive> <dir>: the archive's one top folder becomes dir.
+unpack() {
+	mkdir -p "$2"
+	case "$1" in
+		*.zip)
+			unzip_dir=$(mktemp -d)
+			unzip -q "$1" -d "$unzip_dir"
+			mv "$unzip_dir"/*/* "$2"/
+			rm -rf "$unzip_dir"
+			;;
+		*) tar xf "$1" -C "$2" --strip-components=1 ;;
+	esac
+}
 
 # fetch <url> <file> <sha256>
 fetch() {
@@ -49,14 +68,17 @@ fetch() {
 if [ ! -x vendor/zig/zig ]; then
 	case "$(uname -s)-$(uname -m)" in
 		Linux-x86_64) target=x86_64-linux zig_sha256=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00 ;;
+		MINGW*-x86_64|MSYS*-x86_64) target=x86_64-windows zig_sha256=68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e ;;
 		Linux-aarch64) target=aarch64-linux zig_sha256=ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17 ;;
 		Darwin-arm64) target=aarch64-macos zig_sha256=b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489 ;;
 		Darwin-x86_64) target=x86_64-macos zig_sha256=0387557ed1877bc6a2e1802c8391953baddba76081876301c522f52977b52ba7 ;;
 		*) echo "download-deps: no zig build for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 	esac
+	zig_archive=zig-$target-$ZIG.tar.xz
+	[ -n "$windows" ] && zig_archive=zig-$target-$ZIG.zip
 	zig_dir=$(mktemp -d)
-	fetch "https://ziglang.org/download/$ZIG/zig-$target-$ZIG.tar.xz" "$zig_dir/zig.tar.xz" "$zig_sha256"
-	mkdir -p vendor/zig && tar xJf "$zig_dir/zig.tar.xz" -C vendor/zig --strip-components=1
+	fetch "https://ziglang.org/download/$ZIG/$zig_archive" "$zig_dir/$zig_archive" "$zig_sha256"
+	unpack "$zig_dir/$zig_archive" vendor/zig
 	rm -rf "$zig_dir"
 	echo "vendor/zig: $ZIG $target"
 fi
@@ -72,7 +94,7 @@ if [ ! -f vendor/tomlc17/tomlc17.c ]; then
 fi
 
 # UDP for online play, built static for vendor:ENet's "system:enet".
-if [ ! -f vendor/enet/libenet.a ]; then
+if [ -z "$windows" ] && [ ! -f vendor/enet/libenet.a ]; then
 	enet_dir=$(mktemp -d)
 	fetch "https://github.com/lsalzman/enet/archive/refs/tags/v$ENET.tar.gz" "$enet_dir/enet.tar.gz" "$ENET_SHA256"
 	tar xzf "$enet_dir/enet.tar.gz" -C "$enet_dir" --strip-components=1
@@ -97,11 +119,15 @@ if [ ! -d vendor/wasmtime ]; then
 		Linux-aarch64) target=aarch64-linux ;;
 		Darwin-arm64) target=aarch64-macos ;;
 		Darwin-x86_64) target=x86_64-macos ;;
+		MINGW*-x86_64|MSYS*-x86_64) target=x86_64-windows ;;
 		*) echo "download-deps: no wasmtime build for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 	esac
-	name=wasmtime-$WASMTIME-$target-c-api
-	curl -fL --retry 3 "https://github.com/bytecodealliance/wasmtime/releases/download/$WASMTIME/$name.tar.xz" | tar xJ -C vendor
-	mv "vendor/$name" vendor/wasmtime
+	wasmtime_archive=wasmtime-$WASMTIME-$target-c-api.tar.xz
+	[ -n "$windows" ] && wasmtime_archive=wasmtime-$WASMTIME-$target-c-api.zip
+	wasmtime_dir=$(mktemp -d)
+	curl -fL --retry 3 "https://github.com/bytecodealliance/wasmtime/releases/download/$WASMTIME/$wasmtime_archive" -o "$wasmtime_dir/$wasmtime_archive"
+	unpack "$wasmtime_dir/$wasmtime_archive" vendor/wasmtime
+	rm -rf "$wasmtime_dir"
 	echo "vendor/wasmtime: $WASMTIME $target"
 fi
 
@@ -133,14 +159,14 @@ if [ ! -f vendor/clay/clay.h ]; then
 fi
 
 # Headers, the static lib and src/dynapi/SDL_dynapi_procs.h, the function list the pack modules' SDL imports come from.
-if [ ! -f vendor/sdl3/lib/libSDL3.a ]; then
+if [ ! -f vendor/sdl3/dynapi/SDL_dynapi_procs.h ]; then
 	sdl_dir=$(mktemp -d)
 	fetch "https://github.com/libsdl-org/SDL/releases/download/release-$SDL/SDL3-$SDL.tar.gz" "$sdl_dir/sdl.tar.gz" "$SDL_SHA256"
 	mkdir -p "$sdl_dir/src" && tar xzf "$sdl_dir/sdl.tar.gz" -C "$sdl_dir/src" --strip-components=1
-	cmake -S "$sdl_dir/src" -B "$sdl_dir/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/vendor/sdl3" \
+	cmake -S "$sdl_dir/src" -B "$sdl_dir/build" "${cmake_flags[@]}" -DCMAKE_INSTALL_PREFIX="$PWD/vendor/sdl3" \
 		-DCMAKE_INSTALL_LIBDIR=lib -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF -DSDL_EXAMPLES=OFF >/dev/null
-	cmake --build "$sdl_dir/build" -j >/dev/null
-	cmake --install "$sdl_dir/build" >/dev/null
+	cmake --build "$sdl_dir/build" --config Release -j >/dev/null
+	cmake --install "$sdl_dir/build" --config Release >/dev/null
 	mkdir -p vendor/sdl3/dynapi
 	cp "$sdl_dir/src/src/dynapi/SDL_dynapi_procs.h" "$sdl_dir/src/LICENSE.txt" vendor/sdl3/dynapi/
 	rm -rf "$sdl_dir"
@@ -155,11 +181,14 @@ if [ ! -f vendor/sdl3_ttf/include/SDL3_ttf/SDL_ttf.h ]; then
 	rm -rf "$ttf_dir/src/external/freetype" && mkdir -p "$ttf_dir/src/external/freetype"
 	tar xzf "$ttf_dir/freetype.tar.gz" -C "$ttf_dir/src/external/freetype" --strip-components=1
 	# English-only UI: no HarfBuzz shaping, no SVG glyphs.
-	cmake -S "$ttf_dir/src" -B "$ttf_dir/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_PREFIX_PATH="$PWD/vendor/sdl3" \
+	cmake -S "$ttf_dir/src" -B "$ttf_dir/build" "${cmake_flags[@]}" -DBUILD_SHARED_LIBS=OFF -DCMAKE_PREFIX_PATH="$PWD/vendor/sdl3" \
+		-DCMAKE_INSTALL_PREFIX="$ttf_dir/install" -DCMAKE_INSTALL_LIBDIR=lib \
 		-DSDLTTF_VENDORED=ON -DSDLTTF_HARFBUZZ=OFF -DSDLTTF_PLUTOSVG=OFF -DSDLTTF_SAMPLES=OFF >/dev/null
-	cmake --build "$ttf_dir/build" -j >/dev/null
+	cmake --build "$ttf_dir/build" --config Release -j >/dev/null
+	cmake --install "$ttf_dir/build" --config Release >/dev/null
 	mkdir -p vendor/sdl3_ttf/include
-	cp "$ttf_dir/build/libSDL3_ttf.a" "$ttf_dir/src/LICENSE.txt" vendor/sdl3_ttf/
+	find "$ttf_dir/install/lib" -maxdepth 1 -type f -name '*SDL3_ttf*' -exec cp {} vendor/sdl3_ttf/ \;
+	cp "$ttf_dir/src/LICENSE.txt" vendor/sdl3_ttf/
 	cp -r "$ttf_dir/src/include/SDL3_ttf" vendor/sdl3_ttf/include/
 	rm -rf "$ttf_dir"
 	echo "vendor/sdl3_ttf: $SDL_TTF, freetype $FREETYPE"
@@ -170,11 +199,12 @@ if [ ! -x vendor/glslang/glslang ]; then
 	glslang_dir=$(mktemp -d)
 	fetch "https://github.com/KhronosGroup/glslang/archive/refs/tags/$GLSLANG.tar.gz" "$glslang_dir/glslang.tar.gz" "$GLSLANG_SHA256"
 	mkdir -p "$glslang_dir/src" && tar xzf "$glslang_dir/glslang.tar.gz" -C "$glslang_dir/src" --strip-components=1
-	cmake -S "$glslang_dir/src" -B "$glslang_dir/build" -DCMAKE_BUILD_TYPE=Release -DENABLE_OPT=OFF -DGLSLANG_TESTS=OFF \
+	cmake -S "$glslang_dir/src" -B "$glslang_dir/build" "${cmake_flags[@]}" -DENABLE_OPT=OFF -DGLSLANG_TESTS=OFF \
 		-DENABLE_HLSL=OFF -DBUILD_SHARED_LIBS=OFF >/dev/null
-	cmake --build "$glslang_dir/build" -j --target glslang-standalone >/dev/null
+	cmake --build "$glslang_dir/build" --config Release -j --target glslang-standalone >/dev/null
 	mkdir -p vendor/glslang
-	cp "$glslang_dir/build/StandAlone/glslang" "$glslang_dir/src/LICENSE.txt" vendor/glslang/
+	find "$glslang_dir/build/StandAlone" -type f \( -name glslang -o -name glslang.exe \) -exec cp {} vendor/glslang/ \;
+	cp "$glslang_dir/src/LICENSE.txt" vendor/glslang/
 	rm -rf "$glslang_dir"
 	echo "vendor/glslang: $GLSLANG"
 fi
@@ -196,7 +226,7 @@ fi
 # HTTPS for the network's files host: zlib and mbedTLS compiled as they are, curl through cmake with only HTTP(S).
 # vendor:curl links "system:curl" and "system:z": libcurl.a holds mbedTLS too, so link order can not lose it.
 # No CA bundle path is built in; the game finds the system's at run time.
-if [ ! -f vendor/curl/libcurl.a ]; then
+if [ -z "$windows" ] && [ ! -f vendor/curl/libcurl.a ]; then
 	curl_dir=$(mktemp -d)
 	mkdir -p vendor/curl "$curl_dir/zlib" "$curl_dir/mbedtls" "$curl_dir/curl"
 	fetch "https://github.com/madler/zlib/releases/download/v$ZLIB/zlib-$ZLIB.tar.gz" "$curl_dir/zlib.tar.gz" "$ZLIB_SHA256"
@@ -240,6 +270,7 @@ fi
 # glb reading: the cgltf binding and C source that ship with the installed Odin, so the two always match.
 if [ ! -f vendor/cgltf/cgltf.odin ]; then
 	odin_cgltf="$(odin root)/vendor/cgltf"
+	[ -n "$windows" ] && odin_cgltf=$(cygpath -u "$odin_cgltf")
 	mkdir -p vendor/cgltf/src
 	cp "$odin_cgltf/cgltf.odin" "$odin_cgltf/LICENSE" vendor/cgltf/
 	cp "$odin_cgltf/src/cgltf.c" "$odin_cgltf/src/cgltf.h" "$odin_cgltf/src/cgltf_write.h" vendor/cgltf/src/
@@ -252,7 +283,9 @@ if [ ! -f vendor/ffmpeg/lib/libavcodec.a ]; then
 	fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG.tar.xz" "$ffmpeg_dir/ffmpeg.tar.xz" "$FFMPEG_SHA256"
 	mkdir -p "$ffmpeg_dir/src" && tar xJf "$ffmpeg_dir/ffmpeg.tar.xz" -C "$ffmpeg_dir/src" --strip-components=1
 	prefix="$PWD/vendor/ffmpeg"
-	(cd "$ffmpeg_dir/src" && ./configure --prefix="$prefix" --disable-everything --disable-programs --disable-doc \
+	toolchain=()
+	[ -n "$windows" ] && toolchain=(--toolchain=msvc --extra-cflags=-MT)
+	(cd "$ffmpeg_dir/src" && ./configure --prefix="$prefix" "${toolchain[@]}" --disable-everything --disable-programs --disable-doc \
 		--disable-network --disable-autodetect --disable-avformat --disable-avdevice --disable-avfilter --disable-swscale \
 		--disable-swresample --disable-x86asm --disable-pthreads --enable-static --disable-shared \
 		--enable-decoder=atrac3p,adpcm_psx --enable-encoder=flac >/dev/null && make -j >/dev/null && make install >/dev/null)

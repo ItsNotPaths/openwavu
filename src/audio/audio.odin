@@ -3,11 +3,20 @@ package audio
 
 import "core:c"
 
-foreign import lib {
-	"../../build/libow_audio.a",
-	"../../vendor/ffmpeg/lib/libavcodec.a",
-	"../../vendor/ffmpeg/lib/libavutil.a",
-	"system:m",
+when ODIN_OS == .Windows {
+	foreign import lib {
+		"../../build/libow_audio.a",
+		"../../vendor/ffmpeg/lib/libavcodec.a",
+		"../../vendor/ffmpeg/lib/libavutil.a",
+		"system:bcrypt.lib",
+	}
+} else {
+	foreign import lib {
+		"../../build/libow_audio.a",
+		"../../vendor/ffmpeg/lib/libavcodec.a",
+		"../../vendor/ffmpeg/lib/libavutil.a",
+		"system:m",
+	}
 }
 
 Codec :: enum c.int {
