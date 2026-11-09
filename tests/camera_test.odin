@@ -49,10 +49,10 @@ camera_tracks_match_the_game :: proc(t: ^testing.T) {
 	f, err := os.open(TK5 + "/game/USRDIR/T55DATA1.BIN")
 	if err != nil do return
 	defer os.close(f)
-	archive := tk5.Archive{table, f}
+	im := tk5.Import{archive = {table, f}}
 
 	// Paul's first intro: a close shot from the front at head height.
-	container, has := tk5.read_entry(archive, formats.CHARACTERS[0].container)
+	container, has := tk5.read_entry(&im, formats.CHARACTERS[0].container)
 	sections, split := formats.sections(container, context.temp_allocator)
 	if !testing.expect(t, has && split && len(sections) > formats.BANK_CAMERAS) do return
 	if got, read := camera_frame(t, sections[formats.BANK_CAMERAS], 0, 0, .Scaled); read {
@@ -60,7 +60,7 @@ camera_tracks_match_the_game :: proc(t: ^testing.T) {
 	}
 
 	// The first throw camera, turned to the fighter tracks' frame: the game's (347, 1642, -5517) becomes (5517, 1642, 347).
-	global, has_global := tk5.read_entry(archive, formats.GLOBAL_CAMERAS)
+	global, has_global := tk5.read_entry(&im, formats.GLOBAL_CAMERAS)
 	if !testing.expect(t, has_global) do return
 	if got, read := camera_frame(t, global, 0, 0, .Plain); read {
 		expect_camera(t, got, {{5517, 1642, 347}, {200, 1200, 200}, 38 * math.RAD_PER_DEG}, "throw camera 0")
@@ -88,7 +88,8 @@ throw_cameras_name_real_tracks :: proc(t: ^testing.T) {
 	f, open_err := os.open(TK5 + "/game/USRDIR/T55DATA1.BIN")
 	if open_err != nil do return
 	defer os.close(f)
-	global, _ := tk5.read_entry(tk5.Archive{table, f}, formats.GLOBAL_CAMERAS)
+	im := tk5.Import{archive = {table, f}}
+	global, _ := tk5.read_entry(&im, formats.GLOBAL_CAMERAS)
 	bank, bank_read := formats.read_camera_bank(global)
 	if !testing.expect(t, bank_read) do return
 	for r in records {

@@ -134,6 +134,13 @@ Unknown_Table :: struct {
 UNKNOWN_TABLE_HEADERS :: [?]int{0x208, 0x210, 0x220, 0x228, 0x230, 0x238}
 
 // Strings and unknown tables point into `data`.
+// Embedded bank `slot` of an unpacked motbin; not ok for an empty slot (type word 0).
+embedded_bank :: proc(m: Motbin, data: []byte, slot: int) -> (bank: []byte, ok: bool) {
+	start := m.bank_offsets[slot]
+	if start + 2 > len(data) || le_u16(data, start) == 0 do return
+	return data[start:], true
+}
+
 read_motbin :: proc(data: []byte, allocator := context.allocator) -> (m: Motbin, ok: bool) {
 	context.allocator = allocator
 	d := data

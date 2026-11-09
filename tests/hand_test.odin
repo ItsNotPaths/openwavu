@@ -79,10 +79,10 @@ hand_clips_load_like_the_game :: proc(t: ^testing.T) {
 	characters := formats.CHARACTERS
 	for name, i in MOTBIN_NAMES {
 		defer free_all(context.temp_allocator)
-		packed, _ := tk5.read_entry(im.archive, formats.MOTBIN_FIRST + 2 * i)
+		packed, _ := tk5.read_entry(&im, formats.MOTBIN_FIRST + 2 * i)
 		data, unpacked := formats.unlz(packed, context.temp_allocator)
 		m, read := formats.read_motbin(data, context.temp_allocator)
-		container, has := tk5.read_entry(im.archive, characters[i].container)
+		container, has := tk5.read_entry(&im, characters[i].container)
 		sections, split := formats.sections(container, context.temp_allocator)
 		if !testing.expect(t, unpacked && read && has && split && len(sections) > formats.BANK_HANDS, name) do continue
 		owner := formats.container_owner(characters[i].container)

@@ -10,13 +10,13 @@ import "../../fx"
 // The shared sparks (effects/common/<n>.fx) and dust (effects/dust/<n>.fx), drawing the shared element package.
 import_shared_effects :: proc(im: ^Import) -> (ok: bool) {
 	defer free_all(context.temp_allocator)
-	data := read_entry(im.archive, formats.EFFECT_ELEMENTS) or_return
+	data := read_entry(im, formats.EFFECT_ELEMENTS) or_return
 	elements := formats.read_element_package(data, context.temp_allocator) or_return
 	files := write_textures(im, "effects", package_textures(elements))
 	Shared :: struct {entry: int, owner: string}
 	for shared in ([]Shared{{formats.EFFECT_SPARKS, "common"}, {formats.EFFECT_DUST, "dust"}}) {
-		efp := read_entry(im.archive, shared.entry) or_continue
-		records := formats.read_efp(efp, context.temp_allocator) or_continue
+		efp := read_entry(im, shared.entry) or_return
+		records := formats.read_efp(efp, context.temp_allocator) or_return
 		for record, index in records {
 			if record.element >= len(elements.blocks) do continue
 			write_effect(im, shared.owner, index, record, elements.blocks[record.element], elements.keyframes, files)
@@ -28,7 +28,7 @@ import_shared_effects :: proc(im: ^Import) -> (ok: bool) {
 // A character's records (effects/<owner>/<n>.fx, written once per owner) and its hit table, from its first costume group.
 // Record n draws block n of the character's own package: the game writes that element over the record's at spawn.
 import_character_effects :: proc(im: ^Import, character: formats.Character, owner: string) -> (ok: bool) {
-	data := read_entry(im.archive, character.container + formats.GROUP_EFFECTS) or_return
+	data := read_entry(im, character.container + formats.GROUP_EFFECTS) or_return
 	sections := formats.sections(data, context.temp_allocator) or_return
 	if len(sections) < 3 do return false
 	rows := formats.read_effect_rows(sections[0]) or_return
@@ -55,6 +55,7 @@ package_textures :: proc(elements: formats.Element_Package) -> convert.Textures 
 }
 
 // The effect file of a record: written when write_file, else only named (another character owns it).
+// Not ok for a record that draws nothing.
 @(private = "file")
 write_effect :: proc(im: ^Import, owner: string, index: int, record: formats.Efp_Record, block: formats.Element_Block, keyframes: []byte, files: convert.Texture_Files, write_file := true) -> (file: string, ok: bool) {
 	tracks: []formats.Efp_Track
@@ -62,7 +63,10 @@ write_effect :: proc(im: ^Import, owner: string, index: int, record: formats.Efp
 	effect := convert.record_effect(record, block, tracks, files, context.temp_allocator) or_return
 	file = fmt.tprintf("effects/%s/%d.fx", owner, index)
 	if !write_file do return file, true
-	data := fx.write(effect, context.temp_allocator) or_return
-	make_dir(join(im.root, "effects", owner)) or_return
-	return file, os.write_entire_file(join(im.root, file), data) == nil
+	data, encoded := fx.write(effect, context.temp_allocator)
+	if !encoded || !make_dir(join(im.root, "effects", owner)) || os.write_entire_file(join(im.root, file), data) != nil {
+		fail(im, "cannot write %s", file)
+		return
+	}
+	return file, true
 }

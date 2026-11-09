@@ -36,6 +36,7 @@ Import :: struct {
 	progress: ^Progress,
 	textures: map[string]bool,  // <owner>/<hash> with a texture row
 	sound_packs: map[[32]byte]string,  // SHA-256 of a sound pack -> the bank its files were written under
+	failure:  string,  // the first part that did not read or write; it fails the import
 }
 
 Progress :: titlepack.Progress
@@ -84,20 +85,19 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	db.insert(w, "source", "schema_version", SCHEMA_VERSION)
 	db.insert(w, "source", "importer_version", release.current())
 
-	// (hole import-skips :tags (importer alpha) :sev blocker) a part, bank or stage that does not read is skipped without a message: its stock hash differs, so it can not play online. It should fail the import with the error, and the player imports again.
 	if err = import_characters(&im); err != "" do return err
-	common := read_entry(im.archive, formats.COMMON_ANIMS) or_else nil
-	write_bank(&im, "common", common)
-	cameras := read_entry(im.archive, formats.GLOBAL_CAMERAS) or_else nil
-	write_camera_bank(&im, "cameras", cameras, .Plain)
-	if throw_cameras, read := formats.read_throw_cameras(game.eboot, game.build, context.temp_allocator); read do convert.write_throw_camera_rows(w, throw_cameras)
+	write_bank(&im, "common", read_entry(&im, formats.COMMON_ANIMS) or_else nil)
+	write_camera_bank(&im, "cameras", read_entry(&im, formats.GLOBAL_CAMERAS) or_else nil, .Plain)
+	throw_cameras, read := formats.read_throw_cameras(game.eboot, game.build, context.temp_allocator)
+	if !read do fail(&im, "throw cameras did not read")
+	convert.write_throw_camera_rows(w, throw_cameras)
 	// (hole side-switch-flags :tags (importer round-show) :needs coded-cameras) no side switch flag per throw_camera row: at import, place each row's shot against the anims of the throws that use its category and flag the rows whose shot ends with the fighters swapped on screen.
 	stage_tracks := import_music(&im)  // before the stages that name them
 	for id in 0 ..< formats.STAGE_COUNT {
 		import_stage(&im, id, stage_tracks[id])
 		step(&im)
 	}
-	import_shared_effects(&im)
+	if !import_shared_effects(&im) do fail(&im, "shared effects did not read")
 	import_sounds(&im)
 	import_sound_ids(&im)
 	import_images(&im)
@@ -105,7 +105,13 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	thread.join(hasher)
 	if !data_hash.ok do return "cannot read T55DATA1.BIN"
 	db.insert(w, "source", "data_sha256", string(hex.encode(data_hash.digest[:], context.temp_allocator)))
-	return db.finish(w)
+	if err = db.finish(w); err != "" do return err
+	return im.failure
+}
+
+// A part that does not read would change the stock hash, so it can not play online: the import fails instead.
+fail :: proc(im: ^Import, format: string, args: ..any) {
+	if im.failure == "" do im.failure = fmt.aprintf(format, ..args)
 }
 
 step :: proc(im: ^Import) {
@@ -127,14 +133,14 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 	db.insert(w, "character", c.id, c.name, i64(char_index), i64(c.model))
 	owner := formats.container_owner(c.container)
 
-	packed := read_entry(im.archive, formats.MOTBIN_FIRST + 2 * char_index) or_else nil
+	packed := read_entry(im, formats.MOTBIN_FIRST + 2 * char_index) or_else nil
 	data, unpacked := formats.unlz(packed, context.temp_allocator)
 	m, read := formats.read_motbin(data, context.temp_allocator)
 	if !unpacked || !read do return fmt.tprintf("%s: motbin did not read", c.id)
 	if err = convert.write_moveset_rows(w, c.id, owner, char_index, m); err != "" do return err
-	if m.bank_offsets[0] < len(data) do write_bank(im, convert.embedded_owner(c.id), data[m.bank_offsets[0]:])
-	if m.bank_offsets[formats.BANK_HANDS] < len(data) do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), data[m.bank_offsets[formats.BANK_HANDS]:])
-	if m.bank_offsets[formats.BANK_CAMERAS] < len(data) do write_camera_bank(im, fmt.tprintf("%s/cameras", convert.embedded_owner(c.id)), data[m.bank_offsets[formats.BANK_CAMERAS]:], .Scaled)
+	if bank, has := formats.embedded_bank(m, data, 0); has do write_bank(im, convert.embedded_owner(c.id), bank)
+	if bank, has := formats.embedded_bank(m, data, formats.BANK_HANDS); has do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), bank)
+	if bank, has := formats.embedded_bank(m, data, formats.BANK_CAMERAS); has do write_camera_bank(im, fmt.tprintf("%s/cameras", convert.embedded_owner(c.id)), bank, .Scaled)
 	skeleton, has_skeleton := character_skeleton(im, c)
 	if !has_skeleton do return fmt.tprintf("%s: skeleton did not read", c.id)
 	convert.write_skeleton_rows(w, c.id, skeleton)
@@ -144,30 +150,39 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 
 	first, count := formats.costume_groups(c.container)
 	for k in 0 ..< count {
-		model, has := read_entry(im.archive, first + k * formats.GROUP_SIZE + formats.GROUP_MODEL)
-		if !has do continue
+		model, has := read_entry(im, first + k * formats.GROUP_SIZE + formats.GROUP_MODEL)
+		if !has {
+			fail(im, "%s: costume %d model is missing", c.id, k + 1)
+			continue
+		}
 		costume := fmt.tprintf("%d", k + 1)
 		part := fmt.tprintf("%s_%s", owner, costume)
 		parts := []string{part, fmt.tprintf("%s_lod", part)}
 		if owner == c.id {
-			if !import_parts(im, owner, parts, model) do continue
+			if !import_parts(im, owner, parts, model) {
+				fail(im, "%s: costume %s did not read", c.id, costume)
+				continue
+			}
 			group := first + k * formats.GROUP_SIZE
 			write_sound_bank(im, fmt.tprintf("%s/voices", part), group + formats.GROUP_VOICES)
 			write_sound_bank(im, fmt.tprintf("%s/stream_voices", part), group + formats.GROUP_STREAM_VOICES)
 		}
 		db.insert(w, "costume", c.id, costume)
-		if voice, read_voice := formats.read_costume_voice(im.game.eboot, im.game.build, first + k * formats.GROUP_SIZE); read_voice do db.insert(w, "costume_voice", c.id, costume, i64(voice))
+		voice, read_voice := formats.read_costume_voice(im.game.eboot, im.game.build, first + k * formats.GROUP_SIZE)
+		if !read_voice do fail(im, "%s: costume %s voice did not read", c.id, costume)
+		db.insert(w, "costume_voice", c.id, costume, i64(voice))
 		for p in parts do db.insert(w, "costume_part", c.id, costume, p)
 	}
 	if owner == c.id {
-		container := read_entry(im.archive, c.container) or_else nil
-		sections, _ := formats.sections(container, context.temp_allocator)
+		container := read_entry(im, c.container) or_else nil
+		sections, read_sections := formats.sections(container, context.temp_allocator)
+		if !read_sections do fail(im, "%s: container did not read", c.id)
 		// (hole face-anims :tags (importer fighter-detail)) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
 		if len(sections) > 0 do write_bank(im, owner, sections[0])
 		if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
 		if len(sections) > formats.BANK_CAMERAS do write_camera_bank(im, fmt.tprintf("%s/cameras", owner), sections[formats.BANK_CAMERAS], .Scaled)
 	}
-	import_character_effects(im, c, owner)
+	if !import_character_effects(im, c, owner) do fail(im, "%s: effects did not read", c.id)
 	return ""
 }
 
@@ -242,7 +257,7 @@ costume_swings :: proc(sections: [][]byte) -> (mop: formats.Mop) {
 
 // The sim's skeleton: the one of the first costume.
 character_skeleton :: proc(im: ^Import, c: formats.Character) -> (s: convert.Sim_Skeleton, ok: bool) {
-	model := read_entry(im.archive, c.container + formats.GROUP_MODEL) or_return
+	model := read_entry(im, c.container + formats.GROUP_MODEL) or_return
 	sections := formats.sections(model, context.temp_allocator) or_return
 	return convert.sim_skeleton(largest_skeleton(sections))
 }
@@ -255,11 +270,11 @@ idle_head_top :: proc(im: ^Import, c: formats.Character, m: formats.Motbin, data
 	bank_data: []byte
 	switch {
 	case anim & 0x4000 != 0:
-		container := read_entry(im.archive, c.container) or_return
+		container := read_entry(im, c.container) or_return
 		banks := formats.sections(container, context.temp_allocator) or_return
 		if len(banks) == 0 do return
 		bank_data = banks[0]
-	case anim & 0x8000 != 0: bank_data = read_entry(im.archive, formats.COMMON_ANIMS) or_return
+	case anim & 0x8000 != 0: bank_data = read_entry(im, formats.COMMON_ANIMS) or_return
 	case: bank_data = data[m.bank_offsets[0]:]
 	}
 	bank := formats.read_bank(bank_data) or_return
@@ -272,7 +287,10 @@ idle_head_top :: proc(im: ^Import, c: formats.Character, m: formats.Motbin, data
 // Returns the file of every hash that has one, written now or before.
 write_textures :: proc(im: ^Import, owner: string, textures: convert.Textures) -> (files: convert.Texture_Files) {
 	files = make(convert.Texture_Files, context.temp_allocator)
-	if !make_dir(join(im.root, "textures", owner)) do return
+	if !make_dir(join(im.root, "textures", owner)) {
+		fail(im, "cannot create textures/%s", owner)
+		return
+	}
 	hashes, _ := slice.map_keys(textures, context.temp_allocator)
 	slice.sort(hashes)
 	for hash in hashes {
@@ -284,7 +302,10 @@ write_textures :: proc(im: ^Import, owner: string, textures: convert.Textures) -
 			continue
 		}
 		dds, ok := convert.texture_dds(t, context.temp_allocator)
-		if !ok || os.write_entire_file(join(im.root, file), dds) != nil do continue
+		if !ok || os.write_entire_file(join(im.root, file), dds) != nil {
+			fail(im, "texture %s did not convert", key)
+			continue
+		}
 		db.insert(&im.w, "texture", owner, i64(hash), file)
 		im.textures[strings.clone(key)] = true
 		files[hash] = file
@@ -295,9 +316,14 @@ write_textures :: proc(im: ^Import, owner: string, textures: convert.Textures) -
 // Every anim of a body bank as anims/<owner>/<idx>.anim. Ids that share a record share the file of the first one.
 write_bank :: proc(im: ^Import, owner: string, data: []byte) {
 	bank, ok := formats.read_bank(data)
-	if !ok || bank.count == 0 do return
-	dir := join(im.root, "anims", owner)
-	if !make_dir(dir) do return
+	if !ok {
+		fail(im, "%s: anim bank did not read", owner)
+		return
+	}
+	if !make_dir(join(im.root, "anims", owner)) {
+		fail(im, "cannot create anims/%s", owner)
+		return
+	}
 	Written :: struct {file: string, frames: int}
 	written := make(map[int]Written, context.temp_allocator)  // by record start
 	for i in 0 ..< bank.count {
@@ -307,9 +333,11 @@ write_bank :: proc(im: ^Import, owner: string, data: []byte) {
 			continue
 		}
 		a, decoded := formats.read_anim(bank, i, context.temp_allocator)
-		if !decoded do continue
 		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
-		if !convert.write_anim(join(im.root, file), a) do continue
+		if !decoded || !convert.write_anim(join(im.root, file), a) {
+			fail(im, "%s: anim %d did not convert", owner, i)
+			continue
+		}
 		written[start] = {file, a.frames}
 		db.insert(&im.w, "anim", owner, i64(i), i64(a.frames), file)
 	}
@@ -318,14 +346,22 @@ write_bank :: proc(im: ^Import, owner: string, data: []byte) {
 // Every clip of a finger bank as anims/<owner>/<idx>.anim. The pose bank's clip 0 is the pose library: frame i = pose i.
 write_hand_bank :: proc(im: ^Import, owner: string, data: []byte) {
 	bank, ok := formats.read_hand_bank(data)
-	if !ok do return
-	dir := join(im.root, "anims", owner)
-	if !make_dir(dir) do return
+	if !ok {
+		fail(im, "%s: hand bank did not read", owner)
+		return
+	}
+	if !make_dir(join(im.root, "anims", owner)) {
+		fail(im, "cannot create anims/%s", owner)
+		return
+	}
 	for i in 0 ..< bank.count {
 		frames, decoded := formats.read_hand_clip(bank, i, context.temp_allocator)
-		if !decoded do continue
 		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
-		if convert.write_hand_anim(join(im.root, file), frames) do db.insert(&im.w, "anim", owner, i64(i), i64(len(frames)), file)
+		if !decoded || !convert.write_hand_anim(join(im.root, file), frames) {
+			fail(im, "%s: hand clip %d did not convert", owner, i)
+			continue
+		}
+		db.insert(&im.w, "anim", owner, i64(i), i64(len(frames)), file)
 	}
 }
 
@@ -333,14 +369,23 @@ write_hand_bank :: proc(im: ^Import, owner: string, data: []byte) {
 // 0x8153 names the fighter's own bank, even when the move's anim is in common (King, Roger, Armor King).
 write_camera_bank :: proc(im: ^Import, owner: string, data: []byte, packing: convert.Camera_Packing) {
 	bank, ok := formats.read_camera_bank(data)
-	if !ok do return
-	dir := join(im.root, "anims", owner)
-	if !make_dir(dir) do return
+	if !ok {
+		fail(im, "%s: camera bank did not read", owner)
+		return
+	}
+	if !make_dir(join(im.root, "anims", owner)) {
+		fail(im, "cannot create anims/%s", owner)
+		return
+	}
 	for i in 0 ..< bank.count {
 		raw, decoded := formats.read_clip(bank, i, context.temp_allocator)
-		if !decoded do continue
 		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
-		if frames, written := convert.write_camera_anim(join(im.root, file), raw, bank.channels, packing); written do db.insert(&im.w, "anim", owner, i64(i), i64(frames), file)
+		frames, written := convert.write_camera_anim(join(im.root, file), raw, bank.channels, packing)
+		if !decoded || !written {
+			fail(im, "%s: camera track %d did not convert", owner, i)
+			continue
+		}
+		db.insert(&im.w, "anim", owner, i64(i), i64(frames), file)
 	}
 }
 
@@ -352,11 +397,14 @@ stage_id :: proc(index: int) -> string {
 // music_track: -1 for none.
 import_stage :: proc(im: ^Import, index: int, music_track: int) {
 	defer free_all(context.temp_allocator)
-	data, has := read_entry(im.archive, formats.STAGE_FIRST + 3 * index)
-	if !has do return
-	s, ok := formats.read_stage(data, context.temp_allocator)
-	if !ok do return
+	data, has := read_entry(im, formats.STAGE_FIRST + 3 * index)
+	if !has do return  // a cut stage
 	id := stage_id(index)
+	s, ok := formats.read_stage(data, context.temp_allocator)
+	if !ok {
+		fail(im, "stage %s did not read", id)
+		return
+	}
 
 	textures := make(convert.Textures, context.temp_allocator)
 	list, _ := formats.read_ntp3(s.sections[1], context.temp_allocator)
@@ -373,7 +421,10 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 		if len(nud) == 0 || i >= len(mifs) || i >= formats.STAGE_LAYERS do continue
 		group, read := formats.read_ndp3(nud, context.temp_allocator)
 		nodes, nodes_read := formats.read_mif_nodes(mifs[i], context.temp_allocator)
-		if !read || !nodes_read || len(nodes) != len(group) do continue
+		if !read || !nodes_read || len(nodes) != len(group) {
+			fail(im, "stage %s: layer %d did not read", id, i)
+			continue
+		}
 		for mesh, k in group {
 			mesh := mesh
 			mesh.name = nodes[k].name  // _DRWOFF_ in the name: a broken state, hidden at start
@@ -391,9 +442,15 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 	// (hole stage-break-pieces :tags importer :sev polish) section 4 (flying pieces of breakable props) is not exported.
 	file := fmt.tprintf("stages/%s.glb", id)
 	texture_files := write_textures(im, id, textures)
-	if len(meshes) > 0 && !convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:], layers[:]) do return
+	if len(meshes) > 0 && !convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:], layers[:]) {
+		fail(im, "stage %s: model did not write", id)
+		return
+	}
 	collision, surfaces := fmt.tprintf("stages/%s.collision.glb", id), fmt.tprintf("stages/%s.surfaces", id)
-	if !convert.write_stage_collision(join(im.root, collision), join(im.root, surfaces), s) do return
+	if !convert.write_stage_collision(join(im.root, collision), join(im.root, surfaces), s) {
+		fail(im, "stage %s: collision did not write", id)
+		return
+	}
 	music: db.Value = music_track >= 0 ? fmt.tprintf("%d", music_track) : db.Null{}
 	db.insert(&im.w, "stage", id, id, i64(index), file, collision, surfaces, music, f64(s.period / convert.MM), f64(s.radius / convert.MM))
 	for tile in tiles do db.insert(&im.w, "stage_tile", id, i64(formats.STAGE_LAYERS + tile.mesh + 1), f64(tile.home_x / convert.MM), f64(tile.home_z / convert.MM))
@@ -425,42 +482,48 @@ import_sounds :: proc(im: ^Import) {
 import_sound_ids :: proc(im: ^Import) {
 	w, eboot, build := &im.w, im.game.eboot, im.game.build
 	defer free_all(context.temp_allocator)
-	if table, has := read_entry(im.archive, formats.VOICE_TABLE); has {
-		rows, _ := formats.read_voice_table(table, context.temp_allocator)
-		for row in rows do db.insert(w, "voice", i64(row.voice), i64(row.index), i64(row.record), i64(row.face), i64(row.kinds))
+	table := read_entry(im, formats.VOICE_TABLE) or_else nil
+	rows, read_rows := formats.read_voice_table(table, context.temp_allocator)
+	if !read_rows do fail(im, "voice table did not read")
+	for row in rows do db.insert(w, "voice", i64(row.voice), i64(row.index), i64(row.record), i64(row.face), i64(row.kinds))
+	names, read_names := formats.read_words(eboot, build.voice_names, 4 * formats.VOICE_CHARACTERS, allocator = context.temp_allocator)
+	if !read_names do fail(im, "voice names did not read")
+	for voice in 0 ..< len(names) / 4 {
+		name := names[4 * voice:]
+		db.insert(w, "voice_name", i64(voice), i64(name[0]), i64(name[1]), i64(name[2]))
 	}
-	if names, read := formats.read_words(eboot, build.voice_names, 4 * formats.VOICE_CHARACTERS, allocator = context.temp_allocator); read {
-		for voice in 0 ..< formats.VOICE_CHARACTERS {
-			name := names[4 * voice:]
-			db.insert(w, "voice_name", i64(voice), i64(name[0]), i64(name[1]), i64(name[2]))
-		}
+	specials, read_specials := formats.read_words(eboot, build.special_sounds, 5 * formats.SPECIAL_SOUNDS, allocator = context.temp_allocator)
+	if !read_specials do fail(im, "special sounds did not read")
+	for row in 0 ..< len(specials) / 5 {
+		special := specials[5 * row:]
+		for pair in 0 ..< 2 do if voice := special[1 + 2 * pair]; voice >= 0 do db.insert(w, "special_sound", i64(special[0]), i64(voice), i64(special[2 + 2 * pair]))
 	}
-	if specials, read := formats.read_words(eboot, build.special_sounds, 5 * formats.SPECIAL_SOUNDS, allocator = context.temp_allocator); read {
-		for row in 0 ..< formats.SPECIAL_SOUNDS {
-			special := specials[5 * row:]
-			for pair in 0 ..< 2 do if voice := special[1 + 2 * pair]; voice >= 0 do db.insert(w, "special_sound", i64(special[0]), i64(voice), i64(special[2 + 2 * pair]))
-		}
-	}
-	if lists, read := formats.read_stage_sounds(eboot, build, context.temp_allocator); read {
-		for list, stage in lists {
-			if pack, has := read_entry(im.archive, formats.SOUND_STAGE_FIRST + 3 * stage); !has || len(pack) == 0 do continue  // a cut stage
-			for record, k in list do if record >= 0 do db.insert(w, "stage_sound", stage_id(stage), i64(k + 1), i64(record))
-		}
+	lists, read_lists := formats.read_stage_sounds(eboot, build, context.temp_allocator)
+	if !read_lists do fail(im, "stage sounds did not read")
+	for list, stage in lists {
+		if pack, has := read_entry(im, formats.SOUND_STAGE_FIRST + 3 * stage); !has || len(pack) == 0 do continue  // a cut stage
+		for record, k in list do if record >= 0 do db.insert(w, "stage_sound", stage_id(stage), i64(k + 1), i64(record))
 	}
 }
 
 // Every sample of a sound pack as sounds/<bank>/<idx>.flac, named by its first record; records on one sample share it.
 // A pack already written under another bank shares its files.
 write_sound_bank :: proc(im: ^Import, bank: string, entry: int) {
-	pack, has := read_entry(im.archive, entry)
-	if !has do return
+	pack, has := read_entry(im, entry)
+	if !has do return  // a cut stage
 	records, read := formats.read_sound_pack(pack, context.temp_allocator)
-	if !read do return
+	if !read {
+		fail(im, "sound bank %s did not read", bank)
+		return
+	}
 	digest: [32]byte
 	hash.hash_bytes_to_buffer(.SHA256, pack, digest[:])
 	first, shared := im.sound_packs[digest]
 	if !shared {
-		if !make_dir(join(im.root, "sounds", bank)) do return
+		if !make_dir(join(im.root, "sounds", bank)) {
+			fail(im, "cannot create sounds/%s", bank)
+			return
+		}
 		first = strings.clone(bank)
 		im.sound_packs[digest] = first
 	}
@@ -470,7 +533,10 @@ write_sound_bank :: proc(im: ^Import, bank: string, entry: int) {
 		if !sampled {
 			file = fmt.tprintf("sounds/%s/%d.flac", first, record.index)
 			written := shared ? os.exists(join(im.root, file)) : write_sound(im, file, record)
-			if !written do continue
+			if !written {
+				fail(im, "sound %s did not convert", file)
+				continue
+			}
 			files[record.data_offset] = file
 		}
 		loop_start, loop_length := sound_loop(record)
@@ -483,25 +549,35 @@ import_music :: proc(im: ^Import) -> (stage_tracks: [formats.STAGE_COUNT]int) {
 	defer step(im)
 	slice.fill(stage_tracks[:], -1)
 	entries, read := formats.read_music_tracks(im.game.eboot, im.game.build)
-	if !read do return
+	if !read {
+		fail(im, "music tracks did not read")
+		return
+	}
 	defer delete(entries)
 	written := make(map[int]int)  // entry -> the track whose file it is
 	defer delete(written)
 	for entry, track in entries {
 		defer free_all(context.temp_allocator)
 		first, shared := written[entry]
-		pack := read_entry(im.archive, entry) or_continue
-		records := formats.read_sound_pack(pack, context.temp_allocator) or_continue
-		if len(records) != 1 do continue
+		pack := read_entry(im, entry) or_continue  // track 18's entry is empty
+		records, read_records := formats.read_sound_pack(pack, context.temp_allocator)
+		if !read_records || len(records) != 1 {
+			fail(im, "music %d did not read", track)
+			continue
+		}
 		if !shared {
 			first = track
-			if !write_sound(im, fmt.tprintf("music/%d.flac", track), records[0]) do continue
+			if !write_sound(im, fmt.tprintf("music/%d.flac", track), records[0]) {
+				fail(im, "music %d did not convert", track)
+				continue
+			}
 			written[entry] = track
 		}
 		loop_start, loop_length := sound_loop(records[0])
 		db.insert(&im.w, "music", fmt.tprintf("%d", track), fmt.tprintf("music/%d.flac", first), loop_start, loop_length)
 	}
-	tracks, _ := formats.read_stage_music(im.game.eboot, im.game.build, context.temp_allocator)
+	tracks, read_tracks := formats.read_stage_music(im.game.eboot, im.game.build, context.temp_allocator)
+	if !read_tracks do fail(im, "stage music did not read")
 	for track, stage in tracks do if track >= 0 && entries[track] in written do stage_tracks[stage] = track
 	return
 }
@@ -544,7 +620,7 @@ sound_loop :: proc(record: formats.Sound_Record) -> (start, length: db.Value) {
 import_images :: proc(im: ^Import) {
 	for index in 33 ..< 37 {
 		defer free_all(context.temp_allocator)
-		data, has := read_entry(im.archive, index)
+		data, has := read_entry(im, index)
 		if has do write_image(im, fmt.tprintf("%d", index), data)
 	}
 	for name in ([]string{"icon0", "pic0", "pic1", "pic2"}) {
@@ -555,17 +631,10 @@ import_images :: proc(im: ^Import) {
 	for art in formats.ART_ENTRIES {
 		defer step(im)
 		defer free_all(context.temp_allocator)
-		data := read_entry(im.archive, art.index) or_continue
-		parts, is_container := formats.sections(data, context.temp_allocator)
-		if !is_container {
-			data = formats.unlz(data, context.temp_allocator) or_continue
-			parts = formats.sections(data, context.temp_allocator) or_continue
-		}
-		if !make_dir(join(im.root, "ui", art.name)) do continue
-		if art.screen {
-			if len(parts) < 2 do continue
-			_ = os.write_entire_file(join(im.root, "ui", art.name, "layout.swg"), parts[0])
-			parts = formats.sections(parts[1], context.temp_allocator) or_continue
+		parts, read := art_sections(im, art)
+		if !read {
+			fail(im, "art %s did not read", art.name)
+			continue
 		}
 		for section, i in parts do write_art(im, fmt.tprintf("%s/%03d", art.name, i), section)
 	}
@@ -579,16 +648,23 @@ import_images :: proc(im: ^Import) {
 	for font in formats.FONTS {
 		defer step(im)
 		defer free_all(context.temp_allocator)
-		data := read_entry(im.archive, font.index) or_continue
-		parts := formats.sections(data, context.temp_allocator) or_continue
-		if 2 * (font.first + font.pages) > len(parts) || !make_dir(join(im.root, "ui", "fonts", font.name)) do continue
-		line_height, _ := formats.read_nfh(parts[2 * font.first + 1], context.temp_allocator) or_continue
+		data := read_entry(im, font.index) or_else nil
+		parts, read := formats.sections(data, context.temp_allocator)
+		if !read || 2 * (font.first + font.pages) > len(parts) || !make_dir(join(im.root, "ui", "fonts", font.name)) {
+			fail(im, "font %s did not read", font.name)
+			continue
+		}
+		line_height, _, read_height := formats.read_nfh(parts[2 * font.first + 1], context.temp_allocator)
+		if !read_height do fail(im, "font %s did not read", font.name)
 		db.insert(&im.w, "font", font.name, i64(line_height))
 		for page in 0 ..< font.pages {
 			pair := 2 * (font.first + page)
-			_, glyphs := formats.read_nfh(parts[pair + 1], context.temp_allocator) or_continue
+			_, glyphs, read_glyphs := formats.read_nfh(parts[pair + 1], context.temp_allocator)
 			pngs, _ := convert.art_pngs(parts[pair], context.temp_allocator)
-			if len(pngs) == 0 || pngs[0] == nil do continue
+			if !read_glyphs || len(pngs) == 0 || pngs[0] == nil {
+				fail(im, "font %s page %d did not read", font.name, page)
+				continue
+			}
 			id := fmt.tprintf("fonts/%s/%02d", font.name, page)
 			write_image(im, id, pngs[0])
 			for g in glyphs {
@@ -597,13 +673,35 @@ import_images :: proc(im: ^Import) {
 		}
 	}
 	defer step(im)
-	if !make_dir(join(im.root, "ui", "select_renders")) do return
+	if !make_dir(join(im.root, "ui", "select_renders")) {
+		fail(im, "cannot create ui/select_renders")
+		return
+	}
 	for render, i in formats.SELECT_RENDERS {
 		defer free_all(context.temp_allocator)
-		data := read_entry(im.archive, formats.SELECT_RENDERS_FIRST + i) or_continue
-		section := formats.unlz(data, context.temp_allocator) or_continue
+		data := read_entry(im, formats.SELECT_RENDERS_FIRST + i) or_else nil
+		section, read := formats.unlz(data, context.temp_allocator)
+		if !read {
+			fail(im, "select render %s did not read", render.fighter)
+			continue
+		}
 		write_art(im, fmt.tprintf("select_renders/%s_%s", render.fighter, render.faces_left ? "left" : "right"), section)
 	}
+}
+
+// An art entry's picture sections; a screen's layout goes to ui/<name>/layout.swg.
+art_sections :: proc(im: ^Import, art: formats.Art_Entry) -> (parts: [][]byte, ok: bool) {
+	data := read_entry(im, art.index) or_return
+	is_container: bool
+	parts, is_container = formats.sections(data, context.temp_allocator)
+	if !is_container {
+		data = formats.unlz(data, context.temp_allocator) or_return
+		parts = formats.sections(data, context.temp_allocator) or_return
+	}
+	make_dir(join(im.root, "ui", art.name)) or_return
+	if !art.screen do return parts, true
+	if len(parts) < 2 || os.write_entire_file(join(im.root, "ui", art.name, "layout.swg"), parts[0]) != nil do return
+	return formats.sections(parts[1], context.temp_allocator)
 }
 
 // A texture section as ui/<id>.png, more pictures as <id>_1, <id>_2. Other sections (fonts' NFH) are skipped.
@@ -614,17 +712,29 @@ write_art :: proc(im: ^Import, id: string, section: []byte) {
 
 write_image :: proc(im: ^Import, id: string, png: []byte) {
 	file := fmt.tprintf("ui/%s.png", id)
-	if os.write_entire_file(join(im.root, file), png) == nil do db.insert(&im.w, "image", id, file)
+	if os.write_entire_file(join(im.root, file), png) != nil {
+		fail(im, "cannot write %s", file)
+		return
+	}
+	db.insert(&im.w, "image", id, file)
 }
 
-// Unpacked archive entry in temp memory. The LZ layer, if any, stays.
-read_entry :: proc(a: Archive, index: int) -> (data: []byte, ok: bool) {
-	if index < 0 || index >= len(a.table) do return nil, false
-	e := a.table[index]
-	if formats.entry_missing(e) do return nil, false
+// Unpacked archive entry in temp memory; not ok for a missing entry. The LZ layer, if any, stays.
+read_entry :: proc(im: ^Import, index: int) -> (data: []byte, ok: bool) {
+	if index < 0 || index >= len(im.archive.table) {
+		fail(im, "archive entry %d is past the file table", index)
+		return
+	}
+	e := im.archive.table[index]
+	if formats.entry_missing(e) do return
 	stored := make([]byte, e.stored_size, context.temp_allocator)
-	if n, err := os.read_at(a.file, stored, formats.entry_offset(e)); err != nil || n != len(stored) do return nil, false
-	return formats.unpack_entry(e, stored, context.temp_allocator)
+	if n, err := os.read_at(im.archive.file, stored, formats.entry_offset(e)); err != nil || n != len(stored) {
+		fail(im, "archive entry %d did not read", index)
+		return
+	}
+	data, ok = formats.unpack_entry(e, stored, context.temp_allocator)
+	if !ok do fail(im, "archive entry %d did not unpack", index)
+	return
 }
 
 make_dir :: proc(path: string) -> bool {

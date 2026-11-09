@@ -26,7 +26,7 @@ db_loads_like_sim_files :: proc(t: ^testing.T) {
 	if !testing.expect_value(t, create_err, "") do return
 	for name, i in MOTBIN_NAMES {
 		defer free_all(context.temp_allocator)
-		packed, _ := tk5.read_entry(im.archive, formats.MOTBIN_FIRST + 2 * i)
+		packed, _ := tk5.read_entry(&im, formats.MOTBIN_FIRST + 2 * i)
 		data, unpacked := formats.unlz(packed, context.temp_allocator)
 		m, read := formats.read_motbin(data, context.temp_allocator)
 		if !testing.expect(t, unpacked && read, name) do continue
