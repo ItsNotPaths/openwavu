@@ -28,10 +28,18 @@ jobs:
           odin=$(sed -n 's/^odin = "\(.*\)"/\1/p' mise.toml)
           curl -fL --retry 3 "https://github.com/odin-lang/Odin/releases/download/$odin/odin-linux-amd64-$odin.tar.gz" | tar xz -C /opt
           echo "$(dirname "$(find /opt -maxdepth 3 -name odin -type f | head -1)")" >> "$GITHUB_PATH"
-      - uses: actions/cache@v4
+      # Saved as soon as the deps build, so a failed build still keeps them.
+      - id: vendor
+        uses: actions/cache/restore@v4
         with:
           path: vendor
           key: linux-vendor-${{ hashFiles('download-deps.sh', 'mise.toml') }}
+      - run: ./download-deps.sh
+      - if: steps.vendor.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vendor
+          key: ${{ steps.vendor.outputs.cache-primary-key }}
       - run: ./build.sh speed
       - run: objdump -T build/openwavu | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
       - uses: actions/upload-artifact@v4
@@ -60,10 +68,18 @@ jobs:
           curl -fL --retry 3 "https://github.com/odin-lang/Odin/releases/download/$odin/odin-windows-amd64-$odin.zip" -o "$RUNNER_TEMP/odin.zip"
           unzip -q "$RUNNER_TEMP/odin.zip" -d "$RUNNER_TEMP/odin"
           cygpath -w "$(dirname "$(find "$(cygpath -u "$RUNNER_TEMP")/odin" -name odin.exe | head -1)")" >> "$GITHUB_PATH"
-      - uses: actions/cache@v4
+      # Saved as soon as the deps build, so a failed build still keeps them.
+      - id: vendor
+        uses: actions/cache/restore@v4
         with:
           path: vendor
           key: windows-vendor-${{ hashFiles('download-deps.sh', 'mise.toml') }}
+      - run: ./download-deps.sh
+      - if: steps.vendor.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vendor
+          key: ${{ steps.vendor.outputs.cache-primary-key }}
       - run: ./build.sh speed
       - uses: actions/upload-artifact@v4
         with:
