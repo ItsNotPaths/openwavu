@@ -30,7 +30,7 @@ fi
 [ -z "$windows" ] && odin build src/server -out:build/openwavu-server "${odin_flags[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet -Lvendor/curl"
 [ "$only_server" = 1 ] && exit 0
 if [ ! -f vendor/sqlite/libsqlite3.a ] || [ vendor/sqlite/sqlite3.c -nt vendor/sqlite/libsqlite3.a ]; then
-	"${c_compiler[@]}" -O2 -c vendor/sqlite/sqlite3.c -o vendor/sqlite/sqlite3.o
+	"${c_compiler[@]}" -O2 -DSQLITE_OMIT_LOAD_EXTENSION -c vendor/sqlite/sqlite3.c -o vendor/sqlite/sqlite3.o
 	"${archiver[@]}" rcs vendor/sqlite/libsqlite3.a vendor/sqlite/sqlite3.o
 fi
 # The Clay binding links <os dir>/clay.a next to clay.odin.
