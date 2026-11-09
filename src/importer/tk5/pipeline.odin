@@ -140,6 +140,7 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 	if err = convert.write_moveset_rows(w, c.id, owner, char_index, m); err != "" do return err
 	if bank, has := formats.embedded_bank(m, data, 0); has do write_bank(im, convert.embedded_owner(c.id), bank)
 	if bank, has := formats.embedded_bank(m, data, formats.BANK_HANDS); has do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), bank)
+	if bank, has := formats.embedded_bank(m, data, formats.BANK_FACE); has do write_face_bank(im, fmt.tprintf("%s/face_poses", c.id), bank)
 	if bank, has := formats.embedded_bank(m, data, formats.BANK_CAMERAS); has do write_camera_bank(im, fmt.tprintf("%s/cameras", convert.embedded_owner(c.id)), bank, .Scaled)
 	skeleton, has_skeleton := character_skeleton(im, c)
 	if !has_skeleton do return fmt.tprintf("%s: skeleton did not read", c.id)
@@ -153,9 +154,11 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 		container := read_entry(im, c.container) or_else nil
 		sections, read_sections := formats.sections(container, context.temp_allocator)
 		if !read_sections do fail(im, "%s: container did not read", c.id)
-		// (hole face-anims :tags (importer fighter-detail)) face banks are not found or decoded; blinks and face state use libc rand 0x2e7a84.
 		if len(sections) > 0 do write_bank(im, owner, sections[0])
 		if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
+		if len(sections) > formats.BANK_FACE && !formats.empty_bank(sections[formats.BANK_FACE]) {
+			write_face_bank(im, fmt.tprintf("%s/face_clips", owner), sections[formats.BANK_FACE])
+		}
 		if len(sections) > formats.BANK_CAMERAS do write_camera_bank(im, fmt.tprintf("%s/cameras", owner), sections[formats.BANK_CAMERAS], .Scaled)
 	}
 	if !import_character_effects(im, c, owner) do fail(im, "%s: effects did not read", c.id)
@@ -414,6 +417,29 @@ write_hand_bank :: proc(im: ^Import, owner: string, data: []byte) {
 			continue
 		}
 		db.insert(&im.w, "anim", owner, i64(i), i64(len(frames)), file)
+	}
+}
+
+// Every clip of a face bank as anims/<owner>/<idx>.anim. The pose bank's clip 0 is the face values: frame i = face value i;
+// its other clips are the voice faces. The clip bank holds the intro and win faces.
+write_face_bank :: proc(im: ^Import, owner: string, data: []byte) {
+	bank, ok := formats.read_face_bank(data)
+	if !ok {
+		fail(im, "%s: face bank did not read", owner)
+		return
+	}
+	if !make_dir(join(im.root, "anims", owner)) {
+		fail(im, "cannot create anims/%s", owner)
+		return
+	}
+	for i in 0 ..< bank.count {
+		raw, decoded := formats.read_clip(bank, i, context.temp_allocator)
+		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
+		if !decoded || !convert.write_face_anim(join(im.root, file), bank, raw) {
+			fail(im, "%s: face clip %d did not convert", owner, i)
+			continue
+		}
+		db.insert(&im.w, "anim", owner, i64(i), i64(len(raw) / (3 * bank.channels)), file)
 	}
 }
 

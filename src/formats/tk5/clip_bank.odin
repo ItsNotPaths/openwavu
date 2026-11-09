@@ -1,4 +1,4 @@
-// Type 1 anim banks: the finger poses and gestures, the camera tracks (tk5decomp docs/data.md 6.5, docs/camera.md 2).
+// Type 1 anim banks: the finger poses and gestures, the face, the camera tracks (tk5decomp docs/data.md 6.5, docs/camera.md 2).
 // Bank: u16 type, u16 clips, u16 channels, u16 b, u32 clip offset[], u16 channel type[].
 // Clip: u16 frames, s16 first[3n], s16 last[3n], u16 block offset[], blocks of 16 frames.
 package tk5_formats
@@ -7,9 +7,12 @@ import "core:slice"
 
 CLIP_BANK_TYPE :: 1
 BANK_HANDS :: 1
+BANK_FACE :: 2
 BANK_CAMERAS :: 5
 HAND_JOINTS :: 15  // 5 fingers x 3 joints, root joint first
 HAND_VALUES :: 3 * HAND_JOINTS  // axis x, axis y, angle per joint
+FACE_CHANNELS :: 38  // the face bones A81..106: turns, moves and the jaw scale
+SCALE_TYPE :: 4  // a channel type: x, y, z scale the rotation rows, 100 = 1.0
 CAMERA_CHANNELS :: 5  // eye, target, fov, smoothing, roll; the global bank has no roll
 
 @(private = "file")
@@ -58,6 +61,15 @@ read_hand_bank :: proc(data: []byte) -> (bank: Clip_Bank, ok: bool) {
 	return bank, true
 }
 
+read_face_bank :: proc(data: []byte) -> (bank: Clip_Bank, ok: bool) {
+	bank = read_clip_bank(data) or_return
+	if bank.channels != FACE_CHANNELS do return {}, false
+	return bank, true
+}
+
+// An empty bank section (type 0, no clips): king, armor_king, yoshimitsu and jack5 have no intro or win faces.
+empty_bank :: proc(data: []byte) -> bool {return len(data) < 8 || le_u16(data, 2) == 0}
+
 read_camera_bank :: proc(data: []byte) -> (bank: Clip_Bank, ok: bool) {
 	bank = read_clip_bank(data) or_return
 	if bank.channels != CAMERA_CHANNELS && bank.channels != CAMERA_CHANNELS - 1 do return {}, false
@@ -87,9 +99,11 @@ read_hand_clip :: proc(bank: Clip_Bank, i: int, allocator := context.allocator) 
 @(private = "file")
 type_table :: proc(bank: Clip_Bank) -> int {return 8 + 4 * bank.count}
 
-@(private = "file")
+// 5..8 a rotation; the face also has 20 a position and 4 a scale (data.md 6.5).
+channel_type :: proc(bank: Clip_Bank, channel: int) -> u16 {return le_u16(bank.data, type_table(bank) + 2 * channel)}
+
 is_rotation :: proc(bank: Clip_Bank, channel: int) -> bool {
-	t := le_u16(bank.data, type_table(bank) + 2 * channel)
+	t := channel_type(bank, channel)
 	return t >= ROTATION_TYPE_FIRST && t <= ROTATION_TYPE_LAST
 }
 

@@ -46,3 +46,23 @@ write_hand_anim :: proc(path: string, frames: []formats.Hand_Frame) -> (ok: bool
 		values   = values,
 	})
 }
+
+// Face anims: per channel by the bank's type, turns in radians, moves and scales as decoded; the visual maps them to bones.
+write_face_anim :: proc(path: string, bank: formats.Clip_Bank, raw: []i16) -> (ok: bool) {
+	channels := make([]convert.Anim_Channel, bank.channels, context.temp_allocator)
+	for &channel, i in channels {
+		kind := convert.Anim_Channel_Kind.Position
+		if formats.is_rotation(bank, i) do kind = .Spherical_Axis_Angle
+		if formats.channel_type(bank, i) == formats.SCALE_TYPE do kind = .Values
+		channel = {kind, 3, -1}
+	}
+	values := make([]f32, len(raw), context.temp_allocator)
+	for v, i in raw do values[i] = channels[i / 3 % bank.channels].kind == .Spherical_Axis_Angle ? f32(v) * formats.ANGLE : f32(v)
+	return convert.write_anim(path, {
+		layout   = "tk5face",
+		frames   = len(raw) / (3 * bank.channels),
+		fps      = FPS,
+		channels = channels,
+		values   = values,
+	})
+}
