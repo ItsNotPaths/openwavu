@@ -1,5 +1,6 @@
 // Stock TK5 presenter (gamerender.wasm): the fight camera and the camera shots of moves. Per viewer, outside rollback. The
 // camera and the timeline player are SDK libraries; TK5 gives params and data.
+#include <SDL3/SDL.h>
 #include <math.h>
 #include <stddef.h>
 
@@ -11,10 +12,10 @@
 // (hole sdk-camera :tags (sdk tk5mod round-show) :sev gap) the fight camera is the demo's follow camera, eased, in pack code: no SDK camera that frames both fighters by params (distance, zoom, lag), and the game's rules (0x772cc) are not ported.
 // (hole move-cameras :tags (tk5mod round-show) :needs (sim-side-switch coded-cameras)) throw cameras are not played (tracks placed at the thrown fighter); the db has no camera category per move (property 0x815f) to pick them from the view, as intro shots are.
 // (hole coded-cameras :tags (port round-show)) the hand-coded throw and hit cameras (ids below 0x67, 0x7b22c) are not ported.
-// (hole camera-frame-both :tags (tk5mod look alpha) :sev gap) the fight camera never pulls back: at 3.6 m and 40 degrees it shows about 4.7 m across, but the arena lets the fighters get 5.5 m to 7.4 m apart, so one goes off screen.
 // (hole sdk-timeline :tags (sdk tk5mod round-show) :needs (sdk-camera intro-timelines)) the shot player is pack code, not an SDK library, and plays only cameras: no effects, sounds or voices on the intro and win timelines.
 
-static const float DISTANCE = 3.6f;      // metres from the midpoint, along the view normal
+static const float DISTANCE = 3.6f;      // metres from the midpoint, along the view normal; the closest it gets
+static const float FIGHTER_ROOM = 1.2f;  // metres kept on screen past the two fighters' roots, both sides together
 static const float FOCUS_HEIGHT = 0.9f;  // metres
 static const float RAISE = 0.5f;         // the camera sits this much above the focus
 static const float FOV = 0.698132f;      // 40 degrees, vertical
@@ -61,7 +62,13 @@ void t5_camera_init(sqlite3 *db, const T5View *view) {
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) load_shots(db, side, view->fighters[side].loadout.character);
 }
 
-// The tk5decomp demo's follow camera: fixed distance, no zoom or lag.
+static float screen_aspect(void) {
+    int pixels_wide = 0, pixels_high = 0;
+    SDL_GetRenderOutputSize(ow_renderer(), &pixels_wide, &pixels_high);
+    return pixels_high > 0 ? (float)pixels_wide / (float)pixels_high : 16.0f / 9.0f;
+}
+
+// The tk5decomp demo's follow camera, pulled back when the fighters stand wider apart than it shows.
 static OwCamera fight_camera(const T5View *view) {
     const T5Mat4 *first = &view->fighters[0].rig.root.world, *second = &view->fighters[1].rig.root.world;
     OwVec3 focus = {
@@ -69,7 +76,11 @@ static OwCamera fight_camera(const T5View *view) {
         FOCUS_HEIGHT,
         (first->m[3][2] + second->m[3][2]) * 0.5f * MM,
     };
-    OwVec3 position = {focus.x + view->view_normal[0] * DISTANCE, focus.y + RAISE, focus.z + view->view_normal[1] * DISTANCE};
+    float right[2] = {view->view_normal[1], -view->view_normal[0]};  // screen right on the floor
+    float across = fabsf(((second->m[3][0] - first->m[3][0]) * right[0] + (second->m[3][2] - first->m[3][2]) * right[1]) * MM);
+    float shown_per_metre = 2.0f * tanf(FOV / 2) * screen_aspect();  // screen width at one metre away
+    float distance = fmaxf(DISTANCE, (across + FIGHTER_ROOM) / shown_per_metre);
+    OwVec3 position = {focus.x + view->view_normal[0] * distance, focus.y + RAISE, focus.z + view->view_normal[1] * distance};
     return (OwCamera){.position = position, .target = focus, .fov = FOV};
 }
 
