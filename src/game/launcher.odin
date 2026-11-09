@@ -31,6 +31,7 @@ Launcher :: struct {
 	browser:  Browser,
 	importer: Import_Job,
 	store:    Store,
+	update:   Binary_Update,
 	thumbs:   map[string]^sdl.Texture,  // slot art: installed by path@version, the store's by hash
 	url:      strings.Builder,
 	search_installed, search_store: strings.Builder,
@@ -77,6 +78,7 @@ launcher_destroy :: proc(l: ^Launcher) {
 	browser_destroy(&l.browser)
 	import_destroy(&l.importer)
 	store_destroy(&l.store)
+	binary_update_destroy(&l.update)
 	for key, texture in l.thumbs {
 		if texture != nil do sdl.DestroyTexture(texture)
 		delete(key)
@@ -268,6 +270,7 @@ top_bar :: proc(l: ^Launcher, u: ^ui.Ui, r: ^render.Renderer) {
 		floating = {attachTo = .Root, offset = {0, (shown - 1) * (ui.BAR_HEIGHT + 12)}, zIndex = 1},
 	}) {
 		ui.label(fmt.tprintf("openwavu %s", release.current()), tint = ui.TEXT_DIM, face = .Display)
+		binary_update_bar(&l.update, u)
 		if clay.UI()({floating = {attachTo = .Parent, attachment = {.CenterCenter, .CenterCenter}}}) {
 			ui.label(clock(), engraved = true, face = .Display)
 		}

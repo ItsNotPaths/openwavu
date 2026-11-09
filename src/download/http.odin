@@ -38,6 +38,7 @@ http_get :: proc(url: string, progress: ^Progress = nil, allocator := context.al
 	curl.easy_setopt(handle, .WRITEFUNCTION, write)
 	curl.easy_setopt(handle, .WRITEDATA, &received)
 	curl.easy_setopt(handle, .FAILONERROR, c.long(1))
+	curl.easy_setopt(handle, .FOLLOWLOCATION, c.long(1))  // GitHub release downloads redirect
 	curl.easy_setopt(handle, .ACCEPT_ENCODING, cstring(""))
 	curl.easy_setopt(handle, .CONNECTTIMEOUT, c.long(CONNECT_TIMEOUT_S))
 	if progress != nil {

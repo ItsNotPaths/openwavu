@@ -65,10 +65,13 @@ run :: proc(job: ^Job) {
 	sync.atomic_store(&job.done, true)
 }
 
-// Written beside path first, then renamed over it: path is whole or untouched.
+// Written beside path first, then renamed over it: path is whole or untouched. A replaced file keeps its mode, so a
+// replaced binary still runs.
 @(private = "file")
 write_landed :: proc(path: string, data: []byte) -> (err: string) {
 	part := strings.concatenate({path, ".part"}, context.temp_allocator)
-	if os.write_entire_file(part, data) != nil || os.rename(part, path) != nil do return fmt.tprintf("can not write %s", path)
+	if os.write_entire_file(part, data) != nil do return fmt.tprintf("can not write %s", part)
+	if old, stat_err := os.stat(path, context.temp_allocator); stat_err == nil do os.chmod(part, old.mode & os.Permissions_All)
+	if os.rename(part, path) != nil do return fmt.tprintf("can not write %s", path)
 	return
 }
