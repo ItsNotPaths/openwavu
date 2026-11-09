@@ -45,7 +45,6 @@ main :: proc() {
 	if len(os.args) >= 3 && os.args[1] == "--front" {
 		l.selected = Front_Preview{os.args[2], len(os.args) > 3 ? os.args[3] : ""}
 	}
-	// (hole close-segfault :tags (game alpha) :sev polish) the -o:speed build segfaulted once on close after an everything_launches 0.0.5 match (2026-11-06); a -debug -sanitize:address build did not repeat it.
 	defer launcher_destroy(&l)
 
 	last := sdl.GetTicksNS()
