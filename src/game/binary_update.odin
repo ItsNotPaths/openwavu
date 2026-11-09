@@ -8,9 +8,10 @@ import "../download"
 import "../release"
 import "../ui"
 
-// The latest GitHub release: its release.txt holds the tag and the binary's SHA-256. release.sh uploads both.
+// The latest GitHub release: its release.txt holds the tag, then each system's binary and its SHA-256.
+// .github/workflows/release.yml uploads them.
 RELEASE_URL :: "https://github.com/ItsNotPaths/openwavu/releases/latest/download/"
-RELEASE_BINARY :: "openwavu-linux"
+RELEASE_BINARY :: "openwavu-windows.exe" when ODIN_OS == .Windows else "openwavu-linux"
 
 // The new binary lands over this one; this process runs on until the player restarts.
 Binary_Update :: struct {
@@ -43,12 +44,15 @@ binary_update_bar :: proc(update: ^Binary_Update, u: ^ui.Ui) {
 	}
 }
 
-// The latest tag and its hash, when this build does not know the tag yet.
+// The latest tag and this system's binary hash, when this build does not know the tag yet.
 @(private = "file")
 newer_binary :: proc(update: ^Binary_Update) -> (tag, sha256: string, newer: bool) {
 	if update.check == nil do update.check = download.start(RELEASE_URL + "release.txt")
 	if !download.finished(update.check) || update.check.err != "" do return
 	fields := strings.fields(string(update.check.body), context.temp_allocator)
-	if len(fields) != 2 do return
-	return fields[0], fields[1], !release.known(fields[0])
+	if len(fields) == 0 do return
+	for index := 1; index + 1 < len(fields); index += 2 {
+		if fields[index] == RELEASE_BINARY do return fields[0], fields[index + 1], !release.known(fields[0])
+	}
+	return
 }

@@ -72,6 +72,13 @@ write_landed :: proc(path: string, data: []byte) -> (err: string) {
 	part := strings.concatenate({path, ".part"}, context.temp_allocator)
 	if os.write_entire_file(part, data) != nil do return fmt.tprintf("can not write %s", part)
 	if old, stat_err := os.stat(path, context.temp_allocator); stat_err == nil do os.chmod(part, old.mode & os.Permissions_All)
+	when ODIN_OS == .Windows {
+		// Windows can not write over a running binary, only rename it; a running one stays as .old until the next update.
+		old := strings.concatenate({path, ".old"}, context.temp_allocator)
+		os.remove(old)
+		os.rename(path, old)
+	}
 	if os.rename(part, path) != nil do return fmt.tprintf("can not write %s", path)
+	when ODIN_OS == .Windows do os.remove(old)
 	return
 }
