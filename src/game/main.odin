@@ -56,6 +56,7 @@ main :: proc() {
 			sdl.ConvertEventToRenderCoordinates(r.renderer_2d, &e)
 			if e.type == .QUIT do l.quit = true
 			input.handle_event(e)
+			if bind_event(&l, e) do continue
 			ui.handle_event(&u, e)
 		}
 		now := sdl.GetTicksNS()

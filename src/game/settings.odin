@@ -6,12 +6,13 @@ import "core:slice"
 import "core:strconv"
 import "core:strings"
 import "../imports"
+import "../input"
 
 DEFAULT_NETWORK :: "openwavu.org"
 
 // One key=value per line; favourite= repeats. A missing file, unknown keys and bad values keep the defaults.
 settings_load :: proc(config_dir: string) -> (settings: Settings) {
-	settings = {file = strings.concatenate({config_dir, "/settings.conf"}), frame_cap = FRAME_CAPS[0], music_volume = 100, effects_volume = 100, blend_fighters = true, network = strings.clone(DEFAULT_NETWORK)}
+	settings = {file = strings.concatenate({config_dir, "/settings.conf"}), frame_cap = FRAME_CAPS[0], music_volume = 100, effects_volume = 100, blend_fighters = true, network = strings.clone(DEFAULT_NETWORK), bindings = input.DEFAULT_BINDINGS}
 	text, err := os.read_entire_file(settings.file, context.temp_allocator)
 	if err != nil do return
 	caps := FRAME_CAPS
@@ -35,6 +36,11 @@ settings_load :: proc(config_dir: string) -> (settings: Settings) {
 			strings.write_string(&settings.name, value)
 		case "tk5_files":
 			strings.write_string(&settings.tk5_files, value)
+		case "bind":
+			slot_name, _, binding_text := strings.partition(value, "=")
+			slot, named := slot_named(slot_name)
+			binding, parsed := input.binding_parse(binding_text)
+			if named && parsed do settings.bindings[slot] = binding
 		case "network":
 			if value == "" do continue
 			delete(settings.network)
@@ -53,8 +59,15 @@ settings_save :: proc(settings: Settings) {
 	fmt.sbprintfln(&text, "name=%s", strings.to_string(settings.name))
 	fmt.sbprintfln(&text, "network=%s", settings.network)
 	fmt.sbprintfln(&text, "tk5_files=%s", strings.to_string(settings.tk5_files))
+	for binding, slot in settings.bindings do fmt.sbprintfln(&text, "bind=%s=%s", input.SLOT_NAMES[slot], input.binding_text(binding))
 	for tile in settings.favourites do fmt.sbprintfln(&text, "favourite=%s", tile)
 	if os.write_entire_file(settings.file, strings.to_string(text)) != nil do fmt.eprintln("openwavu: could not save", settings.file)
+}
+
+@(private = "file")
+slot_named :: proc(name: string) -> (input.Slot, bool) {
+	for slot_name, slot in input.SLOT_NAMES do if slot_name == name do return slot, true
+	return {}, false
 }
 
 @(private = "file")

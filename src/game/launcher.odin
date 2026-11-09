@@ -7,6 +7,7 @@ import "core:slice"
 import "core:strings"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
+import "../input"
 import "../online"
 import "../release"
 import "../render"
@@ -23,6 +24,7 @@ Launcher :: struct {
 	},
 	front:    Front_View,
 	popup:    Popup,
+	binding:  Maybe(input.Slot),  // the slot waiting for a key or pad button
 	settings: Settings,
 	identity: online.Identity,
 	identity_err: string,

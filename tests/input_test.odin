@@ -1,15 +1,16 @@
 package tests
 
 import "core:testing"
+import sdl "vendor:sdl3"
 import "../src/input"
 
-// A stick press needs the lean past that axis's deadzone; each axis has its own, and both past it is a diagonal.
+// settings.conf keeps bindings as text; every kind must load back as it was saved.
 @(test)
-stick_presses_past_each_axis_deadzone :: proc(t: ^testing.T) {
-	deadzone := input.Deadzone{0.3, 0.6}
-	testing.expect_value(t, input.stick_directions({0.2, -0.5}, deadzone), 0)
-	testing.expect_value(t, input.stick_directions({0.4, 0}, deadzone), input.RIGHT)
-	testing.expect_value(t, input.stick_directions({-0.4, -0.5}, deadzone), input.LEFT)
-	testing.expect_value(t, input.stick_directions({0, 0.7}, deadzone), input.DOWN)
-	testing.expect_value(t, input.stick_directions({-0.9, -0.9}, deadzone), input.LEFT | input.UP)
+bindings_load_as_saved :: proc(t: ^testing.T) {
+	bindings := []input.Binding{nil, sdl.Scancode.LSHIFT, sdl.GamepadButton.DPAD_UP, input.Pad_Axis{.LEFTX, false}, input.Pad_Axis{.RIGHT_TRIGGER, true}}
+	for binding in bindings {
+		loaded, parsed := input.binding_parse(input.binding_text(binding))
+		testing.expect(t, parsed)
+		testing.expect_value(t, loaded, binding)
+	}
 }

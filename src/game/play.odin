@@ -66,7 +66,7 @@ play :: proc(r: ^render.Renderer, tp: titlepack.Title_Pack, settings: Settings, 
 			input.handle_event(e)
 			imports.sdl_event_keep(&running.sdl, r.renderer_2d, e)
 		}
-		pads := input.poll()
+		pads := input.poll(settings.bindings)
 		running.pads = pads
 		now := sdl.GetTicksNS()
 		dt := now - last

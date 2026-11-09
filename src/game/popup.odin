@@ -3,7 +3,9 @@ package game
 import "core:fmt"
 import "core:math"
 import "core:strings"
+import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
+import "../input"
 import "../ui"
 
 // The screen-bottom popup: openwavu's own, the top bar's counterpart. Packs only open its fixed modes.
@@ -30,6 +32,7 @@ Settings :: struct {
 	name:       strings.Builder,  // the player's name online; free text
 	network:    string,  // the files host's name, or a full URL
 	tk5_files:  strings.Builder,  // what the installer offers to import: an RPCS3 folder, a game folder or a .pkg
+	bindings:   input.Bindings,
 }
 
 // The sim steps at 60; a higher cap draws frames in between.
@@ -111,6 +114,7 @@ settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 			l.popup.open = false
 		}
 	}
+	bindings_rows(l, u)
 	if l.settings.network != DEFAULT_NETWORK {
 		ui.label(fmt.tprintf("Packs here are approved by %s, not %s.", l.settings.network, DEFAULT_NETWORK), tint = ui.WARN)
 	}
@@ -118,6 +122,61 @@ settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 }
 
 SETTINGS_FIELD_WIDTH :: 360
+
+// The directions as squares, the buttons as circles, their combinations below them.
+@(private = "file")
+bindings_rows :: proc(l: ^Launcher, u: ^ui.Ui) {
+	ui.label("Buttons", tint = ui.TEXT_DIM)
+	if clay.UI()(ui.row(ui.KEY_GAP)) {
+		key_cells(l, u, .Up, .Right)
+		ui.spacer()
+		key_cells(l, u, .Button_1, .Button_4)
+	}
+	if clay.UI()(ui.row(ui.KEY_GAP, {.Right, .Center})) do key_cells(l, u, .Buttons_1_2, .Buttons_3_4)
+	if clay.UI()(ui.row(ui.KEY_GAP, {.Right, .Center})) do key_cells(l, u, .Buttons_1_2_3, .Buttons_1_2_3_4)
+	if l.binding != nil do ui.label("Press a key or pad button. Escape unbinds.", tint = ui.TEXT_DIM)
+}
+
+// The slots first..last, each its name over its key; a click makes it wait for a press, a second click stops it.
+@(private = "file")
+key_cells :: proc(l: ^Launcher, u: ^ui.Ui, first, last: input.Slot) {
+	for slot in input.Slot {
+		if slot < first || slot > last do continue
+		waiting_slot, has_waiting := l.binding.?
+		waiting := has_waiting && waiting_slot == slot
+		if clay.UI()({layout = {childGap = 6, layoutDirection = .TopToBottom, childAlignment = {x = .Center}}}) {
+			ui.label(input.SLOT_NAMES[slot], ui.COLUMN_SIZE, ui.TEXT_DIM)
+			text := waiting ? "Press" : input.binding_name(l.settings.bindings[slot])
+			shape: ui.Key_Shape = slot <= .Right ? .Square : .Round
+			if ui.key_button(u, clay.ID("Bind", u32(slot)), text, shape, waiting) do l.binding = waiting ? nil : slot
+		}
+	}
+}
+
+BIND_LEAN :: 0.6  // how far a stick or trigger must lean to bind
+
+// While a slot waits, the next key or pad button binds it and Escape unbinds it; true when the event was taken.
+bind_event :: proc(l: ^Launcher, e: sdl.Event) -> (taken: bool) {
+	slot := l.binding.? or_return
+	binding: input.Binding
+	#partial switch e.type {
+	case .KEY_DOWN:
+		if e.key.repeat do return true
+		if e.key.scancode != .ESCAPE do binding = e.key.scancode
+	case .GAMEPAD_BUTTON_DOWN:
+		binding = sdl.GamepadButton(e.gbutton.button)
+	case .GAMEPAD_AXIS_MOTION:
+		lean := f32(e.gaxis.value) / 32767
+		if abs(lean) < BIND_LEAN do return true
+		binding = input.Pad_Axis{sdl.GamepadAxis(e.gaxis.axis), lean > 0}
+	case:
+		return false
+	}
+	input.bind(&l.settings.bindings, slot, binding)
+	l.binding = nil
+	settings_save(l.settings)
+	return true
+}
 
 // A volume setting, saved when it moves. Packs take it when they start.
 @(private = "file")
