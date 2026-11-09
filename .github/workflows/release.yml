@@ -86,11 +86,16 @@ jobs:
         with:
           path: vendor
           key: ${{ steps.vendor.outputs.cache-primary-key }}
+      # -debug: build/openwavu.pdb, shipped in the zip so crashes can be read.
       - run: ./build.sh speed
+        env:
+          ODIN_FLAGS: -debug
       - uses: actions/upload-artifact@v4
         with:
           name: openwavu-windows.exe
-          path: build/openwavu.exe
+          path: |
+            build/openwavu.exe
+            build/openwavu.pdb
 
   release:
     needs: [linux, windows]
@@ -118,7 +123,7 @@ jobs:
           # Archives for people: a browser drops the execute bit of a bare binary. The bare ones are for the updater.
           chmod +x artifacts/openwavu-linux/openwavu
           tar czf release/openwavu-linux.tar.gz -C artifacts/openwavu-linux openwavu
-          (cd artifacts/openwavu-windows.exe && zip -q ../../release/openwavu-windows.zip openwavu.exe)
+          (cd artifacts/openwavu-windows.exe && zip -q ../../release/openwavu-windows.zip openwavu.exe openwavu.pdb)
           {
             echo "$VERSION"
             for binary in openwavu-linux openwavu-windows.exe; do
