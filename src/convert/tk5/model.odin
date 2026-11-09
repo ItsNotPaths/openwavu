@@ -13,11 +13,11 @@ import formats "../../formats/tk5"
 MM :: 1000.0  // file millimetres per glTF metre
 BODY_BONES :: 23  // animated by the 23 channels; the rest are helpers
 
-// Writes root/file. skeleton: nil for unskinned (stage) geometry; mop: its swing joint values. matrices: per mesh, row vectors in file units, or nil.
+// Writes root/file. blends: the game's blend table, which a pass's dst_factor picks a row of. skeleton: nil for unskinned (stage) geometry; mop: its swing joint values. matrices: per mesh, row vectors in file units, or nil.
 // layers: per mesh of a stage, or nil; glb node k is then the root of layer k, the meshes its children, with
 // layer_orders[k] as its extras draw_order.
 // Mesh k is glb node first_mesh_node + k.
-write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Texture_Files, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil, layers: []int = nil, layer_orders: []int = nil, mop: formats.Mop = {}) -> (first_mesh_node: int, ok: bool) {
+write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Texture_Files, blends: []gltf.Blend, skeleton: Maybe(formats.Skeleton), matrices: []Maybe([16]f32) = nil, layers: []int = nil, layer_orders: []int = nil, mop: formats.Mop = {}) -> (first_mesh_node: int, ok: bool) {
 	context.allocator = context.temp_allocator
 	g: gltf.Gltf
 	scene: gltf.Scene
@@ -33,7 +33,7 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 		append(&g.nodes, gltf.Node{name = fmt.tprintf("layer_%d", layer), extras = extras})
 		append(&scene.nodes, layer)
 	}
-	materials := Materials{glb = file, files = textures, by_look = make(map[Material_Look]int)}
+	materials := Materials{glb = file, files = textures, blends = blends, by_look = make(map[Material_Look]int)}
 	first_mesh_node = len(g.nodes)
 	for mesh, mesh_index in meshes {
 		out := gltf.Mesh{name = mesh.name}
@@ -76,6 +76,7 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 Materials :: struct {
 	glb:     string,  // the pack path being written
 	files:   Texture_Files,
+	blends:  []gltf.Blend,
 	by_look: map[Material_Look]int,
 }
 
@@ -85,8 +86,7 @@ Material_Look :: struct {
 	hash:   u32,
 	cutoff: f32,   // 0: no alpha test
 	keep_below: f32,  // 0: no alpha test
-	blend:  bool,  // a blend factor: drawn over what is behind
-	additive: bool,  // dst factor 2: added onto what is behind
+	blend_mode: u16,  // a blends row; 0: opaque
 	unlit:  bool,  // a mesh with no normals (stages): its vertex colours are the baked light
 	reflection: Reflection,
 }
@@ -139,9 +139,8 @@ alpha_test :: proc(pass: formats.Material) -> (cutoff, keep_below: f32) {
 // (hole stage-white-models :tags (importer render look)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
 @(private = "file")
 material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material, unlit: bool) -> int {
-	DST_ONE :: 2  // additive glows; the other factors are not decoded
 	cutoff, keep_below := alpha_test(passes[0])
-	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = cutoff, keep_below = keep_below, blend = passes[0].dst_factor != 0, additive = passes[0].dst_factor == DST_ONE, unlit = unlit}
+	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = cutoff, keep_below = keep_below, blend_mode = passes[0].dst_factor, unlit = unlit}
 	reflects: bool
 	if look.reflection, reflects = reflection(passes[0]); reflects do look.hash = passes[0].textures[1].hash
 	if m, seen := materials.by_look[look]; seen do return m
@@ -164,8 +163,8 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 		out.alphaMode = "MASK"
 		out.alphaCutoff = look.cutoff
 	}
-	// (hole material-blend :tags (render importer look)) dst 2 draws additive (extras blend = "additive"); the other factors (dst 4, 7, 10; src 257, 513) draw as plain alpha blend.
-	if look.blend do out.alphaMode = "BLEND"
+	if look.blend_mode != 0 do out.alphaMode = "BLEND"
+	if look.blend_mode != 0 && int(look.blend_mode) < len(materials.blends) do gltf.set_blend(g, &out, materials.blends[look.blend_mode])
 	if look.unlit do gltf.set_unlit(g, &out)
 	if look.keep_below > 0 do gltf.set_keep_below(g, &out, look.keep_below)
 	pass_values := make(json.Array)
@@ -175,7 +174,6 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 		append(&pass_values, parsed)
 	}
 	extras["tk5_passes"] = pass_values
-	if look.additive do extras["blend"] = "additive"
 	out.extras = extras
 	append(&g.materials, out)
 	materials.by_look[look] = len(g.materials) - 1

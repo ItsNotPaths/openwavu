@@ -25,6 +25,18 @@ Material :: struct {
 	properties:                 []Material_Property,
 }
 
+BLEND_MODES :: 11  // rows of the game's blend table; a pass's dst_factor picks one
+
+// A row of the game's blend table (set by 0x288ae8): GL blend factor and equation enums, alpha left out.
+Blend_Mode :: struct {source, equation, destination: u16}
+
+read_blend_modes :: proc(eboot: []byte, build: Build) -> (modes: [BLEND_MODES]Blend_Mode, ok: bool) {
+	at := elf_offset(eboot, build.blend_modes) or_return
+	if at + 6 * BLEND_MODES > len(eboot) do return
+	for &mode, row in modes do mode = {be_u16(eboot, at + 6 * row), be_u16(eboot, at + 6 * row + 2), be_u16(eboot, at + 6 * row + 4)}
+	return modes, true
+}
+
 Poly :: struct {
 	positions: [][3]f32,
 	normals:   [][3]f32,  // nil: none stored

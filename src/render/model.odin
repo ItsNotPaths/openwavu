@@ -4,6 +4,7 @@ package render
 import "core:c"
 import "core:encoding/json"
 import "core:math/linalg"
+import "core:reflect"
 import "core:strings"
 import sdl "vendor:sdl3"
 import "../../vendor/cgltf"
@@ -37,7 +38,7 @@ Primitive :: struct {
 	cutoff:  f32,              // alpha MASK: drop alpha below it; 0 keeps all
 	keep_below: f32,           // OW_materials_alpha_keep_below: drop alpha at or above it; 0 keeps all
 	blend:   bool,             // alpha BLEND: drawn over what is behind, after the opaque draws
-	additive: bool,            // blended by adding onto what is behind: extras blend = "additive"
+	blend_state: Blend_State,  // OW_materials_blend; ALPHA_BLEND when it has none
 	unlit:   bool,             // KHR_materials_unlit: base color only, no scene lights
 	reflection: Reflection,    // extras reflection = {texture, orientation, masked}
 }
@@ -183,10 +184,9 @@ texture_of :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cgltf.data
 	return asset_texture(gpu, upload, assets, path)
 }
 
-// What a material's extras add: blend = "additive", a reflection.
+// What a material's extras add: a reflection.
 @(private = "file")
 Material_Extras :: struct {
-	blend:      string,
 	reflection: Maybe(struct {
 		texture:     int,
 		orientation: [16]f32,
@@ -208,15 +208,25 @@ draw_order :: proc(extras: cgltf.extras_t) -> int {
 	return read.draw_order
 }
 
+// A material extension's JSON into out; false when the material has none.
 @(private = "file")
-keep_below :: proc(material: ^cgltf.material) -> f32 {
+material_extension :: proc(material: ^cgltf.material, name: string, out: ^$T) -> bool {
 	for extension in material.extensions[:material.extensions_count] {
-		if extension.name != gltf.KEEP_BELOW_EXTENSION do continue
-		read: gltf.Keep_Below
-		if json.unmarshal_string(string(cstring(extension.data)), &read, allocator = context.temp_allocator) != nil do return 0
-		return read.keepBelow
+		if string(extension.name) != name do continue
+		return json.unmarshal_string(string(cstring(extension.data)), out, allocator = context.temp_allocator) == nil
 	}
-	return 0
+	return false
+}
+
+// A name the blend has no SDL match for keeps ALPHA_BLEND's.
+@(private = "file")
+blend_state :: proc(blend: gltf.Blend) -> (state: Blend_State) {
+	state = ALPHA_BLEND
+	upper :: proc(name: string) -> string {return strings.to_upper(name, context.temp_allocator)}
+	if source, ok := reflect.enum_from_name(sdl.GPUBlendFactor, upper(blend.source)); ok do state.source = source
+	if destination, ok := reflect.enum_from_name(sdl.GPUBlendFactor, upper(blend.destination)); ok do state.destination = destination
+	if operation, ok := reflect.enum_from_name(sdl.GPUBlendOp, upper(blend.operation)); ok do state.operation = operation
+	return
 }
 
 // Each vertex reads its attributes as floats (normalized integers too); joints need weights, weights need joints.
@@ -250,12 +260,14 @@ primitive_upload :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cglt
 		if material.alpha_mode == .mask do out.cutoff = material.alpha_cutoff
 		out.blend = material.alpha_mode == .blend
 		extras := material_extras(material.extras)
-		out.additive = out.blend && extras.blend == "additive"
 		if reflection, has := extras.reflection.?; has && reflection.texture >= 0 && reflection.texture < len(file.textures) {
 			out.reflection = {texture_of(gpu, upload, assets, file, &file.textures[reflection.texture], path), reflection.orientation, reflection.masked}
 		}
 		out.unlit = bool(material.unlit)
-		out.keep_below = keep_below(material)
+		keep: gltf.Keep_Below
+		if material_extension(material, gltf.KEEP_BELOW_EXTENSION, &keep) do out.keep_below = keep.keepBelow
+		blend: gltf.Blend
+		out.blend_state = material_extension(material, gltf.BLEND_EXTENSION, &blend) ? blend_state(blend) : ALPHA_BLEND
 	}
 	out.mesh = mesh_upload(gpu, upload, vertices, indices) or_return
 	return out, true

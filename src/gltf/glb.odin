@@ -123,11 +123,17 @@ Material :: struct {
 Material_Extensions :: struct {
 	unlit:      Maybe(struct {}) `json:"KHR_materials_unlit,omitempty"`,
 	keep_below: Maybe(Keep_Below) `json:"OW_materials_alpha_keep_below,omitempty"`,
+	blend:      Maybe(Blend) `json:"OW_materials_blend,omitempty"`,
 }
 UNLIT_EXTENSION :: "KHR_materials_unlit"
 KEEP_BELOW_EXTENSION :: "OW_materials_alpha_keep_below"
 // Alpha test glTF has no mode for: drop alpha at or above keepBelow.
 Keep_Below :: struct {keepBelow: f32}
+BLEND_EXTENSION :: "OW_materials_blend"
+// How a BLEND material meets what is behind: source x its colour, operation, destination x what is behind. Factors:
+// zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha,
+// one_minus_dst_alpha; operations: add, subtract, reverse_subtract, min, max.
+Blend :: struct {source, destination, operation: string}
 
 // Draws the material as its base color, with no scene lights (baked lighting).
 set_unlit :: proc(g: ^Gltf, material: ^Material) {
@@ -142,6 +148,13 @@ set_keep_below :: proc(g: ^Gltf, material: ^Material, keep_below: f32) {
 	extensions.keep_below = Keep_Below{keep_below}
 	material.extensions = extensions
 	if !slice.contains(g.extensionsUsed[:], KEEP_BELOW_EXTENSION) do append(&g.extensionsUsed, KEEP_BELOW_EXTENSION)
+}
+
+set_blend :: proc(g: ^Gltf, material: ^Material, blend: Blend) {
+	extensions := material.extensions.? or_else {}
+	extensions.blend = blend
+	material.extensions = extensions
+	if !slice.contains(g.extensionsUsed[:], BLEND_EXTENSION) do append(&g.extensionsUsed, BLEND_EXTENSION)
 }
 Texture_Info :: struct {index: int}
 // source: a PNG or JPEG image; a DDS one comes through MSFT_texture_dds.

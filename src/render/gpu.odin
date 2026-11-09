@@ -1,5 +1,5 @@
 // The host's 3D: one pipeline draws every scene mesh, skinned or not, into a color and depth target the size of the
-// screen, and a second the blended ones over it. A mesh with no skin draws with one joint, its model matrix. Effect quads
+// screen, then the blended ones go over it, through a pipeline per blend state. A mesh with no skin draws with one joint, its model matrix. Effect quads
 // go last, through an alpha or an additive pipeline. Shaders are src/render/shaders, SPIR-V only.
 package render
 
@@ -40,10 +40,18 @@ Draw :: struct {
 	scenery: bool,  // fades where it hides a fighter
 	blend:   bool,  // drawn over what is behind, after the opaque draws, by draw_order then far to near
 	draw_order: int,  // stage layer sort value, lower first; 0 for the rest
-	additive: bool,  // a blended draw added onto what is behind
+	blend_state: Blend_State,
 	unlit:   bool,  // base color only, no scene lights
 	reflection: Reflection,
 }
+
+// How a blended draw meets what is behind: source x its colour, operation, destination x what is behind. The
+// target's alpha is left as it is.
+Blend_State :: struct {
+	source, destination: sdl.GPUBlendFactor,
+	operation:           sdl.GPUBlendOp,
+}
+ALPHA_BLEND :: Blend_State{.SRC_ALPHA, .ONE_MINUS_SRC_ALPHA, .ADD}
 
 // A sphere map added onto the base color, looked up by the camera-to-vertex direction (TK5 NU_mEnvMap shaders).
 Reflection :: struct {
@@ -80,7 +88,8 @@ Material :: struct {
 Gpu :: struct {
 	device:        ^sdl.GPUDevice,
 	pipeline:      ^sdl.GPUGraphicsPipeline,
-	blend_pipeline, add_pipeline: ^sdl.GPUGraphicsPipeline,
+	blend_pipelines: map[Blend_State]^sdl.GPUGraphicsPipeline,  // made on first use
+	vertex_shader, fragment_shader: ^sdl.GPUShader,  // kept for the blend pipelines
 	sampler:       ^sdl.GPUSampler,
 	white:         ^sdl.GPUTexture,
 	color, depth:  ^sdl.GPUTexture,  // the targets, made at size
@@ -96,45 +105,12 @@ Gpu :: struct {
 
 gpu_create :: proc(device: ^sdl.GPUDevice) -> (gpu: Gpu, ok: bool) {
 	gpu.device = device
+	gpu.blend_pipelines = make(map[Blend_State]^sdl.GPUGraphicsPipeline)
 	defer if !ok do gpu_destroy(&gpu)
-	vertex_shader := shader(device, #load("../../build/shaders/scene.vert.spv"), .VERTEX, storage_buffers = 1, uniform_buffers = 2) or_return
-	defer sdl.ReleaseGPUShader(device, vertex_shader)
-	fragment_shader := shader(device, #load("../../build/shaders/scene.frag.spv"), .FRAGMENT, samplers = 2, uniform_buffers = 2) or_return
-	defer sdl.ReleaseGPUShader(device, fragment_shader)
-	buffers := []sdl.GPUVertexBufferDescription{{slot = 0, pitch = size_of(Vertex), input_rate = .VERTEX}}
-	attributes := []sdl.GPUVertexAttribute {
-		{0, 0, .FLOAT3, u32(offset_of(Vertex, position))},
-		{1, 0, .FLOAT3, u32(offset_of(Vertex, normal))},
-		{2, 0, .FLOAT2, u32(offset_of(Vertex, uv))},
-		{3, 0, .USHORT4, u32(offset_of(Vertex, joints))},
-		{4, 0, .FLOAT4, u32(offset_of(Vertex, weights))},
-		{5, 0, .FLOAT4, u32(offset_of(Vertex, color))},
-	}
-	targets := []sdl.GPUColorTargetDescription{{format = COLOR_FORMAT}}
-	info := sdl.GPUGraphicsPipelineCreateInfo{
-		vertex_shader = vertex_shader,
-		fragment_shader = fragment_shader,
-		vertex_input_state = {raw_data(buffers), u32(len(buffers)), raw_data(attributes), u32(len(attributes))},
-		primitive_type = .TRIANGLELIST,
-		rasterizer_state = {fill_mode = .FILL, cull_mode = .NONE},  // glTF double-sided materials; winding unchecked
-		depth_stencil_state = {compare_op = .LESS, enable_depth_test = true, enable_depth_write = true},
-		target_info = {color_target_descriptions = raw_data(targets), num_color_targets = 1, depth_stencil_format = DEPTH_FORMAT, has_depth_stencil_target = true},
-	}
-	gpu.pipeline = sdl.CreateGPUGraphicsPipeline(device, info)
+	gpu.vertex_shader = shader(device, #load("../../build/shaders/scene.vert.spv"), .VERTEX, storage_buffers = 1, uniform_buffers = 2) or_return
+	gpu.fragment_shader = shader(device, #load("../../build/shaders/scene.frag.spv"), .FRAGMENT, samplers = 2, uniform_buffers = 2) or_return
+	gpu.pipeline = scene_pipeline(&gpu, nil)
 	if gpu.pipeline == nil do return
-	blended := []sdl.GPUColorTargetDescription{{format = COLOR_FORMAT, blend_state = {
-		enable_blend = true,
-		src_color_blendfactor = .SRC_ALPHA, dst_color_blendfactor = .ONE_MINUS_SRC_ALPHA, color_blend_op = .ADD,
-		src_alpha_blendfactor = .ONE, dst_alpha_blendfactor = .ONE_MINUS_SRC_ALPHA, alpha_blend_op = .ADD,
-	}}}
-	info.target_info.color_target_descriptions = raw_data(blended)
-	info.depth_stencil_state.enable_depth_write = false
-	gpu.blend_pipeline = sdl.CreateGPUGraphicsPipeline(device, info)
-	if gpu.blend_pipeline == nil do return
-	blended[0].blend_state.dst_color_blendfactor = .ONE
-	blended[0].blend_state.src_alpha_blendfactor, blended[0].blend_state.dst_alpha_blendfactor = .ZERO, .ONE
-	gpu.add_pipeline = sdl.CreateGPUGraphicsPipeline(device, info)
-	if gpu.add_pipeline == nil do return
 	gpu.fx_pipeline, gpu.fx_add_pipeline = fx_pipelines(device) or_return
 	gpu.sampler = sdl.CreateGPUSampler(device, {min_filter = .LINEAR, mag_filter = .LINEAR, mipmap_mode = .LINEAR, address_mode_u = .REPEAT, address_mode_v = .REPEAT, address_mode_w = .REPEAT})
 	if gpu.sampler == nil do return
@@ -146,6 +122,47 @@ gpu_create :: proc(device: ^sdl.GPUDevice) -> (gpu: Gpu, ok: bool) {
 	return gpu, true
 }
 
+// The scene pipeline: opaque, writing depth, when blend is nil.
+@(private = "file")
+scene_pipeline :: proc(gpu: ^Gpu, blend: Maybe(Blend_State)) -> ^sdl.GPUGraphicsPipeline {
+	buffers := []sdl.GPUVertexBufferDescription{{slot = 0, pitch = size_of(Vertex), input_rate = .VERTEX}}
+	attributes := []sdl.GPUVertexAttribute {
+		{0, 0, .FLOAT3, u32(offset_of(Vertex, position))},
+		{1, 0, .FLOAT3, u32(offset_of(Vertex, normal))},
+		{2, 0, .FLOAT2, u32(offset_of(Vertex, uv))},
+		{3, 0, .USHORT4, u32(offset_of(Vertex, joints))},
+		{4, 0, .FLOAT4, u32(offset_of(Vertex, weights))},
+		{5, 0, .FLOAT4, u32(offset_of(Vertex, color))},
+	}
+	targets := []sdl.GPUColorTargetDescription{{format = COLOR_FORMAT}}
+	if state, has := blend.?; has {
+		targets[0].blend_state = {
+			enable_blend = true,
+			src_color_blendfactor = state.source, dst_color_blendfactor = state.destination, color_blend_op = state.operation,
+			src_alpha_blendfactor = .ZERO, dst_alpha_blendfactor = .ONE, alpha_blend_op = .ADD,
+		}
+	}
+	info := sdl.GPUGraphicsPipelineCreateInfo{
+		vertex_shader = gpu.vertex_shader,
+		fragment_shader = gpu.fragment_shader,
+		vertex_input_state = {raw_data(buffers), u32(len(buffers)), raw_data(attributes), u32(len(attributes))},
+		primitive_type = .TRIANGLELIST,
+		rasterizer_state = {fill_mode = .FILL, cull_mode = .NONE},  // glTF double-sided materials; winding unchecked
+		depth_stencil_state = {compare_op = .LESS, enable_depth_test = true, enable_depth_write = blend == nil},
+		target_info = {color_target_descriptions = raw_data(targets), num_color_targets = 1, depth_stencil_format = DEPTH_FORMAT, has_depth_stencil_target = true},
+	}
+	return sdl.CreateGPUGraphicsPipeline(gpu.device, info)
+}
+
+// nil when SDL can not make it.
+@(private = "file")
+blend_pipeline :: proc(gpu: ^Gpu, state: Blend_State) -> ^sdl.GPUGraphicsPipeline {
+	if pipeline, made := gpu.blend_pipelines[state]; made do return pipeline
+	pipeline := scene_pipeline(gpu, state)
+	if pipeline != nil do gpu.blend_pipelines[state] = pipeline
+	return pipeline
+}
+
 gpu_destroy :: proc(gpu: ^Gpu) {
 	release_targets(gpu)
 	if gpu.joints != nil do sdl.ReleaseGPUBuffer(gpu.device, gpu.joints)
@@ -153,8 +170,10 @@ gpu_destroy :: proc(gpu: ^Gpu) {
 	if gpu.white != nil do sdl.ReleaseGPUTexture(gpu.device, gpu.white)
 	if gpu.sampler != nil do sdl.ReleaseGPUSampler(gpu.device, gpu.sampler)
 	if gpu.pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.pipeline)
-	if gpu.blend_pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.blend_pipeline)
-	if gpu.add_pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.add_pipeline)
+	for _, pipeline in gpu.blend_pipelines do sdl.ReleaseGPUGraphicsPipeline(gpu.device, pipeline)
+	delete(gpu.blend_pipelines)
+	if gpu.vertex_shader != nil do sdl.ReleaseGPUShader(gpu.device, gpu.vertex_shader)
+	if gpu.fragment_shader != nil do sdl.ReleaseGPUShader(gpu.device, gpu.fragment_shader)
 	if gpu.fx_pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.fx_pipeline)
 	if gpu.fx_add_pipeline != nil do sdl.ReleaseGPUGraphicsPipeline(gpu.device, gpu.fx_add_pipeline)
 	if gpu.fx_vertices != nil do sdl.ReleaseGPUBuffer(gpu.device, gpu.fx_vertices)
@@ -254,7 +273,8 @@ draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: 
 	bound: ^sdl.GPUGraphicsPipeline
 	for entry in blended {
 		draw := draws[entry.index]
-		pipeline := draw.additive ? gpu.add_pipeline : gpu.blend_pipeline
+		pipeline := blend_pipeline(gpu, draw.blend_state)
+		if pipeline == nil do continue
 		if pipeline != bound do sdl.BindGPUGraphicsPipeline(pass, pipeline)
 		bound = pipeline
 		draw_one(command, pass, gpu, draw, joint_bases[entry.index])

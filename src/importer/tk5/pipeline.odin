@@ -12,6 +12,7 @@ import "../../audio"
 import "../../db"
 import convert "../../convert/tk5"
 import formats "../../formats/tk5"
+import "../../gltf"
 import "../../release"
 import "../../titlepack"
 
@@ -35,6 +36,7 @@ Import :: struct {
 	w:        db.Writer,
 	progress: ^Progress,
 	textures: map[string]bool,  // <owner>/<hash> with a texture row
+	blends:   [formats.BLEND_MODES]gltf.Blend,  // the game's blend table
 	sound_packs: map[[32]byte]string,  // SHA-256 of a sound pack -> the bank its files were written under
 	failure:  string,  // the first part that did not read or write; it fails the import
 }
@@ -54,6 +56,8 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	table, ok := formats.read_file_table(game.eboot, game.build)
 	if !ok do return "file table not found in EBOOT"
 	defer delete(table)
+	blend_modes, blends_read := formats.read_blend_modes(game.eboot, game.build)
+	if !blends_read do return "blend table not found in EBOOT"
 	file, open_err := os.open(game.data)
 	if open_err != nil do return "cannot open T55DATA1.BIN"
 	defer os.close(file)
@@ -68,6 +72,7 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	defer thread.destroy(hasher)
 
 	im := Import{archive = {table, file}, game = game, root = root, progress = progress}
+	for mode, row in blend_modes do im.blends[row] = gl_blend(mode)
 	defer {
 		for key in im.textures do delete(key)
 		delete(im.textures)
@@ -260,7 +265,7 @@ import_parts :: proc(im: ^Import, owner: string, parts: []string, model: []byte)
 		meshes, read := formats.read_ndp3(nud[i], context.temp_allocator)
 		file := fmt.tprintf("parts/%s/%s.glb", owner, part)
 		if !read do return false
-		first_mesh_node, written := convert.write_model(im.root, file, meshes, texture_files, skeleton, mop = mop)
+		first_mesh_node, written := convert.write_model(im.root, file, meshes, texture_files, im.blends[:], skeleton, mop = mop)
 		if !written do return false
 		db.insert(&im.w, "part", part, owner, i == 0 ? "body" : "lod", parts[0], file)
 		if i < len(mif) && !write_moveset_meshes(im, part, mif[i], first_mesh_node) do return false
@@ -472,6 +477,25 @@ stage_id :: proc(index: int) -> string {
 	return id != "" ? id : fmt.tprintf("stage_%02d", index)
 }
 
+// A blend table row in OW_materials_blend names.
+gl_blend :: proc(mode: formats.Blend_Mode) -> gltf.Blend {
+	gl_factor :: proc(factor: u16) -> string {
+		GL_SRC_COLOR :: 0x300
+		from_src_color := [?]string{"src_color", "one_minus_src_color", "src_alpha", "one_minus_src_alpha", "dst_alpha", "one_minus_dst_alpha", "dst_color", "one_minus_dst_color"}
+		if factor >= GL_SRC_COLOR && int(factor - GL_SRC_COLOR) < len(from_src_color) do return from_src_color[factor - GL_SRC_COLOR]
+		return factor == 1 ? "one" : "zero"
+	}
+	operation: string
+	switch mode.equation {
+	case 0x8007: operation = "min"
+	case 0x8008: operation = "max"
+	case 0x800a: operation = "subtract"
+	case 0x800b: operation = "reverse_subtract"
+	case: operation = "add"  // 0x8006
+	}
+	return {gl_factor(mode.source), gl_factor(mode.destination), operation}
+}
+
 // Each stage layer's draw order, lower first: the game's sort value (layer constructor 0x1a520c). The shadow layer
 // (not imported) gets 0.
 stage_layer_orders :: proc(im: ^Import, index: int, infinite: bool) -> (orders: [formats.STAGE_LAYERS]int) {
@@ -534,7 +558,7 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 	texture_files := write_textures(im, id, textures)
 	if len(meshes) > 0 {
 		layer_orders := stage_layer_orders(im, index, s.radius > 0)
-		if _, written := convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:], layers[:], layer_orders[:]); !written {
+		if _, written := convert.write_model(im.root, file, meshes[:], texture_files, im.blends[:], nil, matrices[:], layers[:], layer_orders[:]); !written {
 			fail(im, "stage %s: model did not write", id)
 			return
 		}

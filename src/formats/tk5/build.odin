@@ -17,6 +17,7 @@ Build :: struct {
 	special_sounds:          u64,     // vaddr: SPECIAL_SOUNDS rows {id, (voice character, record) x2}
 	stage_sounds:            u64,     // vaddr: per stage {pointer, count} of its sound number -> record list
 	layer_orders:            u64,     // vaddr: f32 draw sort value of stage layers 0..4; rows walled, infinite, stage 22
+	blend_modes:             u64,     // vaddr: BLEND_MODES rows of Blend_Mode
 }
 
 BUILDS :: [?]Build{
@@ -35,6 +36,7 @@ BUILDS :: [?]Build{
 		special_sounds          = 0x10007198,
 		stage_sounds            = 0x351d90,
 		layer_orders            = 0x1001c684,
+		blend_modes             = 0x10022e00,
 	},
 }
 
