@@ -1,12 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-# ./release.sh: a speed build of openwavu goes up as the GitHub release named by the last tag in releases.txt.
-# Launchers find it through release.txt (tag and SHA-256); see src/game/binary_update.odin.
-# (hole release-ci :tags tools :sev polish) the release is built on the releaser's machine; no CI build.
-tag=$(awk 'NF { last = $NF } END { print last }' releases.txt)
-./build.sh speed
-mkdir -p build/release
-cp build/openwavu build/release/openwavu-linux
-echo "$tag $(sha256sum build/release/openwavu-linux | cut -d' ' -f1)" > build/release/release.txt
-gh release create "$tag" build/release/openwavu-linux build/release/release.txt --title "openwavu $tag" --notes ""
+# ./release.sh [--public] --version <tag> --notes <text>: .github/workflows/release.yml builds origin/main for Linux and
+# Windows and puts it up as the GitHub release <tag>, a draft unless --public. Launchers find it through release.txt; see
+# src/game/binary_update.odin.
+usage() {
+	echo 'usage: ./release.sh [--public] --version <tag> --notes "release notes"' >&2
+	exit 2
+}
+public=false version= notes=
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--public) public=true; shift ;;
+		--version) [ $# -ge 2 ] || usage; version=$2; shift 2 ;;
+		--notes) [ $# -ge 2 ] || usage; notes=$2; shift 2 ;;
+		*) usage ;;
+	esac
+done
+[ -n "$version" ] && [ -n "$notes" ] || usage
+git fetch -q origin main
+last=$(git show origin/main:releases.txt | awk 'NF { last = $NF } END { print last }')
+if [ "$last" != "$version" ]; then
+	echo "release.sh: releases.txt on origin/main ends in $last: add $version to releases.txt, commit and push, then release." >&2
+	exit 1
+fi
+gh workflow run release.yml --ref main -f version="$version" -f notes="$notes" -f public="$public"
+echo "release.sh: started; follow it with gh run watch"

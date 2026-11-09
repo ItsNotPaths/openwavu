@@ -1,0 +1,104 @@
+# release.sh starts this: Linux and Windows speed builds of the commit, then the GitHub release with release.txt.
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      version: {type: string, required: true}
+      notes: {type: string, required: true}
+      public: {type: boolean, default: false}
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    # AlmaLinux 8: glibc 2.28, so the binary runs on old distros too.
+    container: almalinux:8
+    steps:
+      - name: packages
+        run: |
+          dnf install -y dnf-plugins-core epel-release
+          dnf config-manager --set-enabled powertools
+          dnf install -y git gcc-toolset-14 clang lld cmake make diffutils findutils which xz unzip openssl perl python3 \
+            libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXi-devel libXfixes-devel libXScrnSaver-devel \
+            libxkbcommon-devel wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel mesa-libgbm-devel \
+            libdrm-devel alsa-lib-devel pulseaudio-libs-devel pipewire-devel dbus-devel systemd-devel libdecor-devel
+          echo /opt/rh/gcc-toolset-14/root/usr/bin >> "$GITHUB_PATH"
+      - uses: actions/checkout@v4
+      - name: odin
+        run: |
+          odin=$(sed -n 's/^odin = "\(.*\)"/\1/p' mise.toml)
+          curl -fL --retry 3 "https://github.com/odin-lang/Odin/releases/download/$odin/odin-linux-amd64-$odin.tar.gz" | tar xz -C /opt
+          echo "$(dirname "$(find /opt -maxdepth 3 -name odin -type f | head -1)")" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
+        with:
+          path: vendor
+          key: linux-vendor-${{ hashFiles('download-deps.sh', 'mise.toml') }}
+      - run: ./build.sh speed
+      - run: objdump -T build/openwavu | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openwavu-linux
+          path: build/openwavu
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          path-type: inherit
+          install: make diffutils unzip openssl perl python
+      # MSYS2's link.exe would hide MSVC's from ffmpeg's configure.
+      - run: rm -f /usr/bin/link.exe
+      - name: odin
+        run: |
+          odin=$(sed -n 's/^odin = "\(.*\)"/\1/p' mise.toml)
+          curl -fL --retry 3 "https://github.com/odin-lang/Odin/releases/download/$odin/odin-windows-amd64-$odin.zip" -o "$RUNNER_TEMP/odin.zip"
+          unzip -q "$RUNNER_TEMP/odin.zip" -d "$RUNNER_TEMP/odin"
+          cygpath -w "$(dirname "$(find "$(cygpath -u "$RUNNER_TEMP")/odin" -name odin.exe | head -1)")" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
+        with:
+          path: vendor
+          key: windows-vendor-${{ hashFiles('download-deps.sh', 'mise.toml') }}
+      - run: ./build.sh speed
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openwavu-windows.exe
+          path: build/openwavu.exe
+
+  release:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      NOTES: ${{ inputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: version check
+        run: |
+          last=$(awk 'NF { last = $NF } END { print last }' releases.txt)
+          [ "$last" = "$VERSION" ] || { echo "releases.txt ends in $last, not $VERSION" >&2; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: publish
+        run: |
+          mkdir release
+          cp artifacts/openwavu-linux/openwavu release/openwavu-linux
+          cp artifacts/openwavu-windows.exe/openwavu.exe release/openwavu-windows.exe
+          {
+            echo "$VERSION"
+            for binary in openwavu-linux openwavu-windows.exe; do
+              echo "$binary $(sha256sum "release/$binary" | cut -d' ' -f1)"
+            done
+          } > release/release.txt
+          draft=--draft
+          [ "${{ inputs.public }}" = true ] && draft=
+          gh release create "$VERSION" release/* --target "$GITHUB_SHA" --title "openwavu $VERSION" --notes "$NOTES" $draft
