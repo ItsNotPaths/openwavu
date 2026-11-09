@@ -20,7 +20,7 @@ jobs:
           dnf install -y git gcc-toolset-14 clang lld cmake make diffutils findutils which xz unzip openssl perl python3 \
             libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXi-devel libXfixes-devel libXScrnSaver-devel \
             libxkbcommon-devel wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel mesa-libgbm-devel \
-            libdrm-devel alsa-lib-devel pulseaudio-libs-devel pipewire-devel dbus-devel systemd-devel libdecor-devel
+            libdrm-devel alsa-lib-devel pulseaudio-libs-devel pipewire-devel dbus-devel systemd-devel
           echo /opt/rh/gcc-toolset-14/root/usr/bin >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
       - name: odin
