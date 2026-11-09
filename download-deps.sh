@@ -38,8 +38,10 @@ mkdir -p vendor
 # Windows (MSYS2 bash, MSVC on PATH): Odin ships ENet and curl (schannel) there, so those are not built.
 windows=
 case "$(uname -s)" in MINGW*|MSYS*) windows=1 ;; esac
-# CMake builds: static, PIC, and the static MSVC runtime that Odin links on Windows.
-cmake_flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded)
+# CMake builds: static, PIC, with debug info (in the objects on MSVC, so the link puts it in the game's .pdb), and the
+# static MSVC runtime that Odin links on Windows.
+cmake_flags=(-DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+	-DCMAKE_POLICY_DEFAULT_CMP0141=NEW -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded)
 
 # unpack <archive> <dir>: the archive's one top folder becomes dir.
 unpack() {
@@ -110,7 +112,7 @@ if [ -z "$windows" ] && [ ! -f vendor/enet/libenet.a ]; then
 	tar xzf "$enet_dir/enet.tar.gz" -C "$enet_dir" --strip-components=1
 	mkdir -p vendor/enet
 	for source in callbacks compress host list packet peer protocol unix; do
-		vendor/zig/zig cc -O2 -I"$enet_dir/include" \
+		vendor/zig/zig cc -O2 -g -I"$enet_dir/include" \
 			-DHAS_POLL -DHAS_FCNTL -DHAS_SOCKLEN_T -DHAS_MSGHDR_FLAGS -DHAS_GETADDRINFO -DHAS_GETNAMEINFO \
 			-DHAS_INET_PTON -DHAS_INET_NTOP -c "$enet_dir/$source.c" -o "$enet_dir/$source.o"
 	done
@@ -176,8 +178,8 @@ if [ ! -f vendor/sdl3/dynapi/SDL_dynapi_procs.h ]; then
 	mkdir -p "$sdl_dir/src" && tar xzf "$sdl_dir/sdl.tar.gz" -C "$sdl_dir/src" --strip-components=1
 	cmake -S "$sdl_dir/src" -B "$sdl_dir/build" "${cmake_flags[@]}" -DCMAKE_INSTALL_PREFIX="$PWD/vendor/sdl3" \
 		-DCMAKE_INSTALL_LIBDIR=lib -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF -DSDL_EXAMPLES=OFF >/dev/null
-	cmake --build "$sdl_dir/build" --config Release -j >/dev/null
-	cmake --install "$sdl_dir/build" --config Release >/dev/null
+	cmake --build "$sdl_dir/build" --config RelWithDebInfo -j >/dev/null
+	cmake --install "$sdl_dir/build" --config RelWithDebInfo >/dev/null
 	mkdir -p vendor/sdl3/dynapi
 	cp "$sdl_dir/src/src/dynapi/SDL_dynapi_procs.h" "$sdl_dir/src/LICENSE.txt" vendor/sdl3/dynapi/
 	rm -rf "$sdl_dir"
@@ -195,8 +197,8 @@ if [ ! -f vendor/sdl3_ttf/include/SDL3_ttf/SDL_ttf.h ]; then
 	cmake -S "$ttf_dir/src" -B "$ttf_dir/build" "${cmake_flags[@]}" -DBUILD_SHARED_LIBS=OFF -DCMAKE_PREFIX_PATH="$PWD/vendor/sdl3" \
 		-DCMAKE_INSTALL_PREFIX="$ttf_dir/install" -DCMAKE_INSTALL_LIBDIR=lib \
 		-DSDLTTF_VENDORED=ON -DSDLTTF_HARFBUZZ=OFF -DSDLTTF_PLUTOSVG=OFF -DSDLTTF_SAMPLES=OFF >/dev/null
-	cmake --build "$ttf_dir/build" --config Release -j >/dev/null
-	cmake --install "$ttf_dir/build" --config Release >/dev/null
+	cmake --build "$ttf_dir/build" --config RelWithDebInfo -j >/dev/null
+	cmake --install "$ttf_dir/build" --config RelWithDebInfo >/dev/null
 	mkdir -p vendor/sdl3_ttf/include
 	find "$ttf_dir/install/lib" -maxdepth 1 -type f -name '*SDL3_ttf*' -exec cp {} vendor/sdl3_ttf/ \;
 	cp "$ttf_dir/src/LICENSE.txt" vendor/sdl3_ttf/
@@ -212,7 +214,7 @@ if [ ! -x vendor/glslang/glslang ]; then
 	mkdir -p "$glslang_dir/src" && tar xzf "$glslang_dir/glslang.tar.gz" -C "$glslang_dir/src" --strip-components=1
 	cmake -S "$glslang_dir/src" -B "$glslang_dir/build" "${cmake_flags[@]}" -DENABLE_OPT=OFF -DGLSLANG_TESTS=OFF \
 		-DENABLE_HLSL=OFF -DBUILD_SHARED_LIBS=OFF >/dev/null
-	cmake --build "$glslang_dir/build" --config Release -j --target glslang-standalone >/dev/null
+	cmake --build "$glslang_dir/build" --config RelWithDebInfo -j --target glslang-standalone >/dev/null
 	mkdir -p vendor/glslang
 	find "$glslang_dir/build/StandAlone" -type f \( -name glslang -o -name glslang.exe \) -exec cp {} vendor/glslang/ \;
 	cp "$glslang_dir/src/LICENSE.txt" vendor/glslang/
@@ -252,13 +254,13 @@ if [ -z "$windows" ] && [ ! -f vendor/curl/libcurl.a ]; then
 		sources=("$curl_dir/$dir"/*.c)
 		[ "$dir" = mbedtls ] && sources=("$curl_dir/mbedtls/library"/*.c)
 		for source in "${sources[@]}"; do
-			"$zig" cc -O2 -fPIC -DHAVE_UNISTD_H -I"$curl_dir/zlib" -I"$curl_dir/mbedtls/include" -I"$curl_dir/mbedtls/library" \
+			"$zig" cc -O2 -g -fPIC -DHAVE_UNISTD_H -I"$curl_dir/zlib" -I"$curl_dir/mbedtls/include" -I"$curl_dir/mbedtls/library" \
 				-c "$source" -o "$curl_dir/$dir-objects/$(basename "$source" .c).o"
 		done
 	done
 	"$zig" ar rcs vendor/curl/libz.a "$curl_dir"/zlib-objects/*.o
 	"$zig" ar rcs "$curl_dir/libmbedtls.a" "$curl_dir"/mbedtls-objects/*.o
-	cmake -S "$curl_dir/curl" -B "$curl_dir/build" -DCMAKE_BUILD_TYPE=Release \
+	cmake -S "$curl_dir/curl" -B "$curl_dir/build" -DCMAKE_BUILD_TYPE=RelWithDebInfo \
 		-DCMAKE_C_COMPILER="$zig" -DCMAKE_C_COMPILER_ARG1=cc -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
 		-DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DBUILD_CURL_EXE=OFF -DBUILD_TESTING=OFF \
 		-DBUILD_EXAMPLES=OFF -DBUILD_LIBCURL_DOCS=OFF -DBUILD_MISC_DOCS=OFF -DENABLE_CURL_MANUAL=OFF \

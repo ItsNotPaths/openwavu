@@ -46,7 +46,7 @@ jobs:
       # GNU ld fails on the zig-built objects: "failed to set dynamic section sizes: bad value".
       - run: bash -x ./build.sh speed
         env:
-          ODIN_FLAGS: -linker:lld
+          ODIN_FLAGS: -linker:lld -debug
       - run: objdump -T build/openwavu | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
       - uses: actions/upload-artifact@v4
         with:

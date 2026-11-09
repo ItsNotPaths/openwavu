@@ -16,9 +16,9 @@ done
 mkdir -p build
 if [ "$only_server" = 1 ]; then ./download-deps.sh server; else ./download-deps.sh; fi
 # Host C libraries: cc, or zig for MSVC on Windows (MSYS2 bash), where Odin links with MSVC.
-c_compiler=(cc -fPIC) archiver=(ar) exe= windows=
+c_compiler=(cc -g -fPIC) archiver=(ar) exe= windows=
 case "$(uname -s)" in
-	MINGW*|MSYS*) c_compiler=(vendor/zig/zig cc -target x86_64-windows-msvc) archiver=(vendor/zig/zig ar) exe=.exe windows=1 ;;
+	MINGW*|MSYS*) c_compiler=(vendor/zig/zig cc -target x86_64-windows-msvc -g) archiver=(vendor/zig/zig ar) exe=.exe windows=1 ;;
 esac
 # Odin's default Windows linker, radlink, misses symbols in Odin's own libz.lib.
 [ -n "$windows" ] && odin_flags+=(-linker:msvc)
