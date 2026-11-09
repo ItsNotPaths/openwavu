@@ -77,6 +77,8 @@ transform_matrix :: proc(transform: Transform) -> matrix[4, 4]f32 {
 subtree_draws :: proc(draws: ^[dynamic]Draw, model: ^Model, world: []matrix[4, 4]f32, index: int, left_out: []bool, shared: Draw, allocator := context.temp_allocator) {
 	if left_out != nil && left_out[index] do return
 	model_node := model.nodes[index]
+	shared := shared
+	if model_node.draw_order != 0 do shared.draw_order = model_node.draw_order
 	if model_node.mesh >= 0 {
 		joints := mesh_joints(model, world, index, allocator)
 		for primitive in model.meshes[model_node.mesh] {

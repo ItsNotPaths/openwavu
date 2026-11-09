@@ -38,7 +38,8 @@ Draw :: struct {
 	cutoff:  f32,  // drop pixels with alpha below it; 0 keeps all
 	keep_below: f32,  // drop pixels with alpha at or above it; 0 keeps all
 	scenery: bool,  // fades where it hides a fighter
-	blend:   bool,  // drawn over what is behind, after the opaque draws, far to near
+	blend:   bool,  // drawn over what is behind, after the opaque draws, by draw_order then far to near
+	draw_order: int,  // stage layer sort value, lower first; 0 for the rest
 	additive: bool,  // a blended draw added onto what is behind
 	unlit:   bool,  // base color only, no scene lights
 	reflection: Reflection,
@@ -232,8 +233,9 @@ draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: 
 	for index in 1 ..< len(draws) do joint_bases[index] = joint_bases[index - 1] + u32(len(draws[index - 1].joints))
 	sdl.BindGPUGraphicsPipeline(pass, gpu.pipeline)
 	Blended :: struct {
-		index:    int,
-		distance: f32,  // of its centre from the camera
+		index:      int,
+		draw_order: int,
+		distance:   f32,  // of its centre from the camera
 	}
 	blended := make([dynamic]Blended, context.temp_allocator)
 	for draw, index in draws {
@@ -243,9 +245,12 @@ draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: 
 		}
 		centre := draw.mesh.centre
 		if len(draw.joints) > 0 do centre = (draw.joints[0] * [4]f32{centre.x, centre.y, centre.z, 1}).xyz
-		append(&blended, Blended{index, linalg.distance(centre, scene.camera.position)})
+		append(&blended, Blended{index, draw.draw_order, linalg.distance(centre, scene.camera.position)})
 	}
-	slice.sort_by(blended[:], proc(first, second: Blended) -> bool {return first.distance > second.distance})
+	slice.sort_by(blended[:], proc(first, second: Blended) -> bool {
+		if first.draw_order != second.draw_order do return first.draw_order < second.draw_order
+		return first.distance > second.distance
+	})
 	bound: ^sdl.GPUGraphicsPipeline
 	for entry in blended {
 		draw := draws[entry.index]

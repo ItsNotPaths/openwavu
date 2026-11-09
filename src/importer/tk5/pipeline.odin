@@ -472,6 +472,18 @@ stage_id :: proc(index: int) -> string {
 	return id != "" ? id : fmt.tprintf("stage_%02d", index)
 }
 
+// Each stage layer's draw order, lower first: the game's sort value (layer constructor 0x1a520c). The shadow layer
+// (not imported) gets 0.
+stage_layer_orders :: proc(im: ^Import, index: int, infinite: bool) -> (orders: [formats.STAGE_LAYERS]int) {
+	SORTED_LAYERS :: 5
+	OWN_ROW_STAGE :: 22  // the game gives this infinite stage a row of its own
+	row := !infinite ? 0 : index == OWN_ROW_STAGE ? 2 : 1
+	words, read := formats.read_words(im.game.eboot, im.game.build.layer_orders + u64(4 * SORTED_LAYERS * row), SORTED_LAYERS, allocator = context.temp_allocator)
+	if !read do return
+	for word, layer in words do orders[layer] = int(transmute(f32)u32(word))
+	return
+}
+
 // music_track: -1 for none.
 import_stage :: proc(im: ^Import, index: int, music_track: int) {
 	defer free_all(context.temp_allocator)
@@ -521,7 +533,8 @@ import_stage :: proc(im: ^Import, index: int, music_track: int) {
 	file := fmt.tprintf("stages/%s.glb", id)
 	texture_files := write_textures(im, id, textures)
 	if len(meshes) > 0 {
-		if _, written := convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:], layers[:]); !written {
+		layer_orders := stage_layer_orders(im, index, s.radius > 0)
+		if _, written := convert.write_model(im.root, file, meshes[:], texture_files, nil, matrices[:], layers[:], layer_orders[:]); !written {
 			fail(im, "stage %s: model did not write", id)
 			return
 		}
