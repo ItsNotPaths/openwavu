@@ -294,9 +294,10 @@ if [ ! -f vendor/ffmpeg/lib/libavcodec.a ]; then
 	fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG.tar.xz" "$ffmpeg_dir/ffmpeg.tar.xz" "$FFMPEG_SHA256"
 	mkdir -p "$ffmpeg_dir/src" && tar xJf "$ffmpeg_dir/ffmpeg.tar.xz" -C "$ffmpeg_dir/src" --strip-components=1
 	prefix="$PWD/vendor/ffmpeg"
-	toolchain=()
-	[ -n "$windows" ] && toolchain=(--toolchain=msvc --extra-cflags=-MT)
-	(cd "$ffmpeg_dir/src" && ./configure --prefix="$prefix" "${toolchain[@]}" --disable-everything --disable-programs --disable-doc \
+	# PIC: the game links as PIE, and not every gcc makes PIC by default.
+	ffmpeg_flags=(--enable-pic)
+	[ -n "$windows" ] && ffmpeg_flags=(--toolchain=msvc --extra-cflags=-MT)
+	(cd "$ffmpeg_dir/src" && ./configure --prefix="$prefix" "${ffmpeg_flags[@]}" --disable-everything --disable-programs --disable-doc \
 		--disable-network --disable-autodetect --disable-avformat --disable-avdevice --disable-avfilter --disable-swscale \
 		--disable-swresample --disable-x86asm --disable-pthreads --enable-static --disable-shared \
 		--enable-decoder=atrac3p,adpcm_psx --enable-encoder=flac >/dev/null && make -j >/dev/null && make install >/dev/null)
