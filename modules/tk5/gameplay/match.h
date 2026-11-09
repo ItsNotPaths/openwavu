@@ -10,7 +10,6 @@
 typedef struct {
     T5World world;
     T5Fighter fighters[T5_FIGHTER_COUNT];
-    float view_normal[2];  // xz direction from the fighters to the camera; screen sides follow it
 } T5MatchState;
 
 enum { ROUNDS_MAX = 2 * 10 - 1 };  // the most rounds a match takes: rounds_to_win is at most 10

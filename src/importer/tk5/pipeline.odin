@@ -96,7 +96,6 @@ run :: proc(game: Game, root: string, progress: ^Progress = nil) -> (err: string
 	throw_cameras, read := formats.read_throw_cameras(game.eboot, game.build, context.temp_allocator)
 	if !read do fail(&im, "throw cameras did not read")
 	convert.write_throw_camera_rows(w, throw_cameras)
-	// (hole side-switch-flags :tags (importer round-show) :needs coded-cameras) no side switch flag per throw_camera row: at import, place each row's shot against the anims of the throws that use its category and flag the rows whose shot ends with the fighters swapped on screen.
 	stage_tracks := import_music(&im)  // before the stages that name them
 	for id in 0 ..< formats.STAGE_COUNT {
 		import_stage(&im, id, stage_tracks[id])

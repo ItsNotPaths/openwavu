@@ -9,7 +9,7 @@
 #include "sim/skel.h"
 #include "sim/world.h"
 
-enum { T5_VIEW_VERSION = 6 };
+enum { T5_VIEW_VERSION = 7 };
 
 typedef struct {  // the fighter fields the presenter's hand poses read
     T5PoseProp right_pose, left_pose;  // the hand channel properties
@@ -47,7 +47,6 @@ typedef struct {
     char moveset[T5_NAME_BYTES]; // the db character whose moves run this round (Mokujin takes another's)
     int32_t health, max_health;  // 16.16 fixed point
     int16_t wins;                // rounds won
-    bool on_right;               // right of the opponent on screen
     T5Rig rig;                   // mm; root translation = base position; B worlds are the slots a model's bones follow
     int8_t parent_a[T5_BONES_A]; // the skeleton's A parents, to rebuild posed bones
     int8_t parent_b[T5_BONES_B];
@@ -70,7 +69,6 @@ typedef struct {
     uint32_t wins_needed;
     char stage[T5_NAME_BYTES];  // the db stage id
     T5ViewFighter fighters[T5_FIGHTER_COUNT];
-    float view_normal[2];  // xz direction from the fighters to the camera; screen sides follow it
     bool snap;             // a scene cut: the fighters jump, so the display must not blend into this frame
     int8_t focus;          // the side an intro or win pose is about, -1: none
     uint32_t cue_count;

@@ -10,7 +10,7 @@
 #include "sqlite3.h"
 
 // (hole sdk-camera :tags (sdk tk5mod round-show) :sev gap) the fight camera is the demo's follow camera, eased, in pack code: no SDK camera that frames both fighters by params (distance, zoom, lag), and the game's rules (0x772cc) are not ported.
-// (hole move-cameras :tags (tk5mod round-show) :needs (sim-side-switch coded-cameras)) throw cameras are not played (tracks placed at the thrown fighter); the db has no camera category per move (property 0x815f) to pick them from the view, as intro shots are.
+// (hole move-cameras :tags (tk5mod round-show) :needs coded-cameras) throw cameras are not played (tracks placed at the thrown fighter); the db has no camera category per move (property 0x815f) to pick them from the view, as intro shots are.
 // (hole coded-cameras :tags (port round-show)) the hand-coded throw and hit cameras (ids below 0x67, 0x7b22c) are not ported.
 // (hole sdk-timeline :tags (sdk tk5mod round-show) :needs (sdk-camera intro-timelines)) the shot player is pack code, not an SDK library, and plays only cameras: no effects, sounds or voices on the intro and win timelines.
 
@@ -59,6 +59,29 @@ void t5_camera_load(sqlite3 *db, int side, const char *character, T5FileSet *fil
     sqlite3_finalize(rows);
 }
 
+// xz direction from the fighters to the camera; screen sides follow it. On -x: side 1, at -z, is on the left.
+static float view_normal[2] = {-1, 0};
+
+// The camera stays on its side of the line between the fighters, so a fighter changes screen side only by crossing
+// over. A scene cut (a round start) takes a fresh side, with side 1 on the left. Each side goes to the host for its pad.
+// (hole throw-camera-sides :tags (tk5mod round-show) :needs move-cameras) a throw camera does not hand its side back: the game rebuilds the view side from where the throw shot ended (0x772cc), which is how some throws swap the screen sides.
+static void update_sides(const T5View *view) {
+    const T5Mat4 *first = &view->fighters[0].rig.root.world, *second = &view->fighters[1].rig.root.world;
+    float dx = second->m[3][0] - first->m[3][0], dz = second->m[3][2] - first->m[3][2], length = sqrtf(dx * dx + dz * dz);
+    if (length > 1) {
+        float normal_x = -dz / length, normal_z = dx / length;
+        if (!view->snap && normal_x * view_normal[0] + normal_z * view_normal[1] < 0) normal_x = -normal_x, normal_z = -normal_z;
+        view_normal[0] = normal_x;
+        view_normal[1] = normal_z;
+    }
+    float right[2] = {view_normal[1], -view_normal[0]};  // screen right on the floor
+    for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
+        const T5Mat4 *me = &view->fighters[side].rig.root.world, *other = &view->fighters[1 - side].rig.root.world;
+        float along = (me->m[3][0] - other->m[3][0]) * right[0] + (me->m[3][2] - other->m[3][2]) * right[1];
+        ow_pad_on_right((uint32_t)side, along > 0 || (along == 0 && side == 1));
+    }
+}
+
 static float screen_aspect(void) {
     int pixels_wide = 0, pixels_high = 0;
     SDL_GetRenderOutputSize(ow_renderer(), &pixels_wide, &pixels_high);
@@ -73,11 +96,11 @@ static OwCamera fight_camera(const T5View *view) {
         FOCUS_HEIGHT,
         (first->m[3][2] + second->m[3][2]) * 0.5f * MM,
     };
-    float right[2] = {view->view_normal[1], -view->view_normal[0]};  // screen right on the floor
+    float right[2] = {view_normal[1], -view_normal[0]};  // screen right on the floor
     float across = fabsf(((second->m[3][0] - first->m[3][0]) * right[0] + (second->m[3][2] - first->m[3][2]) * right[1]) * MM);
     float shown_per_metre = 2.0f * tanf(FOV / 2) * screen_aspect();  // screen width at one metre away
     float distance = fmaxf(DISTANCE, (across + FIGHTER_ROOM) / shown_per_metre);
-    OwVec3 position = {focus.x + view->view_normal[0] * distance, focus.y + RAISE, focus.z + view->view_normal[1] * distance};
+    OwVec3 position = {focus.x + view_normal[0] * distance, focus.y + RAISE, focus.z + view_normal[1] * distance};
     return (OwCamera){.position = position, .target = focus, .fov = FOV};
 }
 
@@ -142,6 +165,7 @@ static OwVec3 placed(const float local[3]) {
 // The newest shot of the two fighters (the game's later shot replaces the earlier), else the fight camera. Shots and
 // scene cuts are not eased.
 OwCamera t5_camera(const T5View *view, float seconds) {
+    update_sides(view);
     const CameraKey *key = NULL;
     int shot_side = -1;
     int32_t newest = INT32_MAX;

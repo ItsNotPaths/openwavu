@@ -4,6 +4,7 @@ package match
 
 import "core:fmt"
 import "../imports"
+import "../input"
 import "../online"
 import "../presentation"
 import "../sim"
@@ -17,6 +18,7 @@ Match :: struct {
 	presenter: ^imports.Module,
 	bot_sides: bit_set[0 ..< 2; u32],
 	view:      [dynamic]byte,  // the sim view of the last tick: the presenter's ow_view
+	on_right:  [2]bool,        // per side, from the presenter: input.ON_RIGHT in the pads stepped here
 	behind:    u64,            // display time in ns not stepped yet
 	ticked:    bool,           // the last frame ran a tick, so the presenter's scene is a new tick's
 	online:    Online,
@@ -40,6 +42,7 @@ start_modules :: proc(m: ^Match, engine: wasm.Engine, sim_code, presenter_code: 
 	if err = copy_view(m); err != "" do return  // the presenter's init reads the match start's view
 	if m.presenter, err = presentation.create(engine, request.mode.presenter, pack); err != "" do return
 	if err = imports.define_view(m.presenter.linker, &m.view); err != "" do return
+	if err = imports.define_pad_on_right(m.presenter.linker, &m.on_right); err != "" do return
 	return presentation.start(m.presenter, presenter_code)
 }
 
@@ -89,13 +92,19 @@ tick_alpha :: proc(m: ^Match) -> f32 {
 @(private = "file")
 tick :: proc(m: ^Match, pads: [2]sim.Input) -> (err: string) {
 	if m.online.session != nil {
-		_, err = online.session_tick(m.online.session, pads[0], m.online.clock_ns)
+		_, err = online.session_tick(m.online.session, with_side(m, pads[0], m.online.session.side), m.online.clock_ns)
 		return
 	}
 	if m.online.watch != nil do return online.watch_tick(m.online.watch, m.online.clock_ns)
 	pads := pads
 	for side in m.bot_sides do if pads[side], err = sim.bot_pad(m.world, side); err != "" do return
+	for &pad, side in pads do pad = with_side(m, pad, side)
 	return sim.step(m.world, pads)
+}
+
+@(private = "file")
+with_side :: proc(m: ^Match, pad: sim.Input, side: int) -> sim.Input {
+	return {pad.pad | (m.on_right[side] ? input.ON_RIGHT : 0)}
 }
 
 // Online, the match end counts once its frame is confirmed; a lost session ends the match as a draw.

@@ -1,5 +1,4 @@
 // The stock TK5 gameplay module's match: the world setup, one battle frame per tick from two pads, and the view.
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -93,29 +92,7 @@ void t5_match_begin(uint64_t seed) {
     if (seconds > 0) w->rules.round_time = (T5Frames){seconds * FRAMES_PER_SECOND};
     t5_hooks = t5_default_hooks;
     t5_hooks.round_init = round_init;
-    m->view_normal[0] = -1;  // the camera on -x: side 1, at -z, is on the left
-    m->view_normal[1] = 0;
     t5_match_start(w);
-}
-
-// The camera stays on its side of the line between the fighters, so a fighter changes screen side only by crossing
-// over. A fresh view (a round start) puts side 1 on the left.
-// (hole sim-side-switch :tags (tk5mod sim round-show) :needs side-switch-flags) a throw does not pick its camera row (by weight, with an RNG stream of its own so the stock rolls stay the game's) or show it in the view, and a flagged row does not switch the screen sides; only crossing over does.
-static void update_sides(T5MatchState *m, bool fresh) {
-    T5Vec3 a = m->fighters[0].base_position, b = m->fighters[1].base_position;
-    float dx = b.x - a.x, dz = b.z - a.z, length = sqrtf(dx * dx + dz * dz);
-    if (length > 1) {
-        float nx = -dz / length, nz = dx / length;
-        if (!fresh && nx * m->view_normal[0] + nz * m->view_normal[1] < 0) nx = -nx, nz = -nz;
-        m->view_normal[0] = nx;
-        m->view_normal[1] = nz;
-    }
-    float right[2] = {m->view_normal[1], -m->view_normal[0]};  // screen right on the floor
-    for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
-        T5Vec3 me = m->fighters[side].base_position, other = m->fighters[1 - side].base_position;
-        float along = (me.x - other.x) * right[0] + (me.z - other.z) * right[1];
-        m->fighters[side].input.camera_side = along > 0 || (along == 0 && side == 1) ? T5_SIDE_RIGHT : T5_SIDE_LEFT;
-    }
 }
 
 static int8_t axis(uint32_t pad, uint32_t plus, uint32_t minus) { return (int8_t)((pad & plus ? 1 : 0) - (pad & minus ? 1 : 0)); }
@@ -148,14 +125,12 @@ OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1) {
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
         m->fighters[side].standard_input = standard_input(pads[side]);
         m->fighters[side].menu_pressed = pads[side] & OW_PAD_START ? T5_MENU_START : 0;
+        m->fighters[side].input.camera_side = pads[side] & OW_PAD_ON_RIGHT ? T5_SIDE_RIGHT : T5_SIDE_LEFT;
     }
     T5Phase before = w->round.phase;
-    update_sides(m, false);
     t5_hooks.frame(w);
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) m->fighters[side].menu_pressed = 0;
     if (w->round.phase == before) return;
-    T5RoundSetup setup = t5_phase_row(w).setup;
-    if (setup.runs && !setup.on_entrance_point) update_sides(m, true);
     if (w->round.phase == T5_PHASE_KO) report_round(w);
     if (w->round.phase == T5_PHASE_OVER) ow_event(OW_EVENT_MATCH_END, side_of(w->round.winner), 0);
 }
@@ -174,7 +149,6 @@ static void view_fighter(T5ViewFighter *out, uint32_t side) {
     out->health = f->health;
     out->max_health = f->max_health;
     out->wins = f->wins;
-    out->on_right = f->input.camera_side == T5_SIDE_RIGHT;
 }
 
 // Intros are about their own fighter; the flashback and the win poses about the winner.
@@ -205,7 +179,6 @@ OW_EXPORT(ow_sim_view) const void *ow_sim_view(void) {
         .round = w->round.round,
         .timer = w->round.timer.ticks,
         .wins_needed = w->rules.wins_needed,
-        .view_normal = {t5_match.view_normal[0], t5_match.view_normal[1]},
         .snap = w->blend_snap_left > 0,
         .focus = focus_of(w),
     };

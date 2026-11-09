@@ -70,6 +70,9 @@ OW_IMPORT(sound_kind) void ow_sound_kind(struct SDL_AudioStream *stream, uint32_
 OW_IMPORT(pad) uint32_t ow_pad(uint32_t player);
 // The sim view of the last frame (in ow_init: the match start's); returns its length.
 OW_IMPORT(view) int32_t ow_view(void *buf, uint32_t cap);
+// Match presenter: the side's fighter is right of the opponent on this viewer's screen. From the next tick on, the host
+// sets OW_PAD_ON_RIGHT in that side's pad when it steps that side.
+OW_IMPORT(pad_on_right) void ow_pad_on_right(uint32_t side, uint32_t on_right);
 // The whole 3D scene of this frame, an OwScene block (ow_scene.h); the host keeps it until the next one. A block that
 // does not read stops the module.
 OW_IMPORT(scene_submit) void ow_scene_submit(const OwScene *scene, uint32_t size);
@@ -85,6 +88,7 @@ enum {
 	OW_PAD_BUTTON_1 = 1 << 4, OW_PAD_BUTTON_2 = 1 << 5, OW_PAD_BUTTON_3 = 1 << 6, OW_PAD_BUTTON_4 = 1 << 7,
 	OW_PAD_START = 1 << 8,
 	OW_PAD_BACK = 1 << 9,  // a gamepad's Back or Select; menus only, sims ignore it
+	OW_PAD_ON_RIGHT = 1 << 10,  // the player is right of the opponent on their own screen (ow_pad_on_right)
 };
 
 // Sim exports. Inside rollback: the host snapshots [ow_sim_state, + ow_sim_state_size). Outside it, ow_sim_step may

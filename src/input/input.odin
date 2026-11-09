@@ -19,6 +19,7 @@ BUTTON_3 :: 1 << 6
 BUTTON_4 :: 1 << 7
 START :: 1 << 8
 BACK :: 1 << 9  // menus only
+ON_RIGHT :: 1 << 10  // set by the host from the match presenter, not polled
 
 // What a player can bind: each direction, each button, and every combination of the buttons.
 Slot :: enum u8 {
