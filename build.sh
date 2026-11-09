@@ -25,7 +25,7 @@ if [ ! -f vendor/tomlc17/libtomlc17.a ] || [ vendor/tomlc17/tomlc17.c -nt vendor
 	"${archiver[@]}" rcs vendor/tomlc17/libtomlc17.a vendor/tomlc17/tomlc17.o
 fi
 # The server runs on Linux only.
-[ -z "$windows" ] && odin build src/server -out:build/openwavu-server "${odin_flags[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
+[ -z "$windows" ] && odin build src/server -out:build/openwavu-server "${odin_flags[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet -Lvendor/curl"
 [ "$only_server" = 1 ] && exit 0
 if [ ! -f vendor/sqlite/libsqlite3.a ] || [ vendor/sqlite/sqlite3.c -nt vendor/sqlite/libsqlite3.a ]; then
 	"${c_compiler[@]}" -O2 -c vendor/sqlite/sqlite3.c -o vendor/sqlite/sqlite3.o
@@ -131,7 +131,7 @@ vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -mexec-model=reactor -s -Wl,
 	-o build/stageview/stageview.wasm modules/stageview/*.c build/sdk/libow_db.a
 cp modules/stageview/pack.toml build/stageview/
 build/openwavu --package build/stageview >/dev/null
-odin build src/tools/bot -out:build/openwavu-bot$exe "${odin_flags[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
+odin build src/tools/bot -out:build/openwavu-bot$exe "${odin_flags[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet -Lvendor/curl"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
 if [ "$run_tests" = 1 ]; then
