@@ -71,6 +71,21 @@ whole_glb_leaves_out_broken_props_and_hidden_parts :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(drawn_meshes(&model, {{asset = 1, part = 99, transform = IDENTITY}})), 0)
 }
 
+// Two fighters in one costume: a part hidden on one (its bone_offset) still draws on the other.
+@(test)
+hidden_parts_stay_with_their_fighter :: proc(t: ^testing.T) {
+	nodes := []render.Model_Node{
+		{name = "body", parent = -1, children = {1}, local = 1, mesh = 0, skin = -1, bone = -1},
+		{name = "sword", parent = 0, local = 1, mesh = 1, skin = -1, bone = -1},
+	}
+	model := model_of(nodes, 2)
+	IDENTITY :: render.Transform{rotation = 1, scale = 1}
+	first := render.Node{asset = 1, transform = IDENTITY, bone_offset = 100}
+	second := render.Node{asset = 1, transform = IDENTITY, bone_offset = 200}
+	first_sword_hidden := render.Node{asset = 1, part = 2, transform = IDENTITY, bone_offset = 100, flags = {.Hidden}}
+	testing.expect_value(t, len(drawn_meshes(&model, {first, second, first_sword_hidden})), 3)  // two bodies, one sword
+}
+
 // A fighter glb: posed joints sit where the bones say, in the node's space; a joint past the bones given, or with a zero
 // rotation, keeps its rest offset under its parent; a skinned mesh's own node place does not move it; a mesh under a
 // joint (a prop in the hand) follows the posed joint.

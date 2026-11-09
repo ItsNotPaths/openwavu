@@ -51,7 +51,7 @@ enum {
 	OW_NODE_BILLBOARD = 1 << 0,  // faces the camera
 	OW_NODE_NO_SHADOW = 1 << 1,
 	OW_NODE_NO_BLEND = 1 << 2,   // this frame: a snap (teleport, side switch, round reset), not a move
-	OW_NODE_HIDDEN = 1 << 3,     // not drawn; a hidden part also leaves the whole glb's draw
+	OW_NODE_HIDDEN = 1 << 3,     // not drawn; a hidden part also leaves the draw of the whole glb nodes with its bone_offset
 };
 
 enum { OW_CLASS_GAMEPLAY = 0, OW_CLASS_SCENERY = 1 };

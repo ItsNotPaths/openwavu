@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "gamerender/presenter.h"
@@ -77,19 +78,21 @@ static void load_parts(sqlite3 *db, int side, const T5Loadout *loadout) {
     sqlite3_finalize(rows);
 }
 
+// What a side's move set loads (hands and camera shots); freed when a round brings another.
+static T5Arena hand_arenas[T5_FIGHTER_COUNT];
+static T5FileSet moveset_files[T5_FIGHTER_COUNT];
+
 // No banks: the fighter keeps the sim's fingers.
 static void load_hands(sqlite3 *db, int side, const char *moveset) {
     size_t bytes;
-    T5Arena arena;
     T5HandBanks banks = {0};
     const char *failed = t5_load_hands_storage(db, moveset, &bytes);
-    if (!failed) failed = t5_new_arena(&arena, bytes);
-    if (!failed) failed = t5_load_hands(&banks, db, moveset, t5_read_pack_file, NULL, &arena);
+    if (!failed) failed = t5_new_arena(&hand_arenas[side], bytes);
+    if (!failed) failed = t5_load_hands(&banks, db, moveset, t5_read_set_file, &moveset_files[side], &hand_arenas[side]);
     visual.fighter[side].banks = failed ? (T5HandBanks){0} : banks;
 }
 
 // The part meshes hidden by default that the move set does not show (Mokujin's sword unless he runs Yoshimitsu's moves).
-// (hole moveset-mesh-mirror :tags (tk5mod look) :sev polish) the host hides part meshes by asset, so two sides in the same costume hide each other's.
 static void load_hidden_meshes(sqlite3 *db, int side, const char *moveset) {
     sqlite3_stmt *rows;
     const char *query = "SELECT node FROM part_moveset_mesh WHERE part = ?1 AND character IS NULL "
@@ -114,14 +117,16 @@ static void load_hidden_meshes(sqlite3 *db, int side, const char *moveset) {
 static char loaded_movesets[T5_FIGHTER_COUNT][T5_NAME_BYTES];
 
 // The hands, camera shots and hidden part meshes of each side's move set; again when a round brings another (Mokujin).
-// (hole moveset-reload-leak :tags (tk5mod round-show) :sev polish) each reload takes a new hand arena and never frees the last.
 static void load_movesets(sqlite3 *db, const T5View *view) {
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
         const char *moveset = view->fighters[side].moveset;
         if (strncmp(loaded_movesets[side], moveset, T5_NAME_BYTES) == 0) continue;
         memcpy(loaded_movesets[side], moveset, T5_NAME_BYTES);
+        free(hand_arenas[side].base);
+        hand_arenas[side] = (T5Arena){};
+        t5_file_set_free(&moveset_files[side]);
         load_hands(db, side, moveset);
-        t5_camera_load(db, side, moveset);
+        t5_camera_load(db, side, moveset, &moveset_files[side]);
         load_hidden_meshes(db, side, moveset);
     }
 }
@@ -191,13 +196,14 @@ void t5_scene_send(const T5View *view, float seconds) {
     uint32_t count = t5_stage_nodes(view, scene->camera, midpoint_x, midpoint_z, block.nodes, STAGE_NODES_MAX);
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
         pose_fighter(block.bones[side], &visual.fighter[side].rig);
+        uint32_t fighter_bones = (uint32_t)(offsetof(typeof(block), bones) + side * sizeof block.bones[side]);
         for (int at = 0; at < part_count[side]; at++) {
             OwNode *node = &block.nodes[count++];
             *node = (OwNode){
                 .asset = parts[side][at].asset,
                 .transform = PLACE_AT_ORIGIN,
                 .bone_count = POSED_BONES,
-                .bone_offset = (uint32_t)(offsetof(typeof(block), bones) + side * sizeof block.bones[side]),
+                .bone_offset = fighter_bones,
                 .flags = (view->snap ? OW_NODE_NO_BLEND : 0) | (view->focus >= 0 && view->focus != side ? OW_NODE_HIDDEN : 0),
                 .class = OW_CLASS_GAMEPLAY,
             };
@@ -206,7 +212,8 @@ void t5_scene_send(const T5View *view, float seconds) {
         for (int at = 0; at < hidden_mesh_count[side]; at++) {
             const HiddenMesh *hidden = &hidden_meshes[side][at];
             OwNode *node = &block.nodes[count++];
-            *node = (OwNode){.asset = hidden->asset, .part = hidden->node, .flags = OW_NODE_HIDDEN, .class = OW_CLASS_GAMEPLAY};
+            *node = (OwNode){.asset = hidden->asset, .part = hidden->node, .bone_offset = fighter_bones, .flags = OW_NODE_HIDDEN,
+                             .class = OW_CLASS_GAMEPLAY};
             memcpy(node->id, hidden->id, sizeof node->id);
         }
     }

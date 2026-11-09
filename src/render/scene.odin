@@ -59,6 +59,7 @@ Node :: struct {
 	texture:         u32,
 	transform:       Transform,
 	bones:           []Transform,  // into Scene.bones; empty is the glb's own pose
+	bone_offset:     u32,          // as sent: a hidden part leaves out of the whole glb nodes with the same one
 	clip:            u32,          // glb animation index + 1
 	clip_time:       f32,
 	material:        Material,
@@ -135,6 +136,7 @@ read_scene :: proc(scene: ^Scene, block: []byte) -> (err: string) {
 			texture = wire_node.texture,
 			transform = wire_node.transform,
 			bones = bones,
+			bone_offset = wire_node.bone_offset,
 			clip = wire_node.clip,
 			clip_time = wire_node.clip_time,
 			material = wire_node.material,

@@ -17,19 +17,21 @@ scene_draws :: proc(scene: ^Scene, assets: ^Assets, gpu: ^Gpu, swings: ^Swings =
 		if .Hidden in node.flags do continue
 		model := asset_model(assets, gpu, node.asset)
 		if model == nil do continue
-		left_out := node.part == 0 ? whole_glb_left_out(model, scene.nodes[:], node.asset, allocator) : nil
+		left_out := node.part == 0 ? whole_glb_left_out(model, scene.nodes[:], &node, allocator) : nil
 		node_draws(&draws, model, &node, left_out, swings, allocator)
 	}
 	if swings != nil do swings_sweep(swings)
 	return draws[:]
 }
 
-// What the whole glb leaves out, by glb node: its _DRWOFF_ nodes and the parts the scene hides.
-whole_glb_left_out :: proc(model: ^Model, scene_nodes: []Node, asset: u32, allocator := context.temp_allocator) -> []bool {
+// What a whole glb node leaves out, by glb node: its _DRWOFF_ nodes and the parts the scene hides on it (same asset and
+// bone_offset, so two fighters in one costume hide their own).
+whole_glb_left_out :: proc(model: ^Model, scene_nodes: []Node, whole: ^Node, allocator := context.temp_allocator) -> []bool {
 	left_out := make([]bool, len(model.nodes), allocator)
 	for model_node, index in model.nodes do left_out[index] = strings.contains(model_node.name, "_DRWOFF_")
 	for node in scene_nodes {
-		if node.asset != asset || .Hidden not_in node.flags || node.part == 0 || int(node.part) > len(model.nodes) do continue
+		if node.asset != whole.asset || node.bone_offset != whole.bone_offset || .Hidden not_in node.flags do continue
+		if node.part == 0 || int(node.part) > len(model.nodes) do continue
 		left_out[node.part - 1] = true
 	}
 	return left_out

@@ -11,4 +11,12 @@ T5Bytes t5_read_pack_file(void *context, const char *path);
 // A zeroed arena of `bytes`; NULL or the failure.
 const char *t5_new_arena(T5Arena *arena, size_t bytes);
 
+// Pack files kept until the set is freed: data that is loaded again within a match (Mokujin's move set each round).
+typedef struct {
+    void **files;
+    size_t count, capacity;
+} T5FileSet;
+T5Bytes t5_read_set_file(void *file_set, const char *path);  // a T5ReadFile; context: the T5FileSet
+void t5_file_set_free(T5FileSet *file_set);
+
 #endif
