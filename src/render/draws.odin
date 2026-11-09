@@ -85,6 +85,7 @@ subtree_draws :: proc(draws: ^[dynamic]Draw, model: ^Model, world: []matrix[4, 4
 			draw := shared
 			draw.mesh, draw.joints, draw.texture = primitive.mesh, joints, primitive.texture
 			draw.cutoff, draw.keep_below, draw.blend, draw.blend_state, draw.unlit, draw.reflection = primitive.cutoff, primitive.keep_below, primitive.blend, primitive.blend_state, primitive.unlit, primitive.reflection
+			draw.double_sided = primitive.double_sided
 			append(draws, draw)
 		}
 	}

@@ -88,6 +88,7 @@ Material_Look :: struct {
 	keep_below: f32,  // 0: no alpha test
 	blend_mode: u16,  // a blends row; 0: opaque
 	unlit:  bool,  // a mesh with no normals (stages): its vertex colours are the baked light
+	double_sided: bool,  // cull_mode not GL_BACK
 	reflection: Reflection,
 }
 
@@ -139,13 +140,14 @@ alpha_test :: proc(pass: formats.Material) -> (cutoff, keep_below: f32) {
 // (hole stage-white-models :tags (importer render look)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
 @(private = "file")
 material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material, unlit: bool) -> int {
+	GL_BACK :: 0x405
 	cutoff, keep_below := alpha_test(passes[0])
-	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = cutoff, keep_below = keep_below, blend_mode = passes[0].dst_factor, unlit = unlit}
+	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = cutoff, keep_below = keep_below, blend_mode = passes[0].dst_factor, unlit = unlit, double_sided = passes[0].cull_mode != GL_BACK}
 	reflects: bool
 	if look.reflection, reflects = reflection(passes[0]); reflects do look.hash = passes[0].textures[1].hash
 	if m, seen := materials.by_look[look]; seen do return m
 	out: gltf.Material
-	out.doubleSided = true
+	out.doubleSided = look.double_sided
 	if file, has := materials.files[look.hash]; has && len(passes[0].textures) > 0 {
 		out.pbrMetallicRoughness.baseColorTexture = gltf.Texture_Info{gltf.add_dds_texture(g, gltf.relative_uri(materials.glb, file))}
 	}

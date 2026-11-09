@@ -40,6 +40,7 @@ Primitive :: struct {
 	blend:   bool,             // alpha BLEND: drawn over what is behind, after the opaque draws
 	blend_state: Blend_State,  // OW_materials_blend; ALPHA_BLEND when it has none
 	unlit:   bool,             // KHR_materials_unlit: base color only, no scene lights
+	double_sided: bool,        // false: back faces culled
 	reflection: Reflection,    // extras reflection = {texture, orientation, masked}
 }
 
@@ -264,6 +265,7 @@ primitive_upload :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cglt
 			out.reflection = {texture_of(gpu, upload, assets, file, &file.textures[reflection.texture], path), reflection.orientation, reflection.masked}
 		}
 		out.unlit = bool(material.unlit)
+		out.double_sided = bool(material.double_sided)
 		keep: gltf.Keep_Below
 		if material_extension(material, gltf.KEEP_BELOW_EXTENSION, &keep) do out.keep_below = keep.keepBelow
 		blend: gltf.Blend
