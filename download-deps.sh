@@ -55,9 +55,19 @@ unpack() {
 	esac
 }
 
+# download <url> <file>: five tries; curl's own --retry skips connection resets.
+download() {
+	for attempt in 1 2 3 4 5; do
+		curl -fL "$1" -o "$2" && return
+		echo "download-deps: try $attempt of $1 failed" >&2
+		sleep 5
+	done
+	return 1
+}
+
 # fetch <url> <file> <sha256>
 fetch() {
-	curl -fL --retry 5 --retry-all-errors "$1" -o "$2"
+	download "$1" "$2"
 	checksum=$(openssl dgst -sha256 -r "$2")
 	if [ "${checksum%% *}" != "$3" ]; then
 		echo "download-deps: SHA-256 mismatch for $1" >&2
@@ -125,7 +135,7 @@ if [ ! -d vendor/wasmtime ]; then
 	wasmtime_archive=wasmtime-$WASMTIME-$target-c-api.tar.xz
 	[ -n "$windows" ] && wasmtime_archive=wasmtime-$WASMTIME-$target-c-api.zip
 	wasmtime_dir=$(mktemp -d)
-	curl -fL --retry 5 --retry-all-errors "https://github.com/bytecodealliance/wasmtime/releases/download/$WASMTIME/$wasmtime_archive" -o "$wasmtime_dir/$wasmtime_archive"
+	download "https://github.com/bytecodealliance/wasmtime/releases/download/$WASMTIME/$wasmtime_archive" "$wasmtime_dir/$wasmtime_archive"
 	unpack "$wasmtime_dir/$wasmtime_archive" vendor/wasmtime
 	rm -rf "$wasmtime_dir"
 	echo "vendor/wasmtime: $WASMTIME $target"
@@ -134,7 +144,7 @@ fi
 if [ ! -f vendor/sqlite/sqlite3.c ]; then
 	deps_dir=$(mktemp -d)
 	trap 'rm -rf "$deps_dir"' EXIT
-	curl -fL --retry 5 --retry-all-errors "https://sqlite.org/2026/sqlite-amalgamation-$SQLITE.zip" -o "$deps_dir/sqlite.zip"
+	download "https://sqlite.org/2026/sqlite-amalgamation-$SQLITE.zip" "$deps_dir/sqlite.zip"
 	checksum=$(openssl dgst -sha3-256 -r "$deps_dir/sqlite.zip")
 	if [ "${checksum%% *}" != "$SQLITE_SHA3" ]; then
 		echo "download-deps: SQLite SHA3-256 mismatch" >&2
@@ -148,7 +158,8 @@ fi
 
 if [ ! -f vendor/clay/clay.h ]; then
 	clay_dir=$(mktemp -d)
-	curl -fL --retry 5 --retry-all-errors "https://github.com/nicbarker/clay/archive/refs/tags/$CLAY.tar.gz" | tar xz -C "$clay_dir" --strip-components=1
+	download "https://github.com/nicbarker/clay/archive/refs/tags/$CLAY.tar.gz" "$clay_dir/clay.tar.gz"
+	tar xzf "$clay_dir/clay.tar.gz" -C "$clay_dir" --strip-components=1
 	mkdir -p vendor/clay
 	cp "$clay_dir/clay.h" "$clay_dir/bindings/odin/clay-odin/clay.odin" vendor/clay/
 	# Clay keeps 10 clipped elements; every slot's name plate clips.
@@ -213,7 +224,7 @@ fi
 if [ ! -f vendor/jsmn/jsmn.h ]; then
 	mkdir -p vendor/jsmn
 	fetch "https://raw.githubusercontent.com/zserge/jsmn/$JSMN/jsmn.h" vendor/jsmn/jsmn.h "$JSMN_SHA256"
-	curl -fsSL --retry 5 --retry-all-errors "https://raw.githubusercontent.com/zserge/jsmn/$JSMN/LICENSE" -o vendor/jsmn/LICENSE
+	download "https://raw.githubusercontent.com/zserge/jsmn/$JSMN/LICENSE" vendor/jsmn/LICENSE
 	echo "vendor/jsmn: $JSMN"
 fi
 
@@ -297,6 +308,6 @@ fi
 if [ ! -f vendor/fonts/Michroma-Regular.ttf ]; then
 	mkdir -p vendor/fonts
 	fetch "https://raw.githubusercontent.com/google/fonts/$FONTS_COMMIT/ofl/michroma/Michroma-Regular.ttf" vendor/fonts/Michroma-Regular.ttf "$MICHROMA_SHA256"
-	curl -fL --retry 5 --retry-all-errors "https://raw.githubusercontent.com/google/fonts/$FONTS_COMMIT/ofl/michroma/OFL.txt" -o vendor/fonts/Michroma-OFL.txt
+	download "https://raw.githubusercontent.com/google/fonts/$FONTS_COMMIT/ofl/michroma/OFL.txt" vendor/fonts/Michroma-OFL.txt
 	echo "vendor/fonts: Michroma"
 fi
