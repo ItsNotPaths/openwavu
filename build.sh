@@ -2,10 +2,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 # ./build.sh [speed] [test] [server]: speed optimizes (slow build, ~5x faster import); server builds only the server.
-odin_flags=() run_tests=0 only_server=0
+# ODIN_FLAGS: extra flags for every Odin build (CI picks its linker with it).
+read -ra odin_flags <<< "${ODIN_FLAGS:-}"
+run_tests=0 only_server=0
 for arg in "$@"; do
 	case "$arg" in
-		speed) odin_flags=(-o:speed) ;;
+		speed) odin_flags+=(-o:speed) ;;
 		test) run_tests=1 ;;
 		server) only_server=1 ;;
 		*) echo "usage: ./build.sh [speed] [test] [server]" >&2; exit 2 ;;

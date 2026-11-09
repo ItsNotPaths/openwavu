@@ -40,7 +40,10 @@ jobs:
         with:
           path: vendor
           key: ${{ steps.vendor.outputs.cache-primary-key }}
-      - run: ./build.sh speed
+      # GNU ld fails on the zig-built objects: "failed to set dynamic section sizes: bad value".
+      - run: bash -x ./build.sh speed
+        env:
+          ODIN_FLAGS: -linker:lld
       - run: objdump -T build/openwavu | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
       - uses: actions/upload-artifact@v4
         with:
