@@ -112,7 +112,7 @@ glue=src/imports/sdl_glue.odin
 if [ -n "$(find src/imports/sdl_allow.txt src/tools/sdlglue vendor/sdl3/dynapi vendor/sdl3_ttf/include -newer "$glue" -print -quit)" ]; then
 	odin run src/tools/sdlglue -vet -strict-style
 fi
-odin build src/importer -out:build/openwavu-import$exe "${odin_flags[@]}" -vet -strict-style
+odin build src/importer -out:build/openwavu-import$exe "${odin_flags[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/curl"
 # vendor:sdl3, vendor:ENet and vendor:curl link "system:SDL3", "system:enet", "system:curl" and "system:z": the -L dirs
 # make those the vendored static libs.
 sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf -Lvendor/enet -Lvendor/curl"

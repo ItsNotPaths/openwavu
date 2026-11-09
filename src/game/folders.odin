@@ -17,7 +17,7 @@ user_folders :: proc(allocator := context.allocator) -> (data, config: string, o
 		config_home := os.get_env("XDG_CONFIG_HOME", context.temp_allocator)
 		if config_home == "" do config_home = strings.concatenate({os.get_env("HOME", context.temp_allocator), "/.config"}, context.temp_allocator)
 		config = strings.concatenate({config_home, "/openwavu"}, allocator)
-		if err := os.make_directory_all(config); err != nil && err != .Exist do return
 	}
+	if err := os.make_directory_all(config); err != nil && err != .Exist do return
 	return data, config, true
 }
