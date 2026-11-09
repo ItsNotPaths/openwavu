@@ -17,7 +17,7 @@ jobs:
         run: |
           dnf install -y dnf-plugins-core epel-release
           dnf config-manager --set-enabled powertools
-          dnf install -y git gcc-toolset-14 clang lld cmake make diffutils findutils which xz unzip openssl perl python3 \
+          dnf install -y git gcc-toolset-14 clang lld cmake make diffutils findutils which xz bzip2 unzip openssl perl python3 \
             libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXi-devel libXfixes-devel libXScrnSaver-devel libXtst-devel libXinerama-devel \
             libxkbcommon-devel wayland-devel wayland-protocols-devel mesa-libEGL-devel mesa-libGL-devel mesa-libgbm-devel \
             libdrm-devel alsa-lib-devel pulseaudio-libs-devel pipewire-devel dbus-devel systemd-devel

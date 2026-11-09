@@ -2,10 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 # ./build.sh [speed] [test] [server]: speed optimizes (slow build, ~5x faster import); server builds only the server.
-optimize=() run_tests=0 only_server=0
+odin_flags=() run_tests=0 only_server=0
 for arg in "$@"; do
 	case "$arg" in
-		speed) optimize=(-o:speed) ;;
+		speed) odin_flags=(-o:speed) ;;
 		test) run_tests=1 ;;
 		server) only_server=1 ;;
 		*) echo "usage: ./build.sh [speed] [test] [server]" >&2; exit 2 ;;
@@ -18,12 +18,14 @@ c_compiler=(cc -fPIC) archiver=(ar) exe= windows=
 case "$(uname -s)" in
 	MINGW*|MSYS*) c_compiler=(vendor/zig/zig cc -target x86_64-windows-msvc) archiver=(vendor/zig/zig ar) exe=.exe windows=1 ;;
 esac
+# Odin's default Windows linker, radlink, misses symbols in Odin's own libz.lib.
+[ -n "$windows" ] && odin_flags+=(-linker:msvc)
 if [ ! -f vendor/tomlc17/libtomlc17.a ] || [ vendor/tomlc17/tomlc17.c -nt vendor/tomlc17/libtomlc17.a ]; then
 	"${c_compiler[@]}" -O2 -c vendor/tomlc17/tomlc17.c -o vendor/tomlc17/tomlc17.o
 	"${archiver[@]}" rcs vendor/tomlc17/libtomlc17.a vendor/tomlc17/tomlc17.o
 fi
 # The server runs on Linux only.
-[ -z "$windows" ] && odin build src/server -out:build/openwavu-server "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
+[ -z "$windows" ] && odin build src/server -out:build/openwavu-server "${odin_flags[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
 [ "$only_server" = 1 ] && exit 0
 if [ ! -f vendor/sqlite/libsqlite3.a ] || [ vendor/sqlite/sqlite3.c -nt vendor/sqlite/libsqlite3.a ]; then
 	"${c_compiler[@]}" -O2 -c vendor/sqlite/sqlite3.c -o vendor/sqlite/sqlite3.o
@@ -110,7 +112,7 @@ glue=src/imports/sdl_glue.odin
 if [ -n "$(find src/imports/sdl_allow.txt src/tools/sdlglue vendor/sdl3/dynapi vendor/sdl3_ttf/include -newer "$glue" -print -quit)" ]; then
 	odin run src/tools/sdlglue -vet -strict-style
 fi
-odin build src/importer -out:build/openwavu-import$exe "${optimize[@]}" -vet -strict-style
+odin build src/importer -out:build/openwavu-import$exe "${odin_flags[@]}" -vet -strict-style
 # vendor:sdl3, vendor:ENet and vendor:curl link "system:SDL3", "system:enet", "system:curl" and "system:z": the -L dirs
 # make those the vendored static libs.
 sdl_libs=-extra-linker-flags:"-Lvendor/sdl3/lib -Lvendor/sdl3_ttf -Lvendor/enet -Lvendor/curl"
@@ -121,7 +123,7 @@ if [ -n "$windows" ]; then
 	cp vendor/sdl3_ttf/SDL3_ttf*.lib "$odin_sdl/ttf/SDL3_ttf.lib"
 	sdl_libs=-extra-linker-flags:"setupapi.lib winmm.lib imm32.lib version.lib ole32.lib oleaut32.lib gdi32.lib user32.lib shell32.lib advapi32.lib cfgmgr32.lib uuid.lib"
 fi
-odin build src/game -out:build/openwavu$exe "${optimize[@]}" -vet -strict-style "$sdl_libs"
+odin build src/game -out:build/openwavu$exe "${odin_flags[@]}" -vet -strict-style "$sdl_libs"
 # Stage viewer title pack: build/stageview.tar.
 mkdir -p build/stageview
 vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -mexec-model=reactor -s -Wl,--import-symbols \
@@ -129,7 +131,7 @@ vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -mexec-model=reactor -s -Wl,
 	-o build/stageview/stageview.wasm modules/stageview/*.c build/sdk/libow_db.a
 cp modules/stageview/pack.toml build/stageview/
 build/openwavu --package build/stageview >/dev/null
-odin build src/tools/bot -out:build/openwavu-bot$exe "${optimize[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
+odin build src/tools/bot -out:build/openwavu-bot$exe "${odin_flags[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
 if [ "$run_tests" = 1 ]; then
