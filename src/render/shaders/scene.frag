@@ -47,7 +47,7 @@ void main() {
     vec4 base = texture(base_color, texture_uv) * vertex_color * tint;
     if (base.a < cutoff || keep_below > 0.0 && base.a >= keep_below) discard;
     vec3 n = normalize(world_normal);
-    if (dot(n, camera_position.xyz - world_position) < 0.0) n = -n;  // a double-sided back face lights like its front
+    if (!gl_FrontFacing) n = -n;  // a double-sided back face lights like its front
     if (scenery > 0.5 && fighter_fade.y > 0.0 && world_position.y > fighter_fade.x) {
         float in_front = dot(world_position, fighter_plane.xyz) - fighter_plane.w;
         if (1.0 - smoothstep(0.0, fighter_fade.y, in_front) < dither(gl_FragCoord.xy)) discard;
