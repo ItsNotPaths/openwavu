@@ -5,15 +5,15 @@
 
 #include "gameplay/match.h"
 #include "openwavu.h"
+#include "sim/constants.h"
 #include "sim/frame.h"
 #include "sim/round.h"
-
-// (hole round-events :tags (tk5mod round-show alpha)) the KO and the round end are not reported with ow_event, only the match end.
 
 enum {
     MODE_VERSUS = 2,           // T5World.mode of a versus match
     BATTLE_FIGHT = 4,          // T5World.battle_state while fighting: every start move cancel (intros, win poses) asks for it
     START_HEALTH = 180,        // health points; the start_health param's fallback
+    FRAMES_PER_SECOND = 60,
 };
 static const float STAGE_DEPTH = 10000.0f;  // mm: past it the arena pass counts a fighter as out of range
 static const int32_t STAGE_MODE_INFINITE = 2;  // the game's floor word on infinite stages (0x6abbc): no walls, flat floor
@@ -64,6 +64,10 @@ void t5_match_begin(uint64_t seed) {
     w->rules = T5_STANDARD_RULES;
     w->rules.damage_scale = (T5Ratio){(int32_t)ow_param(OW_STR("damage_percent"), 100), 100};
     w->rules.pushback_scale = (T5Ratio){(int32_t)ow_param(OW_STR("pushback_percent"), 100), 100};
+    w->rules.wins_needed = (uint32_t)ow_param(OW_STR("rounds_to_win"), DEFAULT_WINS_NEEDED);
+    int32_t seconds = (int32_t)ow_param(OW_STR("round_time"), DEFAULT_ROUND_TIME.ticks / FRAMES_PER_SECOND);
+    w->rules.untimed = seconds == 0;  // 0: no clock
+    if (seconds > 0) w->rules.round_time = (T5Frames){seconds * FRAMES_PER_SECOND};
     t5_hooks = t5_default_hooks;
     m->view_normal[0] = -1;  // the camera on -x: side 1, at -z, is on the left
     m->view_normal[1] = 0;
@@ -99,6 +103,20 @@ static T5StdInput standard_input(uint32_t pad) {
 
 static int32_t side_of(T5Who who) { return who == T5_SIDE_1 ? 0 : who == T5_SIDE_2 ? 1 : -1; }
 
+static int8_t round_winner(const T5World *w) {
+    if (w->round.result & T5_RESULT_DRAW) return -1;
+    for (int8_t side = 0; side < T5_FIGHTER_COUNT; side++)
+        if (t5_match.fighters[side].last_round == T5_ROUND_WON) return side;
+    return -1;
+}
+
+// The fight just ended: who fell, then the round's winner.
+static void report_round(const T5World *w) {
+    T5RoundView fallen = t5_round_view(w);
+    for (int32_t side = 0; side < T5_FIGHTER_COUNT; side++) if (fallen.fallen[side]) ow_event(OW_EVENT_KO, side, 0);
+    ow_event(OW_EVENT_ROUND_END, round_winner(w), 0);
+}
+
 OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1) {
     T5MatchState *m = &t5_match;
     T5World *w = &m->world;
@@ -114,6 +132,7 @@ OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1) {
     if (w->round.phase == before) return;
     T5RoundSetup setup = t5_phase_row(w).setup;
     if (setup.runs && !setup.on_entrance_point) update_sides(m, true);
+    if (w->round.phase == T5_PHASE_KO) report_round(w);
     if (w->round.phase == T5_PHASE_OVER) ow_event(OW_EVENT_MATCH_END, side_of(w->round.winner), 0);
 }
 
@@ -130,13 +149,6 @@ static void view_fighter(T5ViewFighter *out, uint32_t side) {
     out->max_health = f->max_health;
     out->wins = f->wins;
     out->on_right = f->input.camera_side == T5_SIDE_RIGHT;
-}
-
-static int8_t round_winner(const T5World *w) {
-    if (w->round.result & T5_RESULT_DRAW) return -1;
-    for (int8_t side = 0; side < T5_FIGHTER_COUNT; side++)
-        if (t5_match.fighters[side].last_round == T5_ROUND_WON) return side;
-    return -1;
 }
 
 // Intros are about their own fighter; the flashback and the win poses about the winner.

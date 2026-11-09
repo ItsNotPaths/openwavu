@@ -31,3 +31,17 @@ default = 100
 min = 0
 max = 1000
 expose = true
+
+[params.rounds_to_win]
+kind = "number"
+default = 2
+min = 1
+max = 5
+expose = true
+
+[params.round_time]  # seconds; 0 = no clock
+kind = "number"
+default = 60
+min = 0
+max = 99
+expose = true

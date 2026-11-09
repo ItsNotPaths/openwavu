@@ -112,17 +112,39 @@ stock_sim_reads_rule_params :: proc(t: ^testing.T) {
 	defer stock_sim_close(stock)
 	fragile := stage_params()
 	fragile["start_health"] = "1"
-	fragile_frames, fragile_ended := frames_to_match_end(t, stock, fragile, 40_000)
+	fragile_frames, fragile_ended, _ := play_to_match_end(t, stock, fragile, 40_000)
 	if !testing.expect(t, fragile_ended, "the match at 1 health did not end") do return
 	unhurt := stage_params()
 	unhurt["start_health"] = "1"
 	unhurt["damage_percent"] = "0"
-	_, unhurt_ended := frames_to_match_end(t, stock, unhurt, 2 * fragile_frames)
+	_, unhurt_ended, _ := play_to_match_end(t, stock, unhurt, 2 * fragile_frames)
 	testing.expect(t, !unhurt_ended, "the match at 0% damage ended as fast as one with damage")
 }
 
-// Bots play until the match ends or frames_max passes.
-frames_to_match_end :: proc(t: ^testing.T, stock: ^Stock_Sim, params: map[string]string, frames_max: int) -> (frames: int, ended: bool) {
+// rounds_to_win sets how many rounds the winner wins, and each fall is reported as a KO.
+@(test)
+stock_sim_reads_round_params :: proc(t: ^testing.T) {
+	stock, opened := stock_sim_open(t)
+	if !opened do return
+	defer stock_sim_close(stock)
+	params := stage_params()
+	params["start_health"] = "1"
+	params["rounds_to_win"] = "3"
+	params["round_time"] = "0"
+	_, ended, events := play_to_match_end(t, stock, params, 60_000)
+	if !testing.expect(t, ended, "the match to 3 wins did not end") do return
+	winner := events[len(events) - 1].a
+	kos, rounds_won: int
+	for event in events {
+		if event.kind == .KO do kos += 1
+		if event.kind == .Round_End && event.a == winner do rounds_won += 1
+	}
+	testing.expect(t, winner == -1 || rounds_won == 3, "the winner of a match to 3 wins did not win 3 rounds")
+	testing.expect(t, kos > 0, "no fall was reported at 1 health")
+}
+
+// Bots play until the match ends or frames_max passes. The events are a copy in the temp allocator.
+play_to_match_end :: proc(t: ^testing.T, stock: ^Stock_Sim, params: map[string]string, frames_max: int) -> (frames: int, ended: bool, events: []imports.Event) {
 	w, err := sim.create(stock.engine, stock.module, &stock.pack, params, {loadout_bytes("paul"), loadout_bytes("kazuya")}, 7)
 	if !testing.expect_value(t, err, "") do return
 	defer sim.destroy(w)
@@ -133,7 +155,13 @@ frames_to_match_end :: proc(t: ^testing.T, stock: ^Stock_Sim, params: map[string
 			if !testing.expect_value(t, err, "") do return
 		}
 		if !testing.expect_value(t, sim.step(w, pads), "") do return
-		for event in w.inputs.events do if event.kind == .Match_End do return frames, true
+		for event in w.inputs.events do if event.kind == .Match_End do return frames, true, events_copy(w)
 	}
-	return
+	return frames, false, events_copy(w)
+}
+
+events_copy :: proc(w: ^sim.World) -> []imports.Event {
+	events := make([]imports.Event, len(w.inputs.events), context.temp_allocator)
+	copy(events, w.inputs.events[:])
+	return events
 }
