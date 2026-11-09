@@ -1,6 +1,6 @@
-// openwavu-bot <lobby host> <pack folder> [character]: the online test's dummy player. Joins any open lobby of its
-// pack whose hash matches its own, readies with the character (TK5 loadout, costume 1), presses random buttons on its
-// side at 60 Hz, then readies again for the rematch.
+// openwavu-bot <lobby host> <pack folder> [character] [password]: the online test's dummy player. Joins any open lobby
+// of its pack whose hash matches its own, readies with the character (TK5 loadout, costume 1), presses random buttons on
+// its side at 60 Hz, then readies again for the rematch. With a password it hosts a lobby locked with it instead.
 package bot
 
 import "core:encoding/endian"
@@ -19,14 +19,17 @@ import "../../wasm"
 TICK :: time.Second / 60
 PAD_DIRECTIONS_AND_BUTTONS :: 0xff  // OW_PAD_UP..OW_PAD_BUTTON_4; never START
 T5_NAME_BYTES :: 32  // modules/tk5/loadout.h: character name, then the costume as a u32
+HOSTED_MODE :: "versus"
+HOSTED_PICKS :: "stage=dragons_nest"
 
 main :: proc() {
-	if len(os.args) < 3 || len(os.args) > 4 {
-		fmt.eprintln("usage: openwavu-bot <lobby host> <pack folder> [character]")
+	if len(os.args) < 3 || len(os.args) > 5 {
+		fmt.eprintln("usage: openwavu-bot <lobby host> <pack folder> [character] [password]")
 		os.exit(2)
 	}
 	host, pack_path := os.args[1], os.args[2]
-	character := len(os.args) == 4 ? os.args[3] : "kazuya"
+	character := len(os.args) >= 4 ? os.args[3] : "kazuya"
+	password := len(os.args) == 5 ? os.args[4] : ""
 	manifest, manifest_read := titlepack.read_manifest(pack_path, context.temp_allocator)
 	tp, tp_read := titlepack.read_titlepack(manifest)
 	if !manifest_read || !tp_read {
@@ -46,27 +49,33 @@ main :: proc() {
 	copy(loadout[:T5_NAME_BYTES - 1], character)
 	endian.put_u32(loadout[T5_NAME_BYTES:], .Little, 1)
 	for {
-		if err := stay(engine, &pack, tp, host, loadout[:]); err != "" do fmt.eprintln("openwavu-bot:", err)
+		if err := stay(engine, &pack, tp, host, loadout[:], password); err != "" do fmt.eprintln("openwavu-bot:", err)
 		free_all(context.temp_allocator)
 		time.sleep(time.Second)
 	}
 }
 
 // One connection: join, ready, play, ready again, until the server hangs up or a match fails.
-stay :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack, host: string, loadout: []byte) -> (err: string) {
+stay :: proc(engine: wasm.Engine, pack: ^content.Pack, tp: titlepack.Title_Pack, host: string, loadout: []byte, password: string) -> (err: string) {
 	client: ^online.Lobby_Client
 	if client, err = online.lobby_connect(host, online.new_identity(), "bot"); err != "" do return
 	defer online.lobby_disconnect(client)
 	fmt.eprintln("openwavu-bot: waiting for a lobby")
 	played: u32  // the last match's token: its fact stays until the other player is done too
+	hosting: bool  // asked for its own lobby, which shows a few pumps later
 	hashes: online.Lobby_Hashes
 	defer online.lobby_hashes_destroy(&hashes)
 	for online.lobby_pump(client, 100) {
 		lobby := online.lobby_joined(client)
 		switch {
+		case lobby == nil && password != "":
+			if hosting do break
+			online.lobby_create(client, titlepack.pack_name(tp.id, tp.version), HOSTED_MODE, HOSTED_PICKS, online.picks_hash(&hashes, tp, HOSTED_PICKS))
+			online.lobby_lock(client, password)
+			hosting = true
 		case lobby == nil:
 			if open := open_lobby(client, tp, &hashes); open != "" do online.lobby_join(client, open, "")
-		case len(lobby.players) == 1:
+		case len(lobby.players) == 1 && password == "":
 			online.lobby_leave(client)  // everyone else left: wait for the next lobby
 		case online.lobby_player(lobby, client.key).side < 0 || seated(lobby) < wire.SIDES:
 			// in line for a seat, or waiting for an opponent to take the other
