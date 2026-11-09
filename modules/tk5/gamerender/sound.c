@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "gamerender/face.h"
 #include "gamerender/presenter.h"
 #include "ow_sound.h"
 #include "sim/constants.h"
@@ -45,8 +46,13 @@ typedef struct {
 } Sound;
 
 typedef struct {
+    int record;     // in the costume's voices bank
+    uint16_t face;  // VOICE_FACE_CLIP + clip, a face value, or VOICE_FACE_NONE
+} VoiceRow;
+
+typedef struct {
     int voice;  // voice character; -1: none
-    int kind_records[VOICE_KINDS][VOICE_ROWS_MAX];
+    VoiceRow kind_rows[VOICE_KINDS][VOICE_ROWS_MAX];
     int kind_counts[VOICE_KINDS];
     int specials[SPECIALS_MAX];  // record per special sound id; -1: none
     int name, wins_delay;        // the announcer's name of it, in its voices bank; frames to "wins"
@@ -60,6 +66,7 @@ static OwMusic music;
 static char music_file[PATH_BYTES];
 static int64_t music_loop_start, music_loop_length;
 static float wins_in = -1;  // seconds until "wins"; below 0: none
+static const T5View *playing;  // the view whose cues play
 
 static sqlite3_stmt *query(sqlite3 *db, const char *sql) {
     sqlite3_stmt *rows;
@@ -117,13 +124,14 @@ static int costume_voice(sqlite3 *db, const T5Loadout *loadout) {
 static void load_speaker(sqlite3 *db, Speaker *speaker, int voice) {
     *speaker = (Speaker){.voice = voice, .name = -1};
     memset(speaker->specials, -1, sizeof speaker->specials);
-    sqlite3_stmt *rows = query(db, "SELECT record, kinds FROM voice WHERE voice = ?1 ORDER BY idx");
+    sqlite3_stmt *rows = query(db, "SELECT record, face, kinds FROM voice WHERE voice = ?1 ORDER BY idx");
     if (rows) {
         sqlite3_bind_int(rows, 1, voice);
         while (sqlite3_step(rows) == SQLITE_ROW) {
-            int record = sqlite3_column_int(rows, 0), kinds = sqlite3_column_int(rows, 1);
+            VoiceRow row = {sqlite3_column_int(rows, 0), (uint16_t)sqlite3_column_int(rows, 1)};
+            int kinds = sqlite3_column_int(rows, 2);
             for (int kind = 0; kind < VOICE_KINDS; kind++) {
-                if ((kinds >> kind & 1) && speaker->kind_counts[kind] < VOICE_ROWS_MAX) speaker->kind_records[kind][speaker->kind_counts[kind]++] = record;
+                if ((kinds >> kind & 1) && speaker->kind_counts[kind] < VOICE_ROWS_MAX) speaker->kind_rows[kind][speaker->kind_counts[kind]++] = row;
             }
         }
         sqlite3_finalize(rows);
@@ -196,6 +204,12 @@ static void play_voice(int side, int record) {
     if (record >= 0) play(BANK_VOICES_1 + side, record, &voices[side]);
 }
 
+// 0xa0d5c: the record of row `row` of `kind`, and the face of that row of `face_kind`. The newest voice's face wins.
+static void play_row(int side, int kind, int face_kind, int row) {
+    play_voice(side, speakers[side].kind_rows[kind][row].record);
+    t5_scene_voice_face(playing, side, speakers[side].kind_rows[face_kind][row].face);
+}
+
 static void play_special(int side, int number) {
     if (number < SPECIALS_MAX) play_voice(side, speakers[side].specials[number]);
 }
@@ -208,7 +222,7 @@ static void fighter_voice(int side, uint16_t value) {
     case 1: case 6: case 7: play(BANK_COMMON, number, &effects); break;
     case 2: case 3: case 4: {
         int kind = MOVE_VOICE_KIND_FIRST + selector - 2, count = speaker->kind_counts[kind];
-        if (number <= 998 && count > 0) play_voice(side, speaker->kind_records[kind][number % count]);
+        if (number <= 998 && count > 0) play_row(side, kind, kind, number % count);
         break;
     }
     case 8: play_special(side, number); break;
@@ -217,7 +231,6 @@ static void fighter_voice(int side, uint16_t value) {
     }
 }
 
-// (hole voice-face :tags (tk5mod audio) :sev polish) a voice of a clip, a property or a random voice does not move the face: 0xa0d5c starts the face of the voice row (face clip 0x2fb4c or face value 0x2fafc); selector 3 takes it from kind 6.
 // A move's voice clip (sim/voice_clip.c): 2 and 3 entry n of the move voices, 6 a common record, 8 and 11 a special sound;
 // after the clips, 9 and 10 as in a property.
 static void clip_voice(int side, uint16_t value) {
@@ -225,9 +238,8 @@ static void clip_voice(int side, uint16_t value) {
     const int *counts = speakers[side].kind_counts;
     switch (selector) {
     case 2: case 3: {
-        int counted = MOVE_VOICE_KIND_FIRST + selector - 2;  // 3 counts kind 6 but plays kind 5, as the game does
-        if (number < counts[counted] && number < counts[MOVE_VOICE_KIND_FIRST])
-            play_voice(side, speakers[side].kind_records[MOVE_VOICE_KIND_FIRST][number]);
+        int counted = MOVE_VOICE_KIND_FIRST + selector - 2;  // 3 counts kind 6 and takes its face, but plays kind 5, as the game does
+        if (number < counts[counted] && number < counts[MOVE_VOICE_KIND_FIRST]) play_row(side, MOVE_VOICE_KIND_FIRST, counted, number);
         break;
     }
     case 6: play(BANK_COMMON, number, &effects); break;
@@ -241,7 +253,7 @@ static void clip_voice(int side, uint16_t value) {
 static void random_voice(int side, uint16_t value) {
     const Speaker *speaker = &speakers[side];
     int kind = value >> 12, count = speaker->kind_counts[kind];
-    if (count > 0) play_voice(side, speaker->kind_records[kind][(value & 0xfff) % count]);
+    if (count > 0) play_row(side, kind, kind, (value & 0xfff) % count);
 }
 
 // voice character << 8 | record, from the stream bank of the fighter with that voice character.
@@ -287,6 +299,7 @@ static void music_cue(const T5Cue *cue) {
 }
 
 void t5_sound_play(const T5View *view, float seconds) {
+    playing = view;
     for (uint32_t index = 0; index < view->cue_count; index++) {
         const T5CueEntry *entry = &view->cues[index];
         T5CueKind kind = entry->cue.kind;

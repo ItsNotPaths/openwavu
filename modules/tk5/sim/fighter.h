@@ -366,8 +366,8 @@ struct T5Fighter {
     uint8_t can_lock_look;       // the look-at may lock on (set at a move change, a property clears it)
     uint8_t no_reaim;
     uint8_t ai_assist;
-    uint8_t marked_finished;             // "the move is finished": the round reset clears it, `PROP_MOVE_FINISHED` sets it. The face step
-                                 // sets it too, only when a face clip of at most 5 frames plays; the port has no face clips (docs/code-map.md 15)
+    uint8_t marked_finished;             // "the move is finished": the round reset clears it, `PROP_MOVE_FINISHED` sets it. The camera
+                                 // clip step 0x303ac sets it too near its clip's end in game states 0x18, 0x19; not ported (move.c)
 
     // written at a move change; readers not ported
     uint8_t approach_state;      // the approach slide to the opponent: 0 idle, 1 ready (a move change sets it), 2 running

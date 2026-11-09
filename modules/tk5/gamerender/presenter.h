@@ -13,6 +13,8 @@ static const float MM = 0.001f;  // sim units to scene metres
 bool t5_scene_init(const T5View *view);
 // The whole scene of this frame, `seconds` after the last.
 void t5_scene_send(const T5View *view, float seconds);
+// A voice of `side` started with this voice row face: the fighter's face plays it.
+void t5_scene_voice_face(const T5View *view, int side, uint16_t voice_face);
 typedef struct sqlite3 sqlite3;
 // The ow_asset id of a pack path; 0 for none.
 uint32_t t5_asset_of(const unsigned char *path);

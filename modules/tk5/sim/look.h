@@ -1,5 +1,5 @@
 // The look-at (code-map 16.5): the hips, neck and head of a fighter turn toward the opponent's head, within limits and
-// smoothed over frames. The eyes are cosmetic and not ported.
+// smoothed over frames. The eyes are cosmetic: the visual part aims them from t5_look_aim.
 #ifndef T5_LOOK_H
 #define T5_LOOK_H
 
@@ -87,5 +87,15 @@ void t5_look_hips(const T5World *w, T5Fighter *f, const T5LimbRig *limb_rig, boo
 // The look-at (motion step 13, after the blend): picks the targets, aims the hips, the neck and the head, and
 // rebuilds the A worlds it changes. Clears the snap request. Never runs paused (the battle frame is not paused).
 void t5_look_at(T5World *w, T5Fighter *f, const T5LimbRig *limb_rig);
+
+// The direction from `eyes` to `target` in the frame of a bone's world, placed at the eyes.
+[[nodiscard]] T5Vec4 t5_look_seen_from(const T5Mat4 *frame_world, T5Vec4 eyes, T5Vec4 target);
+
+// What the head aims at, worked out again from the fighter after its step: for the visual part's eyes. Reads only.
+typedef struct {
+    T5Vec4 eyes, target;  // world: the point the fighter looks from, and the point the head aims at
+    bool look_on, lock;
+} T5LookAim;
+[[nodiscard]] T5LookAim t5_look_aim(const T5World *w, const T5Fighter *f);
 
 #endif

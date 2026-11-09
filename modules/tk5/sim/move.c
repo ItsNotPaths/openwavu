@@ -1,5 +1,5 @@
 // The movement step of a fighter, its steps in game order, and the passes over the fighters.
-// (hole port-move-face :tags (port tk5mod alpha) :sev gap) the face and hand calls of the movement step are left out; the face step sets marked_finished to 1 only when the face clip's speed word reaches the length of a face clip minus 4 (a clip of at most 5 frames): left out, so the round flow waits end with the move length (decided 2026-10-12), and the hand step advances the libc rand.
+// (hole port-move-face :tags (port tk5mod alpha) :sev gap) the hand call and 0x303ac of the movement step are left out. 0x303ac is not the face (the face step is 0x2ff10, display only in gamerender/face.c): it steps the Jin and Devil Jin type 0x64 bank of slot 4 and the camera clip channel of slot 5 (properties 0x8153..0x8155); in game states 0x18 and 0x19 that camera channel sets marked_finished when its clip is within 33 frames of its end: left out, so the round flow waits end with the move length (decided 2026-10-12). The hand step advances the libc rand.
 #include "sim/move.h"
 
 #include "sim/decide.h"

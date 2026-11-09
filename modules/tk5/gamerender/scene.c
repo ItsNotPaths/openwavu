@@ -12,14 +12,13 @@
 #include "sim/quat.h"
 #include "sqlite3.h"
 
-// (hole hand-pose :tags (tk5mod fighter-detail) :needs face-anims) fighter nodes get the fingers of the visual skeleton, not yet its face, eyes and head tilt.
-
 enum {
     PARTS_MAX = 8,      // per fighter
     HIDDEN_MESHES_MAX = 32,  // per fighter: part meshes its move set does not show
     BODY_JOINTS = 23,   // glb joints 0..22: the root, then the body bones the sim's skeleton B moves
     FIRST_FINGER_JOINT = FIRST_FINGER_BONE + 4,  // glb joints 55..84 are A bones 51..80
-    POSED_BONES = FIRST_FINGER_JOINT + FINGER_BONES,  // joints 23..54 are left zero: they keep their rest pose
+    FIRST_FACE_JOINT = FIRST_FACE_BONE + 4,  // glb joints 85..110 are A bones 81..106
+    POSED_BONES = FIRST_FACE_JOINT + FACE_BONES,  // joints 23..54 are left zero: they keep their rest pose
     STAGE_NODES_MAX = 256,  // layers and floor tiles
     NODES_MAX = T5_FIGHTER_COUNT * (PARTS_MAX + HIDDEN_MESHES_MAX) + STAGE_NODES_MAX,
     FX_MAX = 128,
@@ -78,8 +77,8 @@ static void load_parts(sqlite3 *db, int side, const T5Loadout *loadout) {
     sqlite3_finalize(rows);
 }
 
-// What a side's move set loads (hands and camera shots); freed when a round brings another.
-static T5Arena hand_arenas[T5_FIGHTER_COUNT];
+// What a side's move set loads (hands, face and camera shots); freed when a round brings another.
+static T5Arena hand_arenas[T5_FIGHTER_COUNT], face_arenas[T5_FIGHTER_COUNT];
 static T5FileSet moveset_files[T5_FIGHTER_COUNT];
 
 // No banks: the fighter keeps the sim's fingers.
@@ -90,6 +89,16 @@ static void load_hands(sqlite3 *db, int side, const char *moveset) {
     if (!failed) failed = t5_new_arena(&hand_arenas[side], bytes);
     if (!failed) failed = t5_load_hands(&banks, db, moveset, t5_read_set_file, &moveset_files[side], &hand_arenas[side]);
     visual.fighter[side].banks = failed ? (T5HandBanks){0} : banks;
+}
+
+// No banks: the fighter keeps the sim's face.
+static void load_faces(sqlite3 *db, int side, const char *moveset) {
+    size_t bytes;
+    T5FaceBanks banks = {0};
+    const char *failed = t5_load_faces_storage(db, moveset, &bytes);
+    if (!failed) failed = t5_new_arena(&face_arenas[side], bytes);
+    if (!failed) failed = t5_load_faces(&banks, db, moveset, t5_read_set_file, &moveset_files[side], &face_arenas[side]);
+    visual.fighter[side].faces = failed ? (T5FaceBanks){0} : banks;
 }
 
 // The part meshes hidden by default that the move set does not show (Mokujin's sword unless he runs Yoshimitsu's moves).
@@ -116,7 +125,7 @@ static void load_hidden_meshes(sqlite3 *db, int side, const char *moveset) {
 
 static char loaded_movesets[T5_FIGHTER_COUNT][T5_NAME_BYTES];
 
-// The hands, camera shots and hidden part meshes of each side's move set; again when a round brings another (Mokujin).
+// The hands, face, camera shots and hidden part meshes of each side's move set; again when a round brings another (Mokujin).
 static void load_movesets(sqlite3 *db, const T5View *view) {
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) {
         const char *moveset = view->fighters[side].moveset;
@@ -124,8 +133,11 @@ static void load_movesets(sqlite3 *db, const T5View *view) {
         memcpy(loaded_movesets[side], moveset, T5_NAME_BYTES);
         free(hand_arenas[side].base);
         hand_arenas[side] = (T5Arena){};
+        free(face_arenas[side].base);
+        face_arenas[side] = (T5Arena){};
         t5_file_set_free(&moveset_files[side]);
         load_hands(db, side, moveset);
+        load_faces(db, side, moveset);
         t5_camera_load(db, side, moveset, &moveset_files[side]);
         load_hidden_meshes(db, side, moveset);
     }
@@ -172,6 +184,7 @@ static void pose_fighter(OwTransform bones[POSED_BONES], const T5Rig *rig) {
     for (int joint = 1; joint < BODY_JOINTS; joint++) bones[joint] = transform_of(&rig->bones_b[BODY_SLOT[joint]].world);
     for (int bone = 0; bone < FINGER_BONES; bone++)
         bones[FIRST_FINGER_JOINT + bone] = transform_of(&rig->bones_a[FIRST_FINGER_BONE + bone].world);
+    for (int bone = 0; bone < FACE_BONES; bone++) bones[FIRST_FACE_JOINT + bone] = transform_of(&rig->bones_a[FIRST_FACE_BONE + bone].world);
 }
 
 static const OwTransform PLACE_AT_ORIGIN = {.rotation = {0, 0, 0, 1}, .scale = {1, 1, 1}};
@@ -228,3 +241,5 @@ void t5_scene_send(const T5View *view, float seconds) {
     scene->fx_offset = offsetof(typeof(block), fx);
     ow_scene_submit(scene, sizeof block);
 }
+
+void t5_scene_voice_face(const T5View *view, int side, uint16_t voice_face) { t5_visual_voice_face(&visual, view, side, voice_face); }

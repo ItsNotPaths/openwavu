@@ -1,5 +1,5 @@
 // The look-at: what the hips, neck and head turn toward, and the smoothed aim of the neck and head.
-// Left out: the eyes (cosmetic) and what only they read (the track flag, the aim point, the head frame).
+// Left out: the eyes (cosmetic, gamerender/face.c) and the track flag only they read.
 #include <math.h>
 #include <string.h>
 
@@ -166,9 +166,8 @@ static T5AimState aim_of(T5Vec4 direction) {
     return (T5AimState){yaw, pitch, t5_aim_zone(yaw)};
 }
 
-// The direction from `eyes` to `target` in the frame of the parent bone, placed at the eyes.
-static T5Vec4 seen_from(const T5Mat4 *parent_world, T5Vec4 eyes, T5Vec4 target) {
-    T5Mat4 frame = moved_to(*parent_world, eyes);
+T5Vec4 t5_look_seen_from(const T5Mat4 *frame_world, T5Vec4 eyes, T5Vec4 target) {
+    T5Mat4 frame = moved_to(*frame_world, eyes);
     T5Vec4 direction = vec4_subtract(target, eyes);
     direction.w = 0.0f;
     t5_mat_transpose(&frame);
@@ -179,7 +178,7 @@ static T5Vec4 seen_from(const T5Mat4 *parent_world, T5Vec4 eyes, T5Vec4 target) 
 // Aims one bone: steps its state toward the target, turns its local by it, and rebuilds its world. Mutates the rig.
 static T5AimState aim_bone(T5Rig *rig, const T5Skeleton *skel, T5AimJoint joint, T5AimState last, T5Vec4 target,
                            T5Vec4 eyes, int32_t weight, T5AimFrame aim_frame) {
-    T5AimState seen = aim_of(seen_from(&rig->bones_a[joint.parent].world, eyes, target));
+    T5AimState seen = aim_of(t5_look_seen_from(&rig->bones_a[joint.parent].world, eyes, target));
     T5AimState next = seen;
     next.zone = t5_aim_zone_kept(last.zone, seen.zone);  // a target behind keeps its side until in front again
     if (weight > 0) {  // look has some weight: step the aim and turn the bone by it
@@ -190,10 +189,11 @@ static T5AimState aim_bone(T5Rig *rig, const T5Skeleton *skel, T5AimJoint joint,
     return next;
 }
 
+static const T5Fighter *opponent_of(const T5World *w, const T5Fighter *f) { return w->fighters[(uint16_t)f->side_index == 0]; }
+
 void t5_look_at(T5World *w, T5Fighter *f, const T5LimbRig *limb_rig) {
     T5Rig *rig = limb_rig->rig;
-    const T5Fighter *opponent = w->fighters[(uint16_t)f->side_index == 0];  // the other fighter
-    T5Vec4 opponent_head = translation(&opponent->rig.bones_a[BONE_NECK].world);
+    T5Vec4 opponent_head = translation(&opponent_of(w, f)->rig.bones_a[BONE_NECK].world);
     T5Vec4 eyes = eye_point(rig);
     t5_skel_world_a(rig, limb_rig->skel);  // rebuild the worlds before aiming
 
@@ -215,4 +215,11 @@ void t5_look_at(T5World *w, T5Fighter *f, const T5LimbRig *limb_rig) {
     look->neck = aim_bone(rig, limb_rig->skel, T5_AIM_NECK, look->neck, targets.neck, eyes, look->weight, aim_frame);
     look->head = aim_bone(rig, limb_rig->skel, t5_aim_head(f->gaze), look->head, targets.head, eyes, look->weight, aim_frame);
     f->look_snap = false;  // the snap request is used up
+}
+
+T5LookAim t5_look_aim(const T5World *w, const T5Fighter *f) {
+    T5Vec4 eyes = eye_point(&f->rig);
+    Gaze gaze = gaze_of(w, f, &f->rig);
+    T5Vec4 opponent_head = translation(&opponent_of(w, f)->rig.bones_a[BONE_NECK].world);
+    return (T5LookAim){eyes, targets_of(&f->look, &f->rig, eyes, opponent_head, gaze.look_on).head, gaze.look_on, gaze.lock};
 }

@@ -52,6 +52,7 @@ void t5_skel_pose(T5Bone *bones_a, const T5Skeleton *skeleton, const T5Vec4 pose
 void t5_skel_world(T5Bone *bones, const int8_t *parent, const T5Mat4 *root, int32_t count);
 void t5_skel_world_a(T5Rig *rig, const T5Skeleton *skeleton);  // A worlds of bones 0..21
 void t5_skel_bone_world(T5Rig *rig, const int8_t *parent_a, int32_t bone);  // world of one A bone from its parent's
+void t5_skel_bone_world_b(T5Rig *rig, const int8_t *parent_b, int32_t bone);  // world of one B bone from its parent's
 void t5_skel_world_b(T5Rig *rig, const T5Skeleton *skeleton);  // B worlds
 // without the snapshots: root world = root local, A worlds of bones 0..26, then the face and finger
 // bones 72, 57, 81, 86, 95, 104 (their parents are computed before them).

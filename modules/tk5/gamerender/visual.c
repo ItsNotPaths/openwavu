@@ -10,6 +10,10 @@ static bool has_hands(const T5VisualFighter *visual, const T5ViewFighter *fighte
     return fighter->hands.posable && visual->banks.poses.clips != NULL;
 }
 
+static bool has_face(const T5VisualFighter *visual, const T5ViewFighter *fighter) {  // fighters with face data loaded
+    return fighter->face.posable && visual->faces.poses.clips != NULL;
+}
+
 static T5FingerBones finger_bones(T5Hands hands) {
     T5FingerBones bones;
     for (int joint = 0; joint < FINGER_JOINTS; joint++) {  // per joint: right turn, then left turn mirrored
@@ -28,9 +32,7 @@ static T5FingerBones display_blend(T5FingerBones from, T5FingerBones to, float s
 }
 
 // The finger turns replace the local rotation rows; the bind translations stay.
-static void pose_rig(T5VisualFighter *visual, const T5ViewFighter *fighter) {
-    visual->rig = fighter->rig;
-    if (!has_hands(visual, fighter)) return;  // no hand data: the sim's rig stays
+static void pose_fingers(T5VisualFighter *visual, const T5ViewFighter *fighter) {
     for (int bone = 0; bone < FINGER_BONES; bone++) {
         T5Mat4 rotation;
         t5_quat_to_mat(&rotation, &visual->shown.turn[bone]);
@@ -41,12 +43,19 @@ static void pose_rig(T5VisualFighter *visual, const T5ViewFighter *fighter) {
         t5_skel_bone_world(&visual->rig, fighter->parent_a, FIRST_FINGER_BONE + bone);
 }
 
+static void pose_rig(T5VisualFighter *visual, const T5ViewFighter *fighter) {
+    visual->rig = fighter->rig;  // no hand or face data: the sim's bones stay
+    if (has_hands(visual, fighter)) pose_fingers(visual, fighter);
+    if (has_face(visual, fighter)) t5_face_pose_rig(&visual->rig, &visual->face, fighter);
+}
+
 static void start(T5Visual *visual, const T5View *view) {
     for (int slot = 0; slot < T5_FIGHTER_COUNT; slot++) {
         T5VisualFighter *fighter = &visual->fighter[slot];
         const T5ViewFighter *shown = &view->fighters[slot];
         if (has_hands(fighter, shown)) fighter->hands = t5_hands_idle(fighter->hands, fighter->banks, &shown->hands);  // idle at once
         fighter->from = finger_bones(fighter->hands);  // no old pose to blend from: start at the hands
+        if (has_face(fighter, shown)) fighter->face = t5_face_start(fighter->faces);
     }
     visual->started = true;
     visual->frame = view->frame;
@@ -59,6 +68,7 @@ static void tick(T5Visual *visual, const T5View *view) {
         const T5ViewFighter *shown = &view->fighters[slot];
         fighter->from = fighter->shown;  // the pose on screen is the next blend's start
         if (has_hands(fighter, shown)) fighter->hands = t5_hands_tick(fighter->hands, fighter->banks, &shown->hands);  // one sim tick of hands
+        if (has_face(fighter, shown)) fighter->face = t5_face_tick(fighter->face, fighter->faces, shown, view->phase);
     }
 }
 
@@ -79,4 +89,10 @@ void t5_visual_step(T5Visual *visual, const T5View *view, float seconds) {
         fighter->shown = display_blend(fighter->from, finger_bones(fighter->hands), visual->since_tick);  // blend toward hands
         pose_rig(fighter, &view->fighters[slot]);
     }
+}
+
+void t5_visual_voice_face(T5Visual *visual, const T5View *view, int side, uint16_t voice_face) {
+    T5VisualFighter *fighter = &visual->fighter[side];
+    const T5ViewFighter *shown = &view->fighters[side];
+    if (visual->started && has_face(fighter, shown)) fighter->face = t5_face_voice(fighter->face, shown, view->phase, voice_face);
 }

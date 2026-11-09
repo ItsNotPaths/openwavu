@@ -113,6 +113,10 @@ void t5_skel_bone_world(T5Rig *rig, const int8_t *parent_a, int32_t bone) {
     bone_world(rig->bones_a, parent_a, &rig->root.world, bone);
 }
 
+void t5_skel_bone_world_b(T5Rig *rig, const int8_t *parent_b, int32_t bone) {
+    bone_world(rig->bones_b, parent_b, &rig->root.world, bone);
+}
+
 void t5_skel_world(T5Bone *bones, const int8_t *parent, const T5Mat4 *root, int32_t count) {
     for (int32_t bone = 0; bone < count; bone++) bone_world(bones, parent, root, bone);
 }
