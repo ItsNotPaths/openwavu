@@ -37,7 +37,8 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 	first_mesh_node = len(g.nodes)
 	for mesh, mesh_index in meshes {
 		out := gltf.Mesh{name = mesh.name}
-		for p in mesh.polys {
+		closed := skin != nil ? closed_polys(mesh) : nil
+		for p, poly_index in mesh.polys {
 			if len(p.positions) == 0 do continue  // glTF accessors hold at least one element
 			prim := gltf.Primitive{attributes = make(map[string]int)}
 			prim.attributes["POSITION"] = gltf.add_accessor(&g, metres(p.positions), "VEC3", gltf.ARRAY_BUFFER, with_bounds = true)
@@ -51,7 +52,7 @@ write_model :: proc(root, file: string, meshes: []formats.Mesh, textures: Textur
 				prim.attributes["WEIGHTS_0"] = gltf.add_accessor(&g, normalized(p.weights), "VEC4", gltf.ARRAY_BUFFER)
 			}
 			prim.indices = gltf.add_accessor(&g, flat(p.triangles), "SCALAR", gltf.ELEMENT_ARRAY_BUFFER)
-			if len(p.materials) > 0 do prim.material = material(&g, &materials, p.materials, unlit = p.normals == nil)
+			if len(p.materials) > 0 do prim.material = material(&g, &materials, p.materials, unlit = p.normals == nil, closed = closed != nil && closed[poly_index])
 			append(&out.primitives, prim)
 		}
 		append(&g.meshes, out)
@@ -88,7 +89,7 @@ Material_Look :: struct {
 	keep_below: f32,  // 0: no alpha test
 	blend_mode: u16,  // a blends row; 0: opaque
 	unlit:  bool,  // a mesh with no normals (stages): its vertex colours are the baked light
-	double_sided: bool,  // cull_mode not GL_BACK
+	double_sided: bool,  // cull_mode not GL_BACK, and not an opaque closed poly
 	reflection: Reflection,
 }
 
@@ -139,10 +140,11 @@ alpha_test :: proc(pass: formats.Material) -> (cutoff, keep_below: f32) {
 // (hole stage-reflection-variants :tags (importer render look) :sev polish) reflection shaders 0x48131103 (vertex colour also scales the sphere map) and 0x4813000f, 0x4813010f (four textures) are not decoded: they draw their first texture only.
 // (hole stage-white-models :tags (importer render look)) some distant stage models draw pure white; every stage material names a texture and every DDS passes dds.read, so the cause is elsewhere (the texture's content, UVs, or lighting).
 @(private = "file")
-material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material, unlit: bool) -> int {
+material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material, unlit, closed: bool) -> int {
 	GL_BACK :: 0x405
 	cutoff, keep_below := alpha_test(passes[0])
-	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = cutoff, keep_below = keep_below, blend_mode = passes[0].dst_factor, unlit = unlit, double_sided = passes[0].cull_mode != GL_BACK}
+	opaque_closed := closed && passes[0].dst_factor == 0
+	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = cutoff, keep_below = keep_below, blend_mode = passes[0].dst_factor, unlit = unlit, double_sided = passes[0].cull_mode != GL_BACK && !opaque_closed}
 	reflects: bool
 	if look.reflection, reflects = reflection(passes[0]); reflects do look.hash = passes[0].textures[1].hash
 	if m, seen := materials.by_look[look]; seen do return m
@@ -180,6 +182,33 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 	append(&g.materials, out)
 	materials.by_look[look] = len(g.materials) - 1
 	return materials.by_look[look]
+}
+
+// Per poly: under a tenth of its edges are open across the whole mesh. The game draws fighters double-sided; a
+// closed poly is culled anyway, so skinning can not push its back faces through.
+@(private = "file")
+closed_polys :: proc(mesh: formats.Mesh) -> []bool {
+	OPEN_LIMIT :: 0.1
+	uses := make(map[[2][3]f32]int)
+	for p in mesh.polys do for triangle in p.triangles do for edge in triangle_edges(p, triangle) do uses[edge] += 1
+	closed := make([]bool, len(mesh.polys))
+	for p, index in mesh.polys {
+		open := 0
+		for triangle in p.triangles do for edge in triangle_edges(p, triangle) do if uses[edge] == 1 do open += 1
+		closed[index] = len(p.triangles) > 0 && f32(open) < OPEN_LIMIT * f32(3 * len(p.triangles))
+	}
+	return closed
+}
+
+// Each edge's two corner positions in a fixed order, so both triangles on it give the same key.
+@(private = "file")
+triangle_edges :: proc(p: formats.Poly, triangle: [3]u16) -> (edges: [3][2][3]f32) {
+	for corner in 0 ..< 3 {
+		first, second := p.positions[triangle[corner]], p.positions[triangle[(corner + 1) % 3]]
+		if second.x < first.x || second.x == first.x && (second.y < first.y || second.y == first.y && second.z < first.z) do first, second = second, first
+		edges[corner] = {first, second}
+	}
+	return
 }
 
 // Joint nodes in bind pose plus the skin. Returns the root nodes. Joints past the skeleton get an identity bind under bone 0.
