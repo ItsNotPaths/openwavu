@@ -120,13 +120,28 @@ Material :: struct {
 	extensions:           Maybe(Material_Extensions) `json:",omitempty"`,
 	extras:               json.Object `json:",omitempty"`,  // raw game material data
 }
-Material_Extensions :: struct {unlit: Maybe(struct {}) `json:"KHR_materials_unlit,omitempty"`}
+Material_Extensions :: struct {
+	unlit:      Maybe(struct {}) `json:"KHR_materials_unlit,omitempty"`,
+	keep_below: Maybe(Keep_Below) `json:"OW_materials_alpha_keep_below,omitempty"`,
+}
 UNLIT_EXTENSION :: "KHR_materials_unlit"
+KEEP_BELOW_EXTENSION :: "OW_materials_alpha_keep_below"
+// Alpha test glTF has no mode for: drop alpha at or above keepBelow.
+Keep_Below :: struct {keepBelow: f32}
 
 // Draws the material as its base color, with no scene lights (baked lighting).
 set_unlit :: proc(g: ^Gltf, material: ^Material) {
-	material.extensions = Material_Extensions{unlit = struct {}{}}
+	extensions := material.extensions.? or_else {}
+	extensions.unlit = struct {}{}
+	material.extensions = extensions
 	if !slice.contains(g.extensionsUsed[:], UNLIT_EXTENSION) do append(&g.extensionsUsed, UNLIT_EXTENSION)
+}
+
+set_keep_below :: proc(g: ^Gltf, material: ^Material, keep_below: f32) {
+	extensions := material.extensions.? or_else {}
+	extensions.keep_below = Keep_Below{keep_below}
+	material.extensions = extensions
+	if !slice.contains(g.extensionsUsed[:], KEEP_BELOW_EXTENSION) do append(&g.extensionsUsed, KEEP_BELOW_EXTENSION)
 }
 Texture_Info :: struct {index: int}
 // source: a PNG or JPEG image; a DDS one comes through MSFT_texture_dds.

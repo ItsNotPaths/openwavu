@@ -34,6 +34,7 @@ Primitive :: struct {
 	joints:  int,              // how many the vertices name: 1 unskinned, else the highest + 1
 	texture: ^sdl.GPUTexture,  // nil: white; owned by Assets
 	cutoff:  f32,              // alpha MASK: drop alpha below it; 0 keeps all
+	keep_below: f32,           // OW_materials_alpha_keep_below: drop alpha at or above it; 0 keeps all
 	blend:   bool,             // alpha BLEND: drawn over what is behind, after the opaque draws
 	additive: bool,            // blended by adding onto what is behind: extras blend = "additive"
 	unlit:   bool,             // KHR_materials_unlit: base color only, no scene lights
@@ -198,6 +199,17 @@ material_extras :: proc(extras: cgltf.extras_t) -> (read: Material_Extras) {
 	return read
 }
 
+@(private = "file")
+keep_below :: proc(material: ^cgltf.material) -> f32 {
+	for extension in material.extensions[:material.extensions_count] {
+		if extension.name != gltf.KEEP_BELOW_EXTENSION do continue
+		read: gltf.Keep_Below
+		if json.unmarshal_string(string(cstring(extension.data)), &read, allocator = context.temp_allocator) != nil do return 0
+		return read.keepBelow
+	}
+	return 0
+}
+
 // Each vertex reads its attributes as floats (normalized integers too); joints need weights, weights need joints.
 @(private = "file")
 primitive_upload :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cgltf.data, source: ^cgltf.primitive, path: string) -> (out: Primitive, ok: bool) {
@@ -234,6 +246,7 @@ primitive_upload :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, file: ^cglt
 			out.reflection = {texture_of(gpu, upload, assets, file, &file.textures[reflection.texture], path), reflection.orientation, reflection.masked}
 		}
 		out.unlit = bool(material.unlit)
+		out.keep_below = keep_below(material)
 	}
 	out.mesh = mesh_upload(gpu, upload, vertices, indices) or_return
 	return out, true

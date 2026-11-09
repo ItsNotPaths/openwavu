@@ -31,6 +31,7 @@ layout(std140, set = 3, binding = 1) uniform Material {
     float unlit;    // 1: base color only (baked lighting), no scene lights
     float blend;    // 1: drawn by the blend pipeline, which reads the alpha
     float reflection;  // 0: none, 1: reflection_map added, 2: added times the base alpha
+    float keep_below;  // drop pixels with alpha at or above it; 0 keeps all
 };
 
 layout(location = 0) out vec4 color;
@@ -44,7 +45,7 @@ float dither(vec2 pixel) {
 
 void main() {
     vec4 base = texture(base_color, texture_uv) * vertex_color * tint;
-    if (base.a < cutoff) discard;
+    if (base.a < cutoff || keep_below > 0.0 && base.a >= keep_below) discard;
     vec3 n = normalize(world_normal);
     if (dot(n, camera_position.xyz - world_position) < 0.0) n = -n;  // culling is off: light a back side like its front
     if (scenery > 0.5 && fighter_fade.y > 0.0 && world_position.y > fighter_fade.x) {

@@ -81,6 +81,7 @@ Materials :: struct {
 Material_Look :: struct {
 	hash:   u32,
 	cutoff: f32,   // 0: no alpha test
+	keep_below: f32,  // 0: no alpha test
 	blend:  bool,  // a blend factor: drawn over what is behind
 	additive: bool,  // dst factor 2: added onto what is behind
 	unlit:  bool,  // a mesh with no normals (stages): its vertex colours are the baked light
@@ -109,20 +110,24 @@ reflection :: proc(pass: formats.Material) -> (out: Reflection, ok: bool) {
 	return
 }
 
-// A pass's alpha test as a glTF cutoff (drop alpha below it), from the GL compare function and ref_alpha; 0 when it has
-// none or keeps alpha below ref (LESS), which glTF can not say.
+// A pass's alpha test from the GL compare function and ref_alpha: cutoff drops alpha below it (glTF MASK), keep_below
+// drops alpha at or above it (OW_materials_alpha_keep_below); 0 for neither.
 @(private = "file")
-alpha_cutoff :: proc(pass: formats.Material) -> f32 {
-	GL_GREATER :: 4  // GL compare functions, in GL's order from NEVER = 0
+alpha_test :: proc(pass: formats.Material) -> (cutoff, keep_below: f32) {
+	GL_LESS :: 1  // GL compare functions, in GL's order from NEVER = 0
+	GL_LEQUAL :: 3
+	GL_GREATER :: 4
 	GL_NOTEQUAL :: 5
 	GL_GEQUAL :: 6
-	if pass.alpha_test == 0 do return 0
+	if pass.alpha_test == 0 do return
 	switch pass.alpha_function {
-	case GL_GEQUAL: return f32(pass.ref_alpha) / 255  // GEQUAL 0 keeps all: 0, no test
-	case GL_GREATER: return f32(pass.ref_alpha + 1) / 255
-	case GL_NOTEQUAL: return pass.ref_alpha == 0 ? 1.0 / 255 : 0
+	case GL_GEQUAL: cutoff = f32(pass.ref_alpha) / 255  // GEQUAL 0 keeps all: 0, no test
+	case GL_GREATER: cutoff = f32(pass.ref_alpha + 1) / 255
+	case GL_NOTEQUAL: cutoff = pass.ref_alpha == 0 ? 1.0 / 255 : 0
+	case GL_LESS: keep_below = f32(pass.ref_alpha) / 255
+	case GL_LEQUAL: keep_below = f32(pass.ref_alpha + 1) / 255
 	}
-	return 0
+	return
 }
 
 // One glTF material per first-pass texture and alpha test; every pass goes to extras as stored, texture hashes included.
@@ -132,7 +137,8 @@ alpha_cutoff :: proc(pass: formats.Material) -> f32 {
 @(private = "file")
 material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Material, unlit: bool) -> int {
 	DST_ONE :: 2  // additive glows; the other factors are not decoded
-	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = alpha_cutoff(passes[0]), blend = passes[0].dst_factor != 0, additive = passes[0].dst_factor == DST_ONE, unlit = unlit}
+	cutoff, keep_below := alpha_test(passes[0])
+	look := Material_Look{hash = len(passes[0].textures) > 0 ? passes[0].textures[0].hash : 0, cutoff = cutoff, keep_below = keep_below, blend = passes[0].dst_factor != 0, additive = passes[0].dst_factor == DST_ONE, unlit = unlit}
 	reflects: bool
 	if look.reflection, reflects = reflection(passes[0]); reflects do look.hash = passes[0].textures[1].hash
 	if m, seen := materials.by_look[look]; seen do return m
@@ -158,6 +164,7 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 	// (hole material-blend :tags (render importer look)) dst 2 draws additive (extras blend = "additive"); the other factors (dst 4, 7, 10; src 257, 513) draw as plain alpha blend.
 	if look.blend do out.alphaMode = "BLEND"
 	if look.unlit do gltf.set_unlit(g, &out)
+	if look.keep_below > 0 do gltf.set_keep_below(g, &out, look.keep_below)
 	pass_values := make(json.Array)
 	for p in passes {
 		v, _ := json.marshal(p, allocator = context.temp_allocator)

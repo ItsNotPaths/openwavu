@@ -36,6 +36,7 @@ Draw :: struct {
 	texture: ^sdl.GPUTexture,
 	tint:    [4]f32,
 	cutoff:  f32,  // drop pixels with alpha below it; 0 keeps all
+	keep_below: f32,  // drop pixels with alpha at or above it; 0 keeps all
 	scenery: bool,  // fades where it hides a fighter
 	blend:   bool,  // drawn over what is behind, after the opaque draws, far to near
 	additive: bool,  // a blended draw added onto what is behind
@@ -72,6 +73,7 @@ Material :: struct {
 	unlit:   f32,
 	blend:   f32,
 	reflection: f32,
+	keep_below: f32,
 }
 
 Gpu :: struct {
@@ -339,7 +341,7 @@ upload_fx :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, vertices: []Fx_Vert
 draw_one :: proc(command: ^sdl.GPUCommandBuffer, pass: ^sdl.GPURenderPass, gpu: ^Gpu, draw: Draw, joint_base: u32) {
 	block := Draw_Block{reflection_orientation = draw.reflection.orientation, joint_base = joint_base}
 	reflection: f32 = draw.reflection.texture == nil ? 0 : draw.reflection.masked ? 2 : 1
-	material := Material{tint = draw.tint, cutoff = draw.cutoff, scenery = draw.scenery ? 1 : 0, unlit = draw.unlit ? 1 : 0, blend = draw.blend ? 1 : 0, reflection = reflection}
+	material := Material{tint = draw.tint, cutoff = draw.cutoff, scenery = draw.scenery ? 1 : 0, unlit = draw.unlit ? 1 : 0, blend = draw.blend ? 1 : 0, reflection = reflection, keep_below = draw.keep_below}
 	sdl.PushGPUVertexUniformData(command, 1, &block, size_of(block))
 	sdl.PushGPUFragmentUniformData(command, 1, &material, size_of(material))
 	bindings := [2]sdl.GPUTextureSamplerBinding{{draw.texture != nil ? draw.texture : gpu.white, gpu.sampler}, {draw.reflection.texture != nil ? draw.reflection.texture : gpu.white, gpu.sampler}}
