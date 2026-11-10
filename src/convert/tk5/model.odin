@@ -184,18 +184,17 @@ material :: proc(g: ^gltf.Gltf, materials: ^Materials, passes: []formats.Materia
 	return materials.by_look[look]
 }
 
-// Per poly: under a tenth of its edges are open across the whole mesh. The game draws fighters double-sided; a
-// closed poly is culled anyway, so skinning can not push its back faces through.
+// Per poly: no edge is open across the whole mesh. The game draws fighters double-sided; a closed poly is culled
+// anyway, so skinning can not push its back faces through. A poly with a hole (an arm hole) stays double-sided: its
+// inside shows through the hole.
 @(private = "file")
 closed_polys :: proc(mesh: formats.Mesh) -> []bool {
-	OPEN_LIMIT :: 0.1
 	uses := make(map[[2][3]f32]int)
 	for p in mesh.polys do for triangle in p.triangles do for edge in triangle_edges(p, triangle) do uses[edge] += 1
 	closed := make([]bool, len(mesh.polys))
-	for p, index in mesh.polys {
-		open := 0
-		for triangle in p.triangles do for edge in triangle_edges(p, triangle) do if uses[edge] == 1 do open += 1
-		closed[index] = len(p.triangles) > 0 && f32(open) < OPEN_LIMIT * f32(3 * len(p.triangles))
+	outer: for p, index in mesh.polys {
+		for triangle in p.triangles do for edge in triangle_edges(p, triangle) do if uses[edge] == 1 do continue outer
+		closed[index] = len(p.triangles) > 0
 	}
 	return closed
 }
