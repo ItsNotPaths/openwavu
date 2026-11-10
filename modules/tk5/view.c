@@ -72,7 +72,8 @@ void t5_view_poses(T5View *view, const T5World *w) {
         out->look = view_look(w, f);
         out->move = f->move;
         out->move_frame = f->frame;
-        out->facing = f->facing;
+        out->move_yaw = f->move_yaw;
         out->position = f->position;
+        out->throw_role = f->throw.chain.role;
     }
 }

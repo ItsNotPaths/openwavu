@@ -153,6 +153,7 @@ bool t5_scene_init(const T5View *view) {
     sqlite3 *db = ow_db_open(DB_PATH, sizeof DB_PATH - 1);
     if (!db) return false;
     for (int side = 0; side < T5_FIGHTER_COUNT; side++) load_parts(db, side, &view->fighters[side].loadout);
+    t5_camera_init(db, view);
     load_movesets(db, view);
     t5_stage_init(db, view);
     t5_effects_init(db, view);

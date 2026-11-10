@@ -1,5 +1,5 @@
 // TK5 camera tracks as .anim (layout camera), one key per frame (tk5decomp docs/camera.md 2):
-//   eye xyz, target xyz (mm, in the anchor's frame: world = anchor + yaw(-facing) * local),
+//   eye xyz, target xyz (mm, in the anchor's frame: world = anchor + yaw(-move_yaw) * local),
 //   lens: vertical fov (radians), roll (radians), smoothing (1 = follow last frame's camera fully, 0 = cut).
 package tk5_convert
 
@@ -73,7 +73,7 @@ scaled_frame :: proc(out: []f32, frame, divisors, offsets: []i16) -> (ok: bool) 
 	return true
 }
 
-// The game places these at yaw 0x4000 - facing; turned here so every track uses -facing.
+// The game places these at yaw 0x4000 - move_yaw; turned here so every track uses -move_yaw.
 @(private = "file")
 plain_frame :: proc(out: []f32, frame: []i16) {
 	for point in 0 ..< 2 {

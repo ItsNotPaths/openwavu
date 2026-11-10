@@ -7,9 +7,10 @@
 #include "sim/look.h"
 #include "sim/phase.h"
 #include "sim/skel.h"
+#include "sim/throw.h"
 #include "sim/world.h"
 
-enum { T5_VIEW_VERSION = 7 };
+enum { T5_VIEW_VERSION = 9 };
 
 typedef struct {  // the fighter fields the presenter's hand poses read
     T5PoseProp right_pose, left_pose;  // the hand channel properties
@@ -55,8 +56,9 @@ typedef struct {
     T5ViewLook look;
     T5Ref move;                  // set = the side whose move set it is: a thrown fighter plays its thrower's moves
     int16_t move_frame;          // 1-based
-    int16_t facing;              // 65536 a turn
+    int16_t move_yaw;            // 65536 a turn: camera shots are placed by it (the game's +0xe), not by facing
     T5Vec3 position;             // mm, on the floor: where camera shots are placed
+    T5ThrowRole throw_role;      // a thrower's move camera category picks a throw shot; it follows the thrown fighter
 } T5ViewFighter;
 
 typedef struct {
@@ -75,7 +77,7 @@ typedef struct {
     T5CueEntry cues[T5_CUE_RING];  // the cues of the last T5_CUE_FRAMES frames, oldest first
 } T5View;
 
-// The frame, each fighter's rig, parents, hand, face and look blocks, move and facing, and the recent cues, from the world.
+// The frame, each fighter's rig, parents, hand, face and look blocks, move and move yaw, and the recent cues, from the world.
 void t5_view_poses(T5View *view, const T5World *w);
 
 #endif
