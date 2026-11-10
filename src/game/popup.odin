@@ -2,10 +2,12 @@ package game
 
 import "core:fmt"
 import "core:math"
+import "core:os"
 import "core:strings"
 import sdl "vendor:sdl3"
 import clay "../../vendor/clay"
 import "../input"
+import "../titlepack"
 import "../ui"
 
 // The screen-bottom popup: openwavu's own, the top bar's counterpart. Packs only open its fixed modes.
@@ -21,6 +23,7 @@ Popup_Mode :: enum u8 {
 	Credits,
 	Uninstall,
 	Update,
+	Uninstall_Openwavu,
 }
 
 Settings :: struct {
@@ -57,6 +60,7 @@ popup :: proc(l: ^Launcher, u: ^ui.Ui) -> (remove: bool) {
 		case .Credits: credits_popup(l)
 		case .Uninstall: remove = uninstall_popup(l, u)
 		case .Update: if pick, is_pack := l.selected.(int); is_pack do update_popup(l, pick)
+		case .Uninstall_Openwavu: uninstall_openwavu_popup(l, u)
 		}
 	}
 	return
@@ -119,6 +123,10 @@ settings_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
 		ui.label(fmt.tprintf("Packs here are approved by %s, not %s.", l.settings.network, DEFAULT_NETWORK), tint = ui.WARN)
 	}
 	if l.identity_err != "" do ui.label(l.identity_err, tint = ui.WARN)
+	if clay.UI()(ui.row(8)) {
+		ui.spacer()
+		if ui.button(u, clay.ID("UninstallOpenwavu"), "Uninstall openwavu") do l.popup = {.Uninstall_Openwavu, true}
+	}
 }
 
 SETTINGS_FIELD_WIDTH :: 360
@@ -242,4 +250,19 @@ uninstall_popup :: proc(l: ^Launcher, u: ^ui.Ui) -> (remove: bool) {
 		remove = ui.button(u, clay.ID("Remove"), "Remove")
 	}
 	return
+}
+
+@(private = "file")
+uninstall_openwavu_popup :: proc(l: ^Launcher, u: ^ui.Ui) {
+	ui.label("Uninstall openwavu?", ui.HEAD_SIZE, engraved = true, face = .Display)
+	ui.label("This deletes your packs, saves, replays, identity key and settings, then openwavu itself:", tint = ui.TEXT_DIM)
+	for path in openwavu_paths(titlepack.data_dir, os.dir(l.settings.file)) do ui.label(path)
+	if clay.UI()(ui.row(8)) {
+		ui.spacer()
+		if ui.button(u, clay.ID("CancelUninstall"), "Cancel") do l.popup.open = false
+		if ui.button(u, clay.ID("Uninstall"), "Uninstall") {
+			l.uninstall = true
+			l.quit = true
+		}
+	}
 }

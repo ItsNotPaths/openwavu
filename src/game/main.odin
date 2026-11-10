@@ -24,6 +24,8 @@ main :: proc() {
 	}
 	defer delete(data)
 	defer delete(config)
+	uninstall := false
+	defer if uninstall do uninstall_openwavu(data, config)
 	titlepack.data_dir = data
 	os.make_directory_all(titlepack.packs_dir())
 	r, ok := render.init("openwavu", 1280, 720)
@@ -75,6 +77,7 @@ main :: proc() {
 			l.quit = play(&r, l.packs[pack], l.settings, l.identity)
 		}
 	}
+	uninstall = l.uninstall
 }
 
 // Waits out the rest of a frame that started at frame_start (SDL ticks), for frame_cap frames a second.

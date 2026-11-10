@@ -40,6 +40,7 @@ Launcher :: struct {
 	play:     Maybe(int),
 	change:   Change,
 	quit:     bool,
+	uninstall: bool,  // delete the user's folders and this binary once the loop ends
 }
 
 // A click that frees strings waits for the next frame: Clay reads them until the frame is drawn.
