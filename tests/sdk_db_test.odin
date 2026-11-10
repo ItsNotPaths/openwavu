@@ -21,6 +21,7 @@ module_queries_a_served_db :: proc(t: ^testing.T) {
 	if !testing.expect(t, opened) do return
 	defer content.close_pack(&p)
 	r := rig_create(64 << 20)
+	wasm.set_fuel(r.store, 100_000_000) // opening and closing SQLite takes more than the rig's default
 	defer rig_destroy(r)
 	testing.expect_value(t, imports.define_content(r.linker, &p), "")
 	m, compile_err := wasm.compile(r.engine, code)
