@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
     const char *failed = t5_load_motbin_storage(db, argv[2], &bytes);
     T5Arena arena = {malloc(bytes), bytes, 0};
     T5Motbin m;
-    if (!failed) failed = t5_load_motbin(&m, db, argv[2], (T5AnimBases){}, &arena);
+    if (!failed) failed = t5_load_motbin(&m, db, argv[2], argv[2], (T5AnimBases){}, &arena);
     if (failed) return printf("%s\n", failed), 1;
     LINE("move", m.move_count, "%d/%u/%d/%d/%#x/%#x/%#x", m.moves[index].compare_id, m.moves[index].anim, m.moves[index].next_move,
          m.moves[index].extra_props, m.moves[index].vuln, m.moves[index].hit_level, m.moves[index].flags);

@@ -161,7 +161,7 @@ int main(int argc, char **argv) {
     T5Arena db_arena = {malloc(db_bytes), db_bytes, 0}, file_arena = {malloc(file_bytes), file_bytes, 0};
     uint32_t character = bank_count(argv[4]), common = bank_count(argv[5]);
     T5Motbin from_db, from_file;
-    failed = t5_load_motbin(&from_db, db, argv[2], (T5AnimBases){0, character, character + common}, &db_arena);
+    failed = t5_load_motbin(&from_db, db, argv[2], argv[2], (T5AnimBases){0, character, character + common}, &db_arena);
     if (failed) return printf("%s\n", failed), 1;
     if (t5_motbin_parse(&from_file, file, &file_arena) != 0) return printf("bad sim file\n"), 1;
     drop_unread(&from_db), drop_unread(&from_file);
