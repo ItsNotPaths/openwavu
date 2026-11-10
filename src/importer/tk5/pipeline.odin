@@ -202,14 +202,14 @@ import_costumes :: proc(im: ^Import, c: formats.Character, owner: string) {
 // A part's CHARMOTHS rows: the meshes hidden by default, and the move sets that show each.
 write_moveset_meshes :: proc(im: ^Import, part: string, mif: []byte, first_mesh_node: int) -> bool {
 	entries := formats.read_mif_moveset_meshes(mif, context.temp_allocator) or_return
+	characters := formats.CHARACTERS
 	for entry in entries {
-		character: db.Value = db.Null{}
-		if entry.moveset != formats.MOVESET_EVERYONE {
-			if entry.moveset < 0 || entry.moveset >= len(formats.CHARACTERS) do return false
-			characters := formats.CHARACTERS
-			character = characters[entry.moveset].id
+		if entry.moveset == formats.MOVESET_EVERYONE {
+			for mesh in entry.meshes do db.insert(&im.w, "part_hidden_mesh", part, i64(first_mesh_node + int(mesh) + 1))
+			continue
 		}
-		for mesh in entry.meshes do db.insert(&im.w, "part_moveset_mesh", part, i64(first_mesh_node + int(mesh) + 1), character)
+		if entry.moveset < 0 || entry.moveset >= len(characters) do return false
+		for mesh in entry.meshes do db.insert(&im.w, "part_moveset_mesh", part, i64(first_mesh_node + int(mesh) + 1), characters[entry.moveset].id)
 	}
 	return true
 }

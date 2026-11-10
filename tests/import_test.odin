@@ -30,10 +30,10 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM character"), 37)
 	// Mokujin's costumes hide the sword and tail meshes, the sword shown only with Yoshimitsu's moves, the tail with Roger's.
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM part_moveset_mesh WHERE part = 'mokujin_1' AND character IS NULL"), 7)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM part_hidden_mesh WHERE part = 'mokujin_1'"), 7)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part_moveset_mesh WHERE part = 'mokujin_1' AND character = 'yoshimitsu'"), 1)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part_moveset_mesh WHERE part = 'mokujin_1' AND character = 'roger'"), 6)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM part_moveset_mesh WHERE character IS NOT NULL AND node NOT IN (SELECT node FROM part_moveset_mesh AS hidden WHERE hidden.part = part_moveset_mesh.part AND hidden.character IS NULL)"), 0)
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM part_moveset_mesh WHERE node NOT IN (SELECT node FROM part_hidden_mesh AS hidden WHERE hidden.part = part_moveset_mesh.part)"), 0)
 	// A fighter with no body row would have no hurtboxes; Mokujin has his own whatever move set he takes.
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM character WHERE id NOT IN (SELECT character FROM body)"), 0)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part WHERE slot = 'body'"), 85)

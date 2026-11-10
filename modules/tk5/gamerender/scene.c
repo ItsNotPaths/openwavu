@@ -104,7 +104,7 @@ static void load_faces(sqlite3 *db, int side, const char *moveset) {
 // The part meshes hidden by default that the move set does not show (Mokujin's sword unless he runs Yoshimitsu's moves).
 static void load_hidden_meshes(sqlite3 *db, int side, const char *moveset) {
     sqlite3_stmt *rows;
-    const char *query = "SELECT node FROM part_moveset_mesh WHERE part = ?1 AND character IS NULL "
+    const char *query = "SELECT node FROM part_hidden_mesh WHERE part = ?1 "
                         "AND node NOT IN (SELECT node FROM part_moveset_mesh WHERE part = ?1 AND character = ?2)";
     hidden_mesh_count[side] = 0;
     if (sqlite3_prepare_v2(db, query, -1, &rows, NULL) != SQLITE_OK) return;

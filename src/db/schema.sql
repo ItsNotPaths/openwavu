@@ -52,10 +52,17 @@ CREATE TABLE costume_part (
 	FOREIGN KEY (character, costume) REFERENCES costume(character, id)
 );
 
-CREATE TABLE part_moveset_mesh (  -- part meshes that go with a move set: Mokujin shows Yoshimitsu's sword only with his moves
+CREATE TABLE part_hidden_mesh (  -- part meshes hidden unless a move set shows them (part_moveset_mesh)
+	part TEXT NOT NULL REFERENCES part(id),
+	node INTEGER NOT NULL,  -- glb node index + 1
+	PRIMARY KEY (part, node)
+);
+
+CREATE TABLE part_moveset_mesh (  -- hidden part meshes a move set shows: Mokujin shows Yoshimitsu's sword only with his moves
 	part      TEXT NOT NULL REFERENCES part(id),
-	node      INTEGER NOT NULL,                -- glb node index + 1
-	character TEXT REFERENCES character(id)  -- NULL: hidden by default; else shown while this character's move set runs
+	node      INTEGER NOT NULL,                   -- glb node index + 1
+	character TEXT NOT NULL REFERENCES character(id),
+	PRIMARY KEY (part, node, character)
 );
 
 CREATE TABLE anim (  -- rows with the same file are one anim: the game compares them by record
