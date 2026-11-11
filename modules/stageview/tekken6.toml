@@ -1,0 +1,5 @@
+id = "stageview6"
+name = "Stage viewer (Tekken 6)"
+version = "0.0.1"
+bases = ["tekken6"]
+main = "stageview.wasm"

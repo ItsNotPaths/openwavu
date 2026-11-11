@@ -132,13 +132,18 @@ if [ -n "$windows" ]; then
 	sdl_libs=-extra-linker-flags:"setupapi.lib winmm.lib imm32.lib version.lib ole32.lib oleaut32.lib gdi32.lib user32.lib shell32.lib advapi32.lib cfgmgr32.lib uuid.lib"
 fi
 odin build src/game -out:build/openwavu$exe "${odin_flags[@]}" -vet -strict-style "$sdl_libs"
-# Stage viewer title pack: build/stageview.tar.
+# Stage viewer title pack on the Tekken 5 pack: build/stageview.tar.
 mkdir -p build/stageview
 vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -mexec-model=reactor -s -Wl,--import-symbols \
 	-Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/sdl3/include \
 	-o build/stageview/stageview.wasm modules/stageview/*.c build/sdk/libow_db.a
 cp modules/stageview/pack.toml build/stageview/
 build/openwavu --package build/stageview >/dev/null
+# The same viewer on the Tekken 6 pack: build/stageview6.tar.
+mkdir -p build/stageview6
+cp build/stageview/stageview.wasm build/stageview6/
+cp modules/stageview/tekken6.toml build/stageview6/pack.toml
+build/openwavu --package build/stageview6 >/dev/null
 odin build src/tools/bot -out:build/openwavu-bot$exe "${odin_flags[@]}" -vet -strict-style -extra-linker-flags:"-Lvendor/enet -Lvendor/curl"
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style

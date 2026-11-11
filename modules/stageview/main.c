@@ -14,7 +14,7 @@
 
 enum { STAGES_MAX = 64, NAME_BYTES = 64, LIST_ROWS = 40, SELECTED_ROWS = 30 };
 
-static const char DB_PATH[] = "tk5.db";
+static const char *const DB_PATHS[] = {"tk5.db", "tk6.db"};  // the base pack's, whichever it has
 static const float TEXT_SCALE = 2;
 static const float LINE = 10;  // debug text line height, before the scale
 static const float FOV = 0.9f;
@@ -52,7 +52,8 @@ static struct {
 } view;
 
 OW_EXPORT(ow_init) int32_t init(void) {
-    sqlite3 *db = ow_db_open(DB_PATH, sizeof DB_PATH - 1);
+    sqlite3 *db = NULL;
+    for (size_t path = 0; !db && path < sizeof DB_PATHS / sizeof DB_PATHS[0]; path++) db = ow_db_open(DB_PATHS[path], (uint32_t)strlen(DB_PATHS[path]));
     if (!db) return 1;
     sqlite3_stmt *rows;
     if (sqlite3_prepare_v2(db, "SELECT id, name, file FROM stage ORDER BY id", -1, &rows, NULL) == SQLITE_OK) {
