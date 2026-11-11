@@ -13,7 +13,7 @@
 
 static const float DISTANCE = 3.6f;      // metres from the midpoint, along the view normal; the closest it gets
 static const float FIGHTER_ROOM = 1.2f;  // metres kept on screen past the two fighters' roots, both sides together
-static const float FOCUS_HEIGHT = 0.9f;  // metres
+static const float FOCUS_HEIGHT = 0.9f;  // metres above the floor
 static const float RAISE = 0.5f;         // the camera sits this much above the focus
 static const float FOV = 0.698132f;      // 40 degrees, vertical
 static const float TURN = 6.2831853f / 65536.0f;  // radians per yaw unit
@@ -178,7 +178,7 @@ static OwCamera fight_camera(const T6View *view) {
     const T6Mat4 *first = &view->fighters[0].rig.root.world, *second = &view->fighters[1].rig.root.world;
     OwVec3 focus = {
         (first->m[3][0] + second->m[3][0]) * 0.5f * MM,
-        FOCUS_HEIGHT,
+        fminf(view->fighters[0].position.y, view->fighters[1].position.y) * MM + FOCUS_HEIGHT,  // over the lower floor
         (first->m[3][2] + second->m[3][2]) * 0.5f * MM,
     };
     float right[2] = {view_normal[1], -view_normal[0]};  // screen right on the floor
