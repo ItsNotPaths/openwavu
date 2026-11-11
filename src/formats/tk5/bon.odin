@@ -15,6 +15,7 @@ Skeleton :: struct {
 	bones: []Bone,
 	list:  []u32,  // per bone from 111 up, its MOP record id
 	ends:  []f32,  // end point offsets (sim skel.c END_POINT), to the section end
+	tie_margin: f32,  // a helper moves to a child bone only if this much nearer; TK6's mid-limb helpers tie
 }
 
 // u16 version, u16 count, f32 scale, u32 offsets (from the bon start) of parent, trans, euler, list, ends.

@@ -364,7 +364,7 @@ helper_parents :: proc(s: formats.Skeleton, world: []matrix[4, 4]f64) -> []int {
 		best, best_d := p, linalg.length(pos(world[h]) - pos(world[p]))
 		for k in 0 ..< BODY_BONES {
 			if int(s.bones[k].parent) != p do continue
-			if d := linalg.length(pos(world[h]) - pos(world[k])); d < best_d do best, best_d = k, d
+			if d := linalg.length(pos(world[h]) - pos(world[k])); d < best_d - f64(s.tie_margin) do best, best_d = k, d
 		}
 		parents[h] = best
 	}

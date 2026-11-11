@@ -102,11 +102,8 @@ write_throw_camera_rows :: proc(w: ^db.Writer, records: []formats.Throw_Camera) 
 	}
 }
 
-@(private = "file")
 PROP_MOVE_CAMERA :: 0x8153
-@(private = "file")
 CONTAINER_BANK :: 0x4000
-@(private = "file")
 FRAME_CODE :: 0x7fff
 
 // A move_camera row per move with property 0x8153 (the intro and win poses): its clip of the fighter's own bank.

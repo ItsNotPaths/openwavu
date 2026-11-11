@@ -21,9 +21,8 @@ LIST_TABLES := [List]string{
 // The keys of one character's rows. A list starts at every index that a row points to, and after every end row.
 @(private = "file")
 Keys :: struct {
-	char:  string,
-	moves: []string,
-	lists: [List][]string,  // by game index: the key of the list that starts there, "" inside a list
+	using list_keys: List_Keys,
+	moves:           []string,
 }
 
 // anim_owner: the owner of the character's anim container (shared by Kuma and Panda, ...). moveset: index of formats.CHARACTERS.
@@ -242,33 +241,6 @@ mark_cancel :: proc(k: ^Keys, c: formats.Cancel) {
 	if c.command >> 16 == CMD_GROUP do mark(k, .Group_Cancel, c.move)
 }
 
-// The first key given to a list start wins; without one the list is named by its table and game index.
-@(private = "file")
-mark :: proc(k: ^Keys, list: List, index: $T, key := "") {
-	keys := k.lists[list]
-	i := int(index)
-	if i < 0 || i >= len(keys) || keys[i] != "" do return
-	keys[i] = key if key != "" else row_key(k.char, LIST_TABLES[list], i)
-}
-
-// The list row i is in and its place there. A row that starts a list adds the list.
-@(private = "file")
-in_list :: proc(w: ^db.Writer, k: ^Keys, list: List, i: int) -> (key, pos: db.Value) {
-	keys := k.lists[list]
-	start := i
-	for keys[start] == "" do start -= 1
-	if start == i do db.insert(w, fmt.tprintf("%s_list", LIST_TABLES[list]), keys[i], k.char)
-	return keys[start], n(i - start)
-}
-
-// A list reference: NULL for none (-1); an index past the table keeps its game name, which no list has.
-@(private = "file")
-list_ref :: proc(k: ^Keys, list: List, index: $T) -> db.Value {
-	i := int(index)
-	if i < 0 do return db.Null{}
-	if i < len(k.lists[list]) do return k.lists[list][i]
-	return row_key(k.char, LIST_TABLES[list], i)
-}
 
 // A move id: a move by game index, or alias n for 0x8000 + n.
 @(private = "file")
@@ -277,9 +249,6 @@ move_ref :: proc(k: ^Keys, id: $T) -> (move, alias: db.Value) {
 	if int(id) < len(k.moves) do return k.moves[id], db.Null{}
 	return row_key(k.char, "move", id), db.Null{}
 }
-
-@(private = "file")
-row_key :: proc(char, table: string, index: $T) -> string {return fmt.tprintf("%s/%s/%d", char, table, index)}
 
 // A requirement param or property value: plain, or in the column of the table its code names (CODE_REFS).
 // Columns: value, move, alias, pushback, tracking_row, move_pool, compare_id.
@@ -354,7 +323,6 @@ write_cancels :: proc(w: ^db.Writer, k: ^Keys, sheets: map[string]map[i64]string
 	}
 }
 
-@(private = "file")
 write_tracking :: proc(w: ^db.Writer, char: string, sheets: map[string]map[i64]string, t: ^Tracking) {
 	phase, when_, far := sheets["tracking_phase"], sheets["tracking_when"], sheets["tracking_far_source"]
 	for r, i in t.rows {

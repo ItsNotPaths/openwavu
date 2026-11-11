@@ -96,7 +96,8 @@ layout :: proc(vsize, uvsize: u8) -> (l: Layout, ok: bool) {
 @(private = "file")
 be_f16 :: proc(b: []byte, off: int) -> f32 {return f32(transmute(f16)be_u16(b, off))}
 
-read_ndp3 :: proc(d: []byte, allocator := context.allocator) -> (meshes: []Mesh, ok: bool) {
+// material_slots: how many of a poly's four material slots hold materials.
+read_ndp3 :: proc(d: []byte, allocator := context.allocator, material_slots := 4) -> (meshes: []Mesh, ok: bool) {
 	context.allocator = allocator
 	if len(d) < 0x30 || string(d[:4]) != "NDP3" do return nil, false
 	count := int(be_u16(d, 0x0a))
@@ -106,16 +107,15 @@ read_ndp3 :: proc(d: []byte, allocator := context.allocator) -> (meshes: []Mesh,
 	name_base := vadd_base + int(be_i32(d, 0x1c))
 
 	meshes = make([]Mesh, count)
-	off := 0x30
-	for &m in meshes {
-		m.name = cstring_at(d, name_base + int(be_i32(d, off + 0x20)))
-		m.single_bind = be_i16(d, off + 0x28)
-		m.polys = make([]Poly, be_u16(d, off + 0x2a))
-		off += 0x30
-	}
-	for &m in meshes {
+	for &m, index in meshes {
+		header := 0x30 + 0x30 * index
+		m.name = cstring_at(d, name_base + int(be_i32(d, header + 0x20)))
+		m.single_bind = be_i16(d, header + 0x28)
+		m.polys = make([]Poly, be_u16(d, header + 0x2a))
+		off := int(be_i32(d, header + 0x2c))  // the mesh's own poly headers: TK6 does not store them in mesh order
 		for &p in m.polys {
-			read_poly(d, off, m.single_bind, poly_base, vert_base, vadd_base, name_base, &p) or_return
+			if off < 0 || off + 0x30 > len(d) do return nil, false
+			read_poly(d, off, m.single_bind, poly_base, vert_base, vadd_base, name_base, material_slots, &p) or_return
 			off += 0x30
 		}
 	}
@@ -123,7 +123,7 @@ read_ndp3 :: proc(d: []byte, allocator := context.allocator) -> (meshes: []Mesh,
 }
 
 @(private = "file")
-read_poly :: proc(d: []byte, h: int, single_bind: i16, poly_base, vert_base, vadd_base, name_base: int, p: ^Poly) -> bool {
+read_poly :: proc(d: []byte, h: int, single_bind: i16, poly_base, vert_base, vadd_base, name_base, material_slots: int, p: ^Poly) -> bool {
 	n := int(be_u16(d, h + 0x0c))
 	l := layout(d[h + 0x0e], d[h + 0x0f]) or_return
 	index_count := int(be_u16(d, h + 0x20))
@@ -195,7 +195,7 @@ read_poly :: proc(d: []byte, h: int, single_bind: i16, poly_base, vert_base, vad
 	p.triangles = tris[:]
 
 	materials := make([dynamic]Material, 0, 4)
-	for k in 0 ..< 4 {
+	for k in 0 ..< material_slots {
 		at := int(be_i32(d, h + 0x10 + 4 * k))
 		if at == 0 do continue
 		append(&materials, read_material(d, at, name_base) or_return)

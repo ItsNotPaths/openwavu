@@ -198,26 +198,61 @@ Vote :: struct {
 	count: int,
 }
 
+// What the seed reads of a cancel entry: its kind, the move it names (a group entry: the group cancel index) and the
+// motion code of its transition word.
+Seed_Kind :: enum u8 {Plain, End, Group, Group_End}
+Seed_Cancel :: struct {
+	kind:   Seed_Kind,
+	move:   u16,
+	motion: int,
+}
+
+// A move set's cancels in sim numbers, as the seed reads them.
+Seed_Source :: struct {
+	cancels, group_cancels: []Seed_Cancel,
+	move_cancels:           []u32,  // each move's first cancel
+	aliases:                []u32,  // alias slot -> move index
+}
+
+seed_tracking :: proc(m: formats.Motbin, xiaoyu: bool) -> Tracking {
+	seed_cancels :: proc(m: formats.Motbin, cancels: []formats.Cancel) -> []Seed_Cancel {
+		seeds := make([]Seed_Cancel, len(cancels), context.temp_allocator)
+		for c, i in cancels {
+			kind := Seed_Kind.Plain
+			switch c.command >> 16 {
+			case CMD_END: kind = .End
+			case CMD_GROUP: kind = .Group
+			case CMD_GROUP_END: kind = .Group_End
+			}
+			seeds[i] = {kind, c.move, int(m.cancel_extras[c.extra] & MOTION_CODE_MASK)}
+		}
+		return seeds
+	}
+	move_cancels := make([]u32, len(m.moves), context.temp_allocator)
+	for mv, i in m.moves do move_cancels[i] = mv.cancels
+	aliases := m.aliases
+	return seed_tracking_of({seed_cancels(m, m.cancels), seed_cancels(m, m.group_cancels), move_cancels, aliases[:]}, xiaoyu)
+}
+
 // The default of a move is the tracking most source moves reach it with (a group entry counts once per move that scans it).
 // Ties go to a row other than hold, then to the lower row, then to the first seen. An alias entry always carries its tracking.
-seed_tracking :: proc(m: formats.Motbin, xiaoyu: bool) -> (t: Tracking) {
+seed_tracking_of :: proc(m: Seed_Source, xiaoyu: bool) -> (t: Tracking) {
 	context.allocator = context.temp_allocator
 	append(&t.rows, stock_row(0))
 	entries := make([dynamic]Entry)
 	for group in ([]bool{false, true}) {
 		list := group ? m.group_cancels : m.cancels
 		for c, i in list {
-			if hi := c.command >> 16; hi == CMD_GROUP || hi == CMD_GROUP_END do continue
-			code := int(m.cancel_extras[c.extra] & MOTION_CODE_MASK)
+			if c.kind == .Group || c.kind == .Group_End do continue
 			e := Entry{key = {group, i}, dest = resolve_move(m, c.move), alias = c.move & 0x8000 != 0}
-			if _, _, _, ok := code_modes(code); ok && !is_scripted_code(code) {
-				e.track, e.tracked = code_tracking(&t, code, xiaoyu), true
+			if _, _, _, ok := code_modes(c.motion); ok && !is_scripted_code(c.motion) {
+				e.track, e.tracked = code_tracking(&t, c.motion, xiaoyu), true
 			}
 			append(&entries, e)
 		}
 	}
 	weight := make(map[Entry_Key]int)
-	for mv in m.moves do for key in scanned_entries(m, int(mv.cancels)) do weight[key] += 1
+	for first in m.move_cancels do for key in scanned_entries(m, int(first)) do weight[key] += 1
 	votes := make(map[int][dynamic]Vote)
 	for e in entries {
 		if e.dest < 0 || !e.tracked do continue
@@ -230,7 +265,7 @@ seed_tracking :: proc(m: formats.Motbin, xiaoyu: bool) -> (t: Tracking) {
 		}
 		if !found do append(list, Vote{e.track, max(weight[e.key], 1)})
 	}
-	t.default = make([]Track, len(m.moves))
+	t.default = make([]Track, len(m.move_cancels))
 	for dest, list in votes {
 		best := list[0]
 		for v in list[1:] do if better_vote(v, best) do best = v
@@ -263,30 +298,30 @@ better_vote :: proc(v, best: Vote) -> bool {
 
 // Move index of a move id (plain, or 0x8000 | alias); -1 if it names nothing.
 @(private = "file")
-resolve_move :: proc(m: formats.Motbin, id: u16) -> int {
+resolve_move :: proc(m: Seed_Source, id: u16) -> int {
 	index := int(id)
 	if id & 0x8000 != 0 {
 		alias := int(id & 0x7fff)
 		if alias >= len(m.aliases) do return -1
 		index = int(m.aliases[alias])
 	}
-	return index < len(m.moves) ? index : -1
+	return index < len(m.move_cancels) ? index : -1
 }
 
 // The entries a move scans from cancel `first`, groups inlined; the end entry too (it names the move that follows).
 @(private = "file")
-scanned_entries :: proc(m: formats.Motbin, first: int) -> []Entry_Key {
+scanned_entries :: proc(m: Seed_Source, first: int) -> []Entry_Key {
 	out := make([dynamic]Entry_Key, context.temp_allocator)
 	for i := first; i >= 0 && i < len(m.cancels); i += 1 {
-		hi := m.cancels[i].command >> 16
-		if hi == CMD_GROUP {
-			for g := int(m.cancels[i].move); g < len(m.group_cancels) && m.group_cancels[g].command >> 16 != CMD_GROUP_END; g += 1 {
+		kind := m.cancels[i].kind
+		if kind == .Group {
+			for g := int(m.cancels[i].move); g < len(m.group_cancels) && m.group_cancels[g].kind != .Group_End; g += 1 {
 				append(&out, Entry_Key{true, g})
 			}
 		} else {
 			append(&out, Entry_Key{false, i})
 		}
-		if hi == CMD_END do break
+		if kind == .End do break
 	}
 	return out[:]
 }

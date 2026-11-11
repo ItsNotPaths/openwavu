@@ -120,8 +120,11 @@ Move_Hits :: struct {
 }
 
 // What the sim reads of a move's hitbox bytes. False: a hitbox on a special slot its row leaves unwritten.
-move_hits :: proc(mv: formats.Move, moveset: int) -> (h: Move_Hits, ok: bool) {
-	hitbox := hitbox_bytes(mv.hit_category)
+move_hits :: proc(mv: formats.Move, moveset: int) -> (h: Move_Hits, ok: bool) {return hitbox_hits(mv.hit_category, moveset)}
+
+// codes: the four hitbox code bytes in file order, in TK5 codes.
+hitbox_hits :: proc(codes: u32, moveset: int) -> (h: Move_Hits, ok: bool) {
+	hitbox := hitbox_bytes(codes)
 	for &pair, slot in h.pairs do pair.end, pair.start = hit_pair(hitbox[2 * slot], hitbox[2 * slot + 1], moveset) or_return
 	h.attack_bones = attack_bones(hitbox)
 	h.slots = hitbox[2] != 0 ? 2 : hitbox[0] != 0 ? 1 : 0
@@ -163,7 +166,6 @@ write_body :: proc(w: ^db.Writer, char: string, model: int, head_top: f32) {
 }
 
 // The special points of a move set, and its hitscan and projectile.
-@(private = "file")
 write_body_points :: proc(w: ^db.Writer, char: string, moveset: int) {
 	hitscan := moveset == DEVIL_JIN ? EYE_LASER : 0
 	projectile := moveset == JINPACHI || moveset == JINPACHI_BOSS ? FIRE : 0
@@ -192,7 +194,6 @@ body_points :: proc(moveset: int) -> []Body_Point {
 }
 
 // Look init 0xe8ab8 (tilt: Nina, Xiaoyu, Steve 15 degrees, others 10) and head aim 0xe94c0 (Lili turns 10 degrees).
-@(private = "file")
 write_gaze :: proc(w: ^db.Writer, char: string, moveset: int) {
 	high_tilt := moveset == 5 || moveset == 7 || moveset == 16
 	turn := moveset == 30 ? 10 * 65536 / 360 : 0
@@ -271,7 +272,6 @@ in_category :: proc(v, code: u8) -> bool {
 }
 
 // 0x38, 0xd6..0xd9, and 0x123 + 18h + 6r + t for h < 2, r < 3, t in 1..4.
-@(private = "file")
 is_category_requirement :: proc(id: u16) -> bool {
 	if id == 0x38 || (id >= 0xd6 && id <= 0xd9) do return true
 	if id < 0x123 do return false
