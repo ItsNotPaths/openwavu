@@ -81,26 +81,32 @@ if [ ! -f build/sdk/libow_sound.a ] || [ -n "$(find sdk/src/ow_sound.c sdk/inclu
 	rm -f build/sdk/libow_sound.a
 	vendor/zig/zig ar rcs build/sdk/libow_sound.a build/sdk/ow_sound.o
 fi
-# The stock TK5 modules, WASI reactors. The sim imports only from openwavu; presentation modules also call SDL, whose
-# functions become imports (env) through --import-symbols. The TK5 core needs exact floats and wrapping ints.
+# The stock game modules (TK5, TK6 fork), WASI reactors. The sim imports only from openwavu; presentation modules also call SDL, whose
+# functions become imports (env) through --import-symbols. The sim cores need exact floats and wrapping ints.
 # (hole module-build :tags (wasm tk5mod) :needs ow-cli) build.sh builds the stock modules with zig itself; ow build should make them with the same pinned flags, reproducibly.
-mkdir -p build/modules
-tk5_core=(modules/tk5/sim/*.c modules/tk5/load.c)
-# tk5_module <out> <link flags> <sources...>: rebuilt when anything under modules/tk5 or sdk is newer. -s: zig's crt
-# carries this machine's paths in its debug info, and the stock pack hash needs the same bytes everywhere.
-tk5_module() {
-	out="build/modules/$1"
-	link="$2"
-	shift 2
-	if [ ! -f "$out" ] || [ -n "$(find modules/tk5 sdk build/sdk -newer "$out" -print -quit)" ]; then
+mkdir -p build/modules/tk5 build/modules/tk6
+# game_module <module> <out> <link flags> <sources...>: rebuilt when anything under modules/<module> or sdk is newer.
+# -s: zig's crt carries this machine's paths in its debug info, and the stock pack hash needs the same bytes everywhere.
+game_module() {
+	module="$1"
+	out="$2"
+	link="$3"
+	shift 3
+	if [ ! -f "$out" ] || [ -n "$(find "modules/$module" sdk build/sdk -newer "$out" -print -quit)" ]; then
 		vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -fwrapv -ffp-contract=off -fno-fast-math -mexec-model=reactor -s \
-			-Imodules/tk5 -Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $link \
+			-I"modules/$module" -Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $link \
 			-o "$out" "$@" build/sdk/libow_db.a build/sdk/libow_sound.a
 	fi
 }
-tk5_module gameplay.wasm "" "${tk5_core[@]}" modules/tk5/{view,pack_file}.c modules/tk5/gameplay/*.c
-tk5_module app.wasm -Wl,--import-symbols modules/tk5/app/*.c
-tk5_module gamerender.wasm -Wl,--import-symbols "${tk5_core[@]}" modules/tk5/pack_file.c modules/tk5/gamerender/*.c
+# game_modules <module> <out dir>: the sim, app and presenter of one game.
+game_modules() {
+	core=("modules/$1"/sim/*.c "modules/$1"/load.c)
+	game_module "$1" "$2/gameplay.wasm" "" "${core[@]}" "modules/$1"/{view,pack_file}.c "modules/$1"/gameplay/*.c
+	game_module "$1" "$2/app.wasm" -Wl,--import-symbols "modules/$1"/app/*.c
+	game_module "$1" "$2/gamerender.wasm" -Wl,--import-symbols "${core[@]}" "modules/$1"/pack_file.c "modules/$1"/gamerender/*.c
+}
+game_modules tk5 build/modules/tk5
+game_modules tk6 build/modules/tk6
 # The host's 3D shaders, SPIR-V; src/render embeds them.
 mkdir -p build/shaders
 for shader in src/render/shaders/*.vert src/render/shaders/*.frag; do

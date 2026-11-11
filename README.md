@@ -98,7 +98,7 @@ Odin dev-2026-10 (pinned in `mise.toml`). `download-deps.sh` puts everything els
 
 ```
 ./download-deps.sh
-./build.sh                 # debug: build/openwavu, build/openwavu-import, build/modules/*.wasm
+./build.sh                 # debug: build/openwavu, build/openwavu-import, build/modules/<game>/*.wasm
 ./build.sh speed           # optimized, ~5x faster import
 ./build.sh test            # then the tests (combines with speed)
 ./build.sh server speed    # build/openwavu-server

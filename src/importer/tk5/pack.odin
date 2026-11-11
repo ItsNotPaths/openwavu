@@ -11,9 +11,9 @@ PACK_ID :: "tekken5dr"
 STOCK_PACK :: PACK_ID  // a folder: stock packs are built here and never sent, so they need no tar
 
 // The stock modules build.sh made from modules/tk5, so an import writes this openwavu's own.
-GAMEPLAY_MODULE :: #load("../../../build/modules/gameplay.wasm", string)
-GAMERENDER_MODULE :: #load("../../../build/modules/gamerender.wasm", string)
-APP_MODULE :: #load("../../../build/modules/app.wasm", string)
+GAMEPLAY_MODULE :: #load("../../../build/modules/tk5/gameplay.wasm", string)
+GAMERENDER_MODULE :: #load("../../../build/modules/tk5/gamerender.wasm", string)
+APP_MODULE :: #load("../../../build/modules/tk5/app.wasm", string)
 STOCK_FRONT :: #load("../../../modules/tk5/front.owf", string)
 DISPLAY_FONT :: #load("../../../vendor/fonts/Michroma-Regular.ttf", string)  // the stock menus' labels
 DISPLAY_FONT_LICENSE :: #load("../../../vendor/fonts/Michroma-OFL.txt", string)

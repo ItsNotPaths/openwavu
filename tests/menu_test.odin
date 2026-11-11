@@ -9,7 +9,7 @@ import "../src/presentation"
 import "../src/titlepack"
 import "../src/wasm"
 
-STOCK_APP :: "build/modules/app.wasm"
+STOCK_APP :: "build/modules/tk5/app.wasm"
 
 // Past the title, the stock menus (pick with button 3, back with button 4) leave the pack on Exit, and they ask for the
 // match the player picked: Versus CPU, the player's fighter,

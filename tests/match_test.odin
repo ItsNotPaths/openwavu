@@ -148,7 +148,7 @@ match_with_a_broken_presenter_does_not_start :: proc(t: ^testing.T) {
 	testing.expect(t, err != "", "a loadout with no character starts no match")
 }
 
-STOCK_GAMERENDER :: "build/modules/gamerender.wasm"
+STOCK_GAMERENDER :: "build/modules/tk5/gamerender.wasm"
 
 // The stock presenter, in a bot match on the stock pack, sends the stage and each fighter's costume parts posed by the
 // sim (unit rotations, the fighters apart on the floor) with the camera between the fighters, and draws its HUD on the

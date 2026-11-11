@@ -10,7 +10,7 @@ import "../src/sim"
 import "../src/wasm"
 
 STOCK_PACK :: "packs/tekken5dr"
-GAMEPLAY :: "build/modules/gameplay.wasm"
+GAMEPLAY :: "build/modules/tk5/gameplay.wasm"
 
 // modules/tk5/loadout.h
 T5_Loadout :: struct {
