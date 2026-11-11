@@ -235,12 +235,18 @@ write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: 
 // (hole tk6-stage-start :tags (tk6 importer) :sev gap) the start points are not read (posf holds none found), so the sim's fallback line places the fighters.
 // (hole tk6-floor-breaks :tags (tk6 importer) :sev gap) floor and wall breaks are not imported; they look like stage objects (properties touch them), not fighter code [guess].
 import_stage :: proc(im: ^Import, stage: tk6.Stage) {
+	collision, has_collision := tk6.read_stage_collision(im.game, stage, context.temp_allocator)
+	if !has_collision {
+		fail(im, "stage %s: collision did not read", stage.id)
+		return
+	}
 	textures := make(tk5_convert.Textures, context.temp_allocator)
 	meshes: [dynamic]tk5.Mesh
 	matrices: [dynamic]Maybe([16]f32)
 	layers: [dynamic]int
 	meshes.allocator, matrices.allocator, layers.allocator = context.temp_allocator, context.temp_allocator, context.temp_allocator
 	for layer in 0 ..< tk6.STAGE_LAYERS {
+		if layer == tk6.SPAWNED_LAYER do continue
 		read, ok := tk6.read_stage_layer(im.game, stage, layer, context.temp_allocator)
 		if !ok {
 			fail(im, "stage %s: layer %d did not read", stage.id, layer)
@@ -251,6 +257,7 @@ import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 		append(&matrices, ..read.matrices)
 		for _ in read.meshes do append(&layers, layer)
 	}
+	lower_stage(matrices[:], &collision)
 	// File layer k is the game's stage layer STAGE_LAYERS - 1 - k (its "stg_n" element; layer 0 holds the effects). Blended
 	// draws go lowest order first: the sky, then the scenery, then the effects with the fighters (order 0) by distance.
 	layer_orders: [tk6.STAGE_LAYERS]int
@@ -261,13 +268,29 @@ import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 		fail(im, "stage %s: model did not write", stage.id)
 		return
 	}
-	collision, read := tk6.read_stage_collision(im.game, stage, context.temp_allocator)
 	collision_file, surfaces_file := fmt.tprintf("stages/%s.collision.glb", stage.id), fmt.tprintf("stages/%s.surfaces", stage.id)
-	if !read || !tk6_convert.write_stage_collision(join(im.root, collision_file), join(im.root, surfaces_file), collision) {
+	if !tk6_convert.write_stage_collision(join(im.root, collision_file), join(im.root, surfaces_file), collision) {
 		fail(im, "stage %s: collision did not write", stage.id)
 		return
 	}
 	db.insert(&im.w, "stage", stage.id, stage.id, db.Null{}, file, collision_file, surfaces_file, db.Null{}, f64(0), f64(0))
+}
+
+// The sim keeps the fighters' floor at y 0 (gravity and landings), so a stage that starts on a raised level moves
+// down by its floor height, the model and the collision alike [likely: the game keeps the current level at 0 too].
+lower_stage :: proc(matrices: []Maybe([16]f32), collision: ^tk6.Stage_Collision) {
+	IDENTITY :: [16]f32{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
+	TRANSLATION_Y :: 13  // row vectors
+	height := collision.floor_height
+	if height == 0 do return
+	for &placed in matrices {
+		lowered := placed.? or_else IDENTITY
+		lowered[TRANSLATION_Y] -= height
+		placed = lowered
+	}
+	for &floor in collision.floors do for &corner in floor.corners do corner.y -= height
+	for &wall in collision.walls do for &corner in wall.corners do corner.y -= height
+	collision.floor_height = 0
 }
 
 // Each new hash of owner as a texture row. Returns the file of every hash, written now or before.

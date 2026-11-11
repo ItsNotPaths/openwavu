@@ -22,9 +22,12 @@ STAGES :: [?]Stage{
 STAGE_LAYERS :: 6
 STAGE_LAYER_FILES :: 3  // meshes, textures, nodes
 STAGE_WALLS :: 19       // from the first file
-NODE_RECORD :: 0x10      // efhd: u32 node count, {u32 offset, u32 size}[count] from here
-NODE_KIND :: 0x0c         // node record: u32, ROOT_NODE for an element's root ("ANIM1_", "ANIMEFF_")
-NODE_TRANSLATION :: 0x10  // node record: f32 translation[3], euler[3], scale[3]
+SPAWNED_LAYER :: 0       // its elements (break pieces, effects, sound dummies) are only placed by break sequences
+EFHD_FLAGS :: 0x10       // efhd: u32 flags
+EFHD_NODES :: 0x30       // efhd: u32 node count, {u32 offset, u32 size}[count] from here
+HIDDEN_AT_START :: 0x1   // efhd flag: shown only by a break sequence (FUN_001712ec)
+NODE_RENDER_RECORD :: 0x0c  // node record: u32 node file section 3 record, ROOT_NODE for an element's root ("ANIM1_", "ANIMEFF_")
+NODE_TRANSLATION :: 0x10    // node record: f32 translation[3], euler[3], scale[3]
 ROOT_NODE :: 0xffffffff
 
 Stage_Layer :: struct {
@@ -35,8 +38,9 @@ Stage_Layer :: struct {
 
 // A layer's meshes. A mesh object's single_bind is a node of its element (counted past the root); the element is the
 // one that names a mesh of the object, else the one before it (objects run element by element). Bind -1: world space.
-// Stage 15 has no texture files: a bare stage.
-// (hole tk6-stage-states :tags (tk6 importer look) :sev gap) every element is drawn: branch on and off pairs (dispon, dispoff), break pieces (koware, ANIMEFF) and erase sets (keshi) all show at once.
+// Only meshes of elements shown at match start; stage 15 has no texture files: a bare stage. tk6decomp docs/data.md
+// "Element visibility".
+// (hole tk6-stage-states :tags (tk6 importer look) :sev gap) only the start state: the sqef break sequences (show, hide, spawn at a posf point) are not imported.
 // (hole tk6-stage-root-nodes :tags (tk6 importer look) :sev polish) root node places are not applied; all are zero except the two layer 4 waterfall roots (y 1037 mm).
 read_stage_layer :: proc(game: Game_Files, stage: Stage, layer: int, allocator := context.allocator) -> (out: Stage_Layer, ok: bool) {
 	context.allocator = allocator
@@ -55,6 +59,7 @@ read_stage_layer :: proc(game: Game_Files, stage: Stage, layer: int, allocator :
 	for object in objects {
 		group := tk5.read_ndp3(object, material_slots = MATERIAL_SLOTS) or_return
 		for mesh in group do if element, named := element_of[mesh.name]; named do current = element
+		if current >= 0 && elements[current].hidden do continue
 		for mesh in group {
 			placed: Maybe([16]f32)
 			if mesh.single_bind >= 0 && current >= 0 {
@@ -81,11 +86,13 @@ nested :: proc(data: []byte, depth: int) -> (inner: [][]byte, ok: bool) {
 	return inner, true
 }
 
-// One element of a node file: its node places in order, and the node bind 0 means (1 past a root node).
+// One element of a node file: its node places in order, the node bind 0 means (1 past a root node), and whether it
+// starts hidden.
 @(private = "file")
 Element :: struct {
 	places:     [][16]f32,
 	first_bind: int,
+	hidden:     bool,
 }
 
 // Node file: section 0 holds an "efhd" per element with its node records, section 1 per element its node names
@@ -99,14 +106,15 @@ node_elements :: proc(data: []byte) -> (elements: []Element, element_of: map[str
 	name_lists := sections(files[1], context.temp_allocator) or_return
 	elements = make([]Element, len(headers), context.temp_allocator)
 	for header, element in headers {
-		if element >= len(name_lists) || len(header) < NODE_RECORD + 4 || string(header[:4]) != "efhd" do continue
+		if element >= len(name_lists) || len(header) < EFHD_NODES + 4 || string(header[:4]) != "efhd" do continue
+		elements[element].hidden = tk5.be_u32(header, EFHD_FLAGS) & HIDDEN_AT_START != 0
 		names := sections(name_lists[element], context.temp_allocator) or_return
-		count := min(int(tk5.be_u32(header, 0x30)), len(names))
+		count := min(int(tk5.be_u32(header, EFHD_NODES)), len(names))
 		places := make([][16]f32, count, context.temp_allocator)
 		for &place, node in places {
-			at := 0x30 + int(tk5.be_u32(header, 0x34 + 8 * node))
+			at := EFHD_NODES + int(tk5.be_u32(header, EFHD_NODES + 4 + 8 * node))
 			if at + NODE_TRANSLATION + 36 > len(header) do return
-			if node == 0 && tk5.be_u32(header, at + NODE_KIND) == ROOT_NODE do elements[element].first_bind = 1
+			if node == 0 && tk5.be_u32(header, at + NODE_RENDER_RECORD) == ROOT_NODE do elements[element].first_bind = 1
 			place = node_matrix(header[at + NODE_TRANSLATION:])
 			element_of[tk5.cstring_at(names[node], 0)] = element
 		}
@@ -137,6 +145,7 @@ WALL_RECORD :: 0x90  // u32 size, u32 material, f32 centre x, z, radius², i32 o
 STAGE_FLOOR :: 21     // from the first file
 FLOOR_COUNT :: 0x20
 FLOOR_TABLE :: 0x24
+FLOOR_HEIGHT :: 0x14     // floor record: f32 y of the floor level
 FLOOR_TRIANGLES :: 0x18  // floor record: u32 triangle count, 0 or 1
 FLOOR_TRIANGLE :: 0x40   // floor record: the triangle, 0x38 bytes
 FLOOR_NORMAL :: 0x10     // triangle: f32 normal[3]
@@ -149,15 +158,16 @@ Stage_Wall :: struct {
 	corners: [4][3]f32,
 }
 
-// A floor triangle; every TK6 floor is flat at y 0.
+// A floor triangle; every TK6 floor is flat (stages with a lower level start at 7000 mm).
 Stage_Floor :: struct {
 	normal:  [3]f32,
 	corners: [3][3]f32,
 }
 
 Stage_Collision :: struct {
-	walls:  []Stage_Wall,
-	floors: []Stage_Floor,
+	walls:        []Stage_Wall,
+	floors:       []Stage_Floor,
+	floor_height: f32,  // the start level's: 7000 mm over the lower level on stages 03, 09, 12, 19, else 0
 }
 
 // The wall quads of the "hitd" file and the floor triangles of the "flor" file. A stage with no walls is open.
@@ -165,7 +175,9 @@ read_stage_collision :: proc(game: Game_Files, stage: Stage, allocator := contex
 	context.allocator = allocator
 	out.walls = read_walls(game, stage) or_return
 	out.floors = read_floors(game, stage) or_return
-	return out, len(out.floors) > 0
+	if len(out.floors) == 0 do return
+	out.floor_height = out.floors[0].corners[0].y
+	return out, true
 }
 
 @(private = "file")
@@ -187,7 +199,9 @@ read_walls :: proc(game: Game_Files, stage: Stage) -> (walls: []Stage_Wall, ok: 
 	return walls, true
 }
 
-// Floor file: "flor", u32 record count, offset of u32 record offsets; a record holds one triangle or none.
+// Floor file: one "flor" section per floor level, the start level first (hitd likewise); "flor", u32 record count,
+// offset of u32 record offsets; a record holds one triangle or none.
+// (hole tk6-floor-levels :tags (tk6 importer sim) :sev gap) only the start level: the lower level a floor break drops to (stages 03, 09, 12, 19: flor and hitd section 1) is not imported.
 @(private = "file")
 read_floors :: proc(game: Game_Files, stage: Stage) -> (floors: []Stage_Floor, ok: bool) {
 	file := read_file(game, stage.first + STAGE_FLOOR, allocator = context.temp_allocator) or_return
@@ -210,6 +224,7 @@ read_floors :: proc(game: Game_Files, stage: Stage) -> (floors: []Stage_Floor, o
 		floor := Stage_Floor{normal = vector(data, triangle + FLOOR_NORMAL)}
 		for &corner, number in floor.corners {
 			corner.x, corner.z = tk5.be_f32(data, triangle + FLOOR_CORNERS + 8 * number), tk5.be_f32(data, triangle + FLOOR_CORNERS + 8 * number + 4)
+			corner.y = tk5.be_f32(data, at + FLOOR_HEIGHT)
 		}
 		append(&list, floor)
 	}
