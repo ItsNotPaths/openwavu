@@ -10,7 +10,6 @@ import tk5 "../tk5"
 MOTA_TABLE :: 0x14  // u32 anim offsets, from the bank start
 ANIM_TYPE_BODY :: 0x64
 ANIM_TYPE_PLAIN :: 0xc8  // u16 type, u16 channel count, u32 frames, u32 channel type[], f32 value[frames][channels][3]
-PLAIN_VALUES :: 8 + 4 * tk5.CHANNELS
 POSITION_CHANNELS :: 3
 
 Mota_Bank :: struct {
@@ -40,25 +39,28 @@ read_mota_anim :: proc(bank: Mota_Bank, index: int, allocator := context.allocat
 	if at, found := slice.binary_search(bank.starts, start); found && at + 1 < len(bank.starts) do end = bank.starts[at + 1]
 	if start + 4 > end || end > len(bank.data) do return
 	record := bank.data[start:end]
-	if tk5.be_u16(record, 0) == ANIM_TYPE_PLAIN && int(tk5.be_u16(record, 2)) == tk5.CHANNELS do return read_plain_anim(record, allocator)
+	if tk5.be_u16(record, 0) == ANIM_TYPE_PLAIN do return read_plain_anim(record, allocator)
 	if tk5.be_u16(record, 0) != ANIM_TYPE_BODY do return
 	little := little_endian_bank(record, context.temp_allocator) or_return
 	tk5_bank := tk5.read_bank(little) or_return
 	return tk5.read_anim(tk5_bank, 0, allocator)
 }
 
+// The 23 body channels; channels past them (props) are dropped.
 @(private = "file")
 read_plain_anim :: proc(record: []byte, allocator := context.allocator) -> (anim: tk5.Anim, ok: bool) {
+	channels := int(tk5.be_u16(record, 2))
+	values := 8 + 4 * channels
+	if channels < tk5.CHANNELS || values > len(record) do return
+	channel_type :: proc(record: []byte, channel: int) -> u16 {return u16(tk5.be_u32(record, 8 + 4 * channel))}
+	for channel in 0 ..< tk5.CHANNELS do if tk5.channel_is_rot(channel) != is_rotation(channel_type(record, channel)) do return
 	anim.frames = int(tk5.be_u32(record, 4))
-	if PLAIN_VALUES + anim.frames * tk5.CHANNELS * 12 > len(record) do return {}, false
+	if values + anim.frames * channels * 12 > len(record) do return {}, false
 	anim.values = make([][tk5.CHANNELS][3]f32, anim.frames, allocator)
-	at := PLAIN_VALUES
-	for &frame in anim.values do for &channel, channel_index in frame {
-		for &value in channel {
-			value = tk5.be_f32(record, at)
-			at += 4
-		}
-		if is_rotation(u16(tk5.be_u32(record, 8 + 4 * channel_index))) do channel = axis_turn_of_euler(channel)
+	for &frame, frame_index in anim.values do for &channel, channel_index in frame {
+		at := values + 12 * (frame_index * channels + channel_index)
+		channel = {tk5.be_f32(record, at), tk5.be_f32(record, at + 4), tk5.be_f32(record, at + 8)}
+		if is_rotation(channel_type(record, channel_index)) do channel = axis_turn_of_euler(channel)
 	}
 	return anim, true
 }
