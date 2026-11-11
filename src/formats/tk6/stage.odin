@@ -3,6 +3,7 @@
 package tk6_formats
 
 import "core:math"
+import "core:slice"
 import tk5 "../tk5"
 
 Stage :: struct {
@@ -27,9 +28,14 @@ EFHD_FLAGS :: 0x10       // efhd: u32 flags
 EFHD_NODES :: 0x30       // efhd: u32 node count, {u32 offset, u32 size}[count] from here
 HIDDEN_AT_START :: 0x1   // efhd flag: shown only by a break sequence (FUN_001712ec)
 GROUND_TILE :: 0x100     // efhd flag: one floor tile ("inf_gnd", stages 01, 07, 13, 20), a single node
-NODE_RENDER_RECORD :: 0x0c  // node record: u32 node file section 3 record, ROOT_NODE for an element's root ("ANIM1_", "ANIMEFF_")
-NODE_TRANSLATION :: 0x10    // node record: f32 translation[3], euler[3], scale[3]
-ROOT_NODE :: 0xffffffff
+NODE_RENDER_RECORD :: 0x0c  // node record: u32 node file section 3 record; NO_RENDER_RECORD: not drawn (roots "ANIM1_", "ANIMEFF_", "HIDEMODEL" helpers)
+NODE_TRANSLATION :: 0x10    // node record: f32 translation[3], euler[3], scale[3], in the parent node's space
+NODE_CHILDREN :: 0x40       // node record: u32 child count
+NODE_STATES :: 0x48         // node record: u32 anim state count
+NODE_LISTS :: 0x80          // node record: u32 child node[count], then the anim states {u32 mode, gyas, start frame, 0}, then -1
+GYAS_FRAMES :: 0x08         // gyas: u16 frame count, u16 frame size, u32 offset of frame 0
+GYAS_PLACE_SIZE :: 36       // gyas frame: f32 translation[3], euler[3], scale[3] like a node record; smaller frames hold no place
+NO_RENDER_RECORD :: 0xffffffff
 
 Stage_Layer :: struct {
 	meshes:   []tk5.Mesh,
@@ -37,8 +43,10 @@ Stage_Layer :: struct {
 	textures: []tk5.Texture,
 }
 
-// A layer's meshes. A mesh object's single_bind is a node of its element (counted past the root); the element is the
-// one that names a mesh of the object, else the one before it (objects run element by element). Bind -1: world space.
+// A layer's meshes. A mesh object's single_bind is a node of its element, counted past a root without a render record
+// unless a mesh is named after that root (stages 16, 18, 19); the element is the one that names a mesh of the object,
+// else the one before it (objects run element by element). Bind -1: world space. Meshes of nodes without a render
+// record are not drawn.
 // An object that names no element and has only world space meshes is base scenery, shown whatever the element before
 // it (stage 02 ground, stage 09 floor). In a layer with ground tiles, an object that names no element holds tile
 // meshes: bind k is the k-th tile element.
@@ -46,7 +54,6 @@ Stage_Layer :: struct {
 // Only meshes of elements shown at match start; stage 15 has no texture files: a bare stage. tk6decomp docs/data.md
 // "Element visibility".
 // (hole tk6-stage-states :tags (tk6 importer look) :sev gap) only the start state: the sqef break sequences (show, hide, spawn at a posf point) are not imported.
-// (hole tk6-stage-root-nodes :tags (tk6 importer look) :sev polish) root node places are not applied; all are zero except the two layer 4 waterfall roots (y 1037 mm).
 read_stage_layer :: proc(game: Game_Files, stage: Stage, layer: int, allocator := context.allocator) -> (out: Stage_Layer, ok: bool) {
 	context.allocator = allocator
 	first := stage.first + STAGE_LAYER_FILES * layer
@@ -60,9 +67,13 @@ read_stage_layer :: proc(game: Game_Files, stage: Stage, layer: int, allocator :
 	meshes := make([dynamic]tk5.Mesh)
 	matrices := make([dynamic]Maybe([16]f32))
 	objects := nested(mesh_file, 2) or_return
+	groups := make([][]tk5.Mesh, len(objects), context.temp_allocator)
+	for object, number in objects {
+		groups[number] = tk5.read_ndp3(object, material_slots = MATERIAL_SLOTS) or_return
+		for mesh in groups[number] do if element, named := element_of[mesh.name]; named && mesh.name == elements[element].root_name do elements[element].first_bind = 0
+	}
 	current := -1
-	for object in objects {
-		group := tk5.read_ndp3(object, material_slots = MATERIAL_SLOTS) or_return
+	for group in groups {
 		names_element := false
 		for mesh in group do if element, named := element_of[mesh.name]; named do current, names_element = element, true
 		tile_object := !names_element && len(tiles) > 0
@@ -77,7 +88,10 @@ read_stage_layer :: proc(game: Game_Files, stage: Stage, layer: int, allocator :
 			} else if mesh.single_bind >= 0 && current >= 0 {
 				element := elements[current]
 				node := int(mesh.single_bind) + element.first_bind
-				if node < len(element.places) do placed = element.places[node]
+				if node < len(element.places) {
+					if !element.drawn[node] do continue
+					placed = element.places[node]
+				}
 			}
 			append(&meshes, mesh)
 			append(&matrices, placed)
@@ -98,18 +112,21 @@ nested :: proc(data: []byte, depth: int) -> (inner: [][]byte, ok: bool) {
 	return inner, true
 }
 
-// One element of a node file: its node places in order, the node bind 0 means (1 past a root node), and whether it
-// starts hidden.
+// One element of a node file: per node its place in stage space and whether it has a render record, the node bind 0
+// means (1 past a root node), and whether it starts hidden.
 @(private = "file")
 Element :: struct {
 	places:     [][16]f32,
+	drawn:      []bool,
+	root_name:  string,
 	first_bind: int,
 	hidden:     bool,
 }
 
 // Node file: section 0 holds an "efhd" per element with its node records, section 1 per element its node names
-// (records of 32 or more bytes, a C string first), in the same order. element_of: node name -> element. tiles: the
-// place of each ground tile element, in element order.
+// (records of 32 or more bytes, a C string first), in the same order, section 2 the node anims ("gyas"). An element's nodes are one tree, node 0 the
+// top, each parent before its children (all 21 stages). element_of: node name -> element. tiles: the place of each
+// ground tile element, in element order.
 @(private = "file")
 node_elements :: proc(data: []byte) -> (elements: []Element, element_of: map[string]int, tiles: [][16]f32, ok: bool) {
 	tile_places := make([dynamic][16]f32, context.temp_allocator)
@@ -118,6 +135,8 @@ node_elements :: proc(data: []byte) -> (elements: []Element, element_of: map[str
 	if len(files) < 2 do return
 	headers := sections(files[0], context.temp_allocator) or_return
 	name_lists := sections(files[1], context.temp_allocator) or_return
+	anims: [][]byte
+	if len(files) > 2 do anims = sections(files[2], context.temp_allocator) or_return
 	elements = make([]Element, len(headers), context.temp_allocator)
 	for header, element in headers {
 		if element >= len(name_lists) || len(header) < EFHD_NODES + 4 || string(header[:4]) != "efhd" do continue
@@ -125,17 +144,49 @@ node_elements :: proc(data: []byte) -> (elements: []Element, element_of: map[str
 		names := sections(name_lists[element], context.temp_allocator) or_return
 		count := min(int(tk5.be_u32(header, EFHD_NODES)), len(names))
 		places := make([][16]f32, count, context.temp_allocator)
+		drawn := make([]bool, count, context.temp_allocator)
+		parents := make([]int, count, context.temp_allocator)
+		slice.fill(parents, -1)
 		for &place, node in places {
 			at := EFHD_NODES + int(tk5.be_u32(header, EFHD_NODES + 4 + 8 * node))
-			if at + NODE_TRANSLATION + 36 > len(header) do return
-			if node == 0 && tk5.be_u32(header, at + NODE_RENDER_RECORD) == ROOT_NODE do elements[element].first_bind = 1
+			if at + NODE_LISTS > len(header) do return
+			name := tk5.cstring_at(names[node], 0)
+			drawn[node] = tk5.be_u32(header, at + NODE_RENDER_RECORD) != NO_RENDER_RECORD
+			if node == 0 && !drawn[node] do elements[element].first_bind, elements[element].root_name = 1, name
+			children := int(tk5.be_u32(header, at + NODE_CHILDREN))
+			states := at + NODE_LISTS + 4 * children
+			if states + 16 > len(header) do return
 			place = node_matrix(header[at + NODE_TRANSLATION:])
-			element_of[tk5.cstring_at(names[node], 0)] = element
+			if tk5.be_u32(header, at + NODE_STATES) > 0 {
+				if frame, has_place := start_frame(anims, header[states:]); has_place do place = node_matrix(frame)
+			}
+			if parents[node] >= 0 do place = in_parent(place, places[parents[node]])
+			element_of[name] = element
+			for number in 0 ..< children {
+				child := int(tk5.be_u32(header, at + NODE_LISTS + 4 * number))
+				if child > node && child < count do parents[child] = node
+			}
 		}
-		elements[element].places = places
+		elements[element].places, elements[element].drawn = places, drawn
 		if tk5.be_u32(header, EFHD_FLAGS) & GROUND_TILE != 0 && len(places) > 0 do append(&tile_places, places[0])
 	}
 	return elements, element_of, tile_places[:], true
+}
+
+// The frame state 0's anim starts on (frame 0 for a start of -1): the place of an animated node (stage 05 truck: the
+// node record holds zeros). Anims are not played.
+// (hole tk6-stage-node-anims :tags (tk6 importer look) :sev polish) gyas node anims are held on their start frame; mode words (once, loop, triggered) and the frame rate are not read.
+@(private = "file")
+start_frame :: proc(anims: [][]byte, state: []byte) -> (frame: []byte, ok: bool) {
+	anim_number, start := int(tk5.be_u32(state, 4)), int(tk5.be_i32(state, 8))
+	if anim_number >= len(anims) || len(anims[anim_number]) < GYAS_FRAMES + 8 do return
+	anim := anims[anim_number]
+	count, size, first := int(tk5.be_u16(anim, GYAS_FRAMES)), int(tk5.be_u16(anim, GYAS_FRAMES + 2)), int(tk5.be_u32(anim, GYAS_FRAMES + 4))
+	if size < GYAS_PLACE_SIZE do return
+	if start < 0 || start >= count do start = 0
+	at := first + start * size
+	if at + GYAS_PLACE_SIZE > len(anim) do return
+	return anim[at:], true
 }
 
 // Scale, then the turns about x, y and z, then the move, for row vectors [guess: Maya's default order].
@@ -152,6 +203,12 @@ node_matrix :: proc(record: []byte) -> (out: [16]f32) {
 	for axis in 0 ..< 3 do out[12 + axis] = value(record, axis)
 	out[15] = 1
 	return
+}
+
+// Row vectors: the place times its parent's. Read as Odin's column-major matrices both are transposed, so the order flips.
+@(private = "file")
+in_parent :: proc(place, parent: [16]f32) -> [16]f32 {
+	return transmute([16]f32)(transmute(matrix[4, 4]f32)parent * transmute(matrix[4, 4]f32)place)
 }
 
 WALL_COUNT :: 0x24
