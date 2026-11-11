@@ -18,7 +18,9 @@ STAGE_LAYERS :: 6
 STAGE_LAYER_FILES :: 3  // meshes, textures, nodes
 STAGE_WALLS :: 19       // from the first file
 NODE_RECORD :: 0x10      // efhd: u32 node count, {u32 offset, u32 size}[count] from here
+NODE_KIND :: 0x0c         // node record: u32, ROOT_NODE for an element's root ("ANIM1_", "ANIMEFF_")
 NODE_TRANSLATION :: 0x10  // node record: f32 translation[3], euler[3], scale[3]
+ROOT_NODE :: 0xffffffff
 
 Stage_Layer :: struct {
 	meshes:   []tk5.Mesh,
@@ -26,7 +28,10 @@ Stage_Layer :: struct {
 	textures: []tk5.Texture,
 }
 
-// A layer's meshes, each placed by the node of its name.
+// A layer's meshes. A mesh object's single_bind is a node of its element (counted past the root); the element is the
+// one that names a mesh of the object, else the one before it (objects run element by element). Bind -1: world space.
+// (hole tk6-stage-states :tags (tk6 importer look) :sev gap) every element is drawn: branch on and off pairs (dispon, dispoff), break pieces (koware, ANIMEFF) and erase sets (keshi) all show at once.
+// (hole tk6-stage-root-nodes :tags (tk6 importer look) :sev polish) root node places are not applied; all are zero except the two layer 4 waterfall roots (y 1037 mm).
 read_stage_layer :: proc(game: Game_Files, stage: Stage, layer: int, allocator := context.allocator) -> (out: Stage_Layer, ok: bool) {
 	context.allocator = allocator
 	first := stage.first + STAGE_LAYER_FILES * layer
@@ -34,16 +39,22 @@ read_stage_layer :: proc(game: Game_Files, stage: Stage, layer: int, allocator :
 	texture_file := read_file(game, first + 1, allocator = context.temp_allocator) or_return
 	node_file := read_file(game, first + 2, allocator = context.temp_allocator) or_return
 	out.textures = tk5.read_ntp3(texture_file) or_return
-	places := node_places(node_file) or_return
+	elements, element_of := node_elements(node_file) or_return
 
 	meshes := make([dynamic]tk5.Mesh)
 	matrices := make([dynamic]Maybe([16]f32))
 	objects := nested(mesh_file, 2) or_return
+	current := -1
 	for object in objects {
 		group := tk5.read_ndp3(object, material_slots = MATERIAL_SLOTS) or_return
+		for mesh in group do if element, named := element_of[mesh.name]; named do current = element
 		for mesh in group {
 			placed: Maybe([16]f32)
-			if place, named := places[mesh.name]; named && mesh.single_bind >= 0 do placed = place
+			if mesh.single_bind >= 0 && current >= 0 {
+				element := elements[current]
+				node := int(mesh.single_bind) + element.first_bind
+				if node < len(element.places) do placed = element.places[node]
+			}
 			append(&meshes, mesh)
 			append(&matrices, placed)
 		}
@@ -63,26 +74,38 @@ nested :: proc(data: []byte, depth: int) -> (inner: [][]byte, ok: bool) {
 	return inner, true
 }
 
-// Node file: section 0 holds an "efhd" per element with its node records, section 1 per element its node names
-// (records of 32 or more bytes, a C string first), in the same order.
+// One element of a node file: its node places in order, and the node bind 0 means (1 past a root node).
 @(private = "file")
-node_places :: proc(data: []byte) -> (places: map[string][16]f32, ok: bool) {
-	places = make(map[string][16]f32, context.temp_allocator)
+Element :: struct {
+	places:     [][16]f32,
+	first_bind: int,
+}
+
+// Node file: section 0 holds an "efhd" per element with its node records, section 1 per element its node names
+// (records of 32 or more bytes, a C string first), in the same order. element_of: node name -> element.
+@(private = "file")
+node_elements :: proc(data: []byte) -> (elements: []Element, element_of: map[string]int, ok: bool) {
+	element_of = make(map[string]int, context.temp_allocator)
 	files := sections(data, context.temp_allocator) or_return
 	if len(files) < 2 do return
 	headers := sections(files[0], context.temp_allocator) or_return
 	name_lists := sections(files[1], context.temp_allocator) or_return
+	elements = make([]Element, len(headers), context.temp_allocator)
 	for header, element in headers {
 		if element >= len(name_lists) || len(header) < NODE_RECORD + 4 || string(header[:4]) != "efhd" do continue
 		names := sections(name_lists[element], context.temp_allocator) or_return
-		count := int(tk5.be_u32(header, 0x30))
-		for node in 0 ..< min(count, len(names)) {
+		count := min(int(tk5.be_u32(header, 0x30)), len(names))
+		places := make([][16]f32, count, context.temp_allocator)
+		for &place, node in places {
 			at := 0x30 + int(tk5.be_u32(header, 0x34 + 8 * node))
 			if at + NODE_TRANSLATION + 36 > len(header) do return
-			places[tk5.cstring_at(names[node], 0)] = node_matrix(header[at + NODE_TRANSLATION:])
+			if node == 0 && tk5.be_u32(header, at + NODE_KIND) == ROOT_NODE do elements[element].first_bind = 1
+			place = node_matrix(header[at + NODE_TRANSLATION:])
+			element_of[tk5.cstring_at(names[node], 0)] = element
 		}
+		elements[element].places = places
 	}
-	return places, true
+	return elements, element_of, true
 }
 
 // Scale, then the turns about x, y and z, then the move, for row vectors [guess: Maya's default order].
