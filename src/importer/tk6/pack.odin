@@ -56,7 +56,7 @@ build_pack :: proc(inputs: []string, packs_dir: string, progress: ^Progress = ni
 	return
 }
 
-// pack.toml, the front, the modules, the menu font and the disc's title art: the files a pack needs at its root.
+// pack.toml, the front, the modules and the disc's title art: the files a pack needs at its root.
 write_pack_files :: proc(stage: string, inputs: []string) -> (err: string) {
 	toml := strings.builder_make(context.temp_allocator)
 	fmt.sbprintfln(&toml, "version = %s", tk5_importer.quote(release.current()))
@@ -75,10 +75,8 @@ write_pack_files :: proc(stage: string, inputs: []string) -> (err: string) {
 		{"gameplay.wasm", GAMEPLAY_MODULE},
 		{"gamerender.wasm", GAMERENDER_MODULE},
 		{"app.wasm", APP_MODULE},
-		{"fonts/michroma.ttf", tk5_importer.DISPLAY_FONT},
-		{"fonts/michroma-ofl.txt", tk5_importer.DISPLAY_FONT_LICENSE},
 	}
-	for dir in ([]string{"fonts", "ui"}) do if !make_dir(join(stage, dir)) do return fmt.aprintf("cannot create %s", dir)
+	if !make_dir(join(stage, "ui")) do return fmt.aprintf("cannot create ui")
 	for file in files {
 		if os.write_entire_file(join(stage, file.name), file.text) != nil do return fmt.aprintf("cannot write %s", file.name)
 	}
