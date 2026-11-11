@@ -214,7 +214,7 @@ write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: 
 }
 
 // The six layers as one glb, each placed by its nodes, and the walls and floor.
-// (hole tk6-stage-look :tags (tk6 importer) :sev polish) stage blend modes, layer draw order, node anims (gyas) and the effect list are not read.
+// (hole tk6-stage-look :tags (tk6 importer) :sev polish) stage blend modes, node anims (gyas) and the effect list are not read.
 // (hole tk6-stage-floor :tags (tk6 importer) :sev gap) one flat floor polygon over the wall bounds; the flor file and the start points are not read, so the sim's fallback line places the fighters.
 // (hole tk6-floor-breaks :tags (tk6 importer) :sev gap) floor and wall breaks are not imported; they look like stage objects (properties touch them), not fighter code [guess].
 import_stage :: proc(im: ^Import, stage: tk6.Stage) {
@@ -235,11 +235,13 @@ import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 		for _ in read.meshes do append(&layers, layer)
 	}
 	layer_orders: [tk6.STAGE_LAYERS]int
-	for &order, layer in layer_orders do order = layer
+	for &order, layer in layer_orders do order = -layer
 	file := fmt.tprintf("stages/%s.glb", stage.id)
 	texture_files := write_textures(im, stage.id, textures)
 	if _, written := tk6_convert.write_model(im.root, file, meshes[:], texture_files, nil, nil, matrices[:], layers[:], layer_orders[:]); !written {
 		fail(im, "stage %s: model did not write", stage.id)
+	// File layer k is the game's stage layer STAGE_LAYERS - 1 - k (its "stg_n" element; layer 0 holds the effects). Blended
+	// draws go lowest order first: the sky, then the scenery, then the effects with the fighters (order 0) by distance.
 		return
 	}
 	collision, read := tk6.read_stage_collision(im.game, stage, context.temp_allocator)
