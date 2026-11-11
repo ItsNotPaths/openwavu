@@ -170,7 +170,7 @@ import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone
 		if tk6.is_effect_model(im.game, tk6.part_file(character, part.slot)) do continue
 		for mesh in part.hidden_meshes do hidden[mesh] = true
 		part_id := fmt.tprintf("%s_part_%d", id, part.slot)
-		if _, part_written := write_part(im, id, part_id, "item", body_part, tk6.part_file(character, part.slot), part.colours); !part_written {
+		if _, part_written := write_part(im, id, part_id, "item", body_part, tk6.part_file(character, part.slot), worn.colours); !part_written {
 			fail(im, "%s: part %d did not convert", id, part.slot)
 			continue
 		}
@@ -182,7 +182,8 @@ import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone
 }
 
 // One model file as parts/<owner>/<part>.glb on its own skeleton (the body's bones, then its cloth joints), and its
-// part row. Its textures are its own, the set of each colour channel's colour and its texture set.
+// part row. Its textures are its own, the set of each colour channel's colour (set 0 when the part has fewer: Mokujin's
+// heads) and its texture set.
 // (hole tk6-physics :tags (tk6 importer) :sev polish) ties and cloth flaps are rigid (user: no physics for now); model section 3 is the swing data, unread.
 write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: int, colours: [tk6.COLOUR_CHANNELS]int = {}, texture_set := 0) -> (first_mesh_node: int, ok: bool) {
 	sections := tk6.sections(read_file(im, file) or_return, context.temp_allocator) or_return
@@ -191,9 +192,14 @@ write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: 
 	texture_sections := make([dynamic][]byte, context.temp_allocator)
 	append(&texture_sections, sections[tk6.MODEL_TEXTURES])
 	for colour, channel in colours {
-		file_after_part, set := tk6.colour_set(channel, colour)
-		colour_sections := tk6.sections(read_file(im, file + file_after_part) or_continue, context.temp_allocator) or_continue
-		if set < len(colour_sections) do append(&texture_sections, colour_sections[set])
+		for candidate in ([]int{colour, 0}) {
+			file_after_part, set := tk6.colour_set(channel, candidate)
+			colour_sections := tk6.sections(read_file(im, file + file_after_part) or_continue, context.temp_allocator) or_continue
+			if set < len(colour_sections) && len(colour_sections[set]) > 0 {
+				append(&texture_sections, colour_sections[set])
+				break
+			}
+		}
 	}
 	if len(sections) > tk6.MODEL_TEXTURE_SETS {
 		sets := tk6.sections(sections[tk6.MODEL_TEXTURE_SETS], context.temp_allocator) or_else nil
@@ -234,14 +240,14 @@ import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 		append(&matrices, ..read.matrices)
 		for _ in read.meshes do append(&layers, layer)
 	}
+	// File layer k is the game's stage layer STAGE_LAYERS - 1 - k (its "stg_n" element; layer 0 holds the effects). Blended
+	// draws go lowest order first: the sky, then the scenery, then the effects with the fighters (order 0) by distance.
 	layer_orders: [tk6.STAGE_LAYERS]int
 	for &order, layer in layer_orders do order = -layer
 	file := fmt.tprintf("stages/%s.glb", stage.id)
 	texture_files := write_textures(im, stage.id, textures)
 	if _, written := tk6_convert.write_model(im.root, file, meshes[:], texture_files, nil, nil, matrices[:], layers[:], layer_orders[:]); !written {
 		fail(im, "stage %s: model did not write", stage.id)
-	// File layer k is the game's stage layer STAGE_LAYERS - 1 - k (its "stg_n" element; layer 0 holds the effects). Blended
-	// draws go lowest order first: the sky, then the scenery, then the effects with the fighters (order 0) by distance.
 		return
 	}
 	collision, read := tk6.read_stage_collision(im.game, stage, context.temp_allocator)
