@@ -106,6 +106,7 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	container := read_file(im, container_index) or_else nil
 	banks, unpacked := tk5.sections(container, context.temp_allocator)
 	if !unpacked || len(banks) == 0 do return fmt.tprintf("%s: anim container did not read", id)
+	if !bank_fits(motbin, banks[0]) do return fmt.tprintf("%s: anim container %d does not fit the move set", id, container_index)
 	write_bank(im, id, banks[0])
 	// (hole tk6-hand-face-camera-banks :tags (tk6 importer) :sev polish) container sections 1, 2 and 5 (hands, face, move cameras) are not imported.
 
@@ -128,6 +129,16 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	return ""
 }
 
+// Every container anim id of the move set is in the bank: the pairing of move set and container holds.
+bank_fits :: proc(motbin: tk6.Motbin, own_bank: []byte) -> bool {
+	bank, read := tk6.read_mota(own_bank, context.temp_allocator)
+	if !read do return false
+	for move in motbin.moves {
+		if move.animation & tk6.CONTAINER_BANK != 0 && int(move.animation & tk6.ANIM_INDEX) >= bank.count do return false
+	}
+	return true
+}
+
 // Alias 1's anim: the standing idle, whose head end height the body row keeps.
 idle_anim :: proc(im: ^Import, motbin: tk6.Motbin, own_bank: []byte) -> (idle: tk5.Anim, ok: bool) {
 	move := int(motbin.aliases[tk5_convert.IDLE_STAND_ALIAS])
@@ -135,7 +146,7 @@ idle_anim :: proc(im: ^Import, motbin: tk6.Motbin, own_bank: []byte) -> (idle: t
 	anim := motbin.moves[move].animation
 	bank_data := anim & tk6.COMMON_BANK != 0 ? read_file(im, tk6.COMMON_ANIMS) or_return : own_bank
 	bank := tk6.read_mota(bank_data, context.temp_allocator) or_return
-	idle = tk6.read_mota_anim(bank, int(anim & 0x3fff), context.temp_allocator) or_return
+	idle = tk6.read_mota_anim(bank, int(anim & tk6.ANIM_INDEX), context.temp_allocator) or_return
 	return idle, idle.frames > 0
 }
 
@@ -221,7 +232,7 @@ write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: 
 
 // The six layers as one glb, each placed by its nodes, and the walls and floor.
 // (hole tk6-stage-look :tags (tk6 importer) :sev polish) stage blend modes, node anims (gyas) and the effect list are not read.
-// (hole tk6-stage-floor :tags (tk6 importer) :sev gap) one flat floor polygon over the wall bounds; the flor file and the start points are not read, so the sim's fallback line places the fighters.
+// (hole tk6-stage-start :tags (tk6 importer) :sev gap) the start points are not read (posf holds none found), so the sim's fallback line places the fighters.
 // (hole tk6-floor-breaks :tags (tk6 importer) :sev gap) floor and wall breaks are not imported; they look like stage objects (properties touch them), not fighter code [guess].
 import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 	textures := make(tk5_convert.Textures, context.temp_allocator)
@@ -252,7 +263,7 @@ import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 	}
 	collision, read := tk6.read_stage_collision(im.game, stage, context.temp_allocator)
 	collision_file, surfaces_file := fmt.tprintf("stages/%s.collision.glb", stage.id), fmt.tprintf("stages/%s.surfaces", stage.id)
-	if !read || !tk5_convert.write_stage_collision(join(im.root, collision_file), join(im.root, surfaces_file), collision) {
+	if !read || !tk6_convert.write_stage_collision(join(im.root, collision_file), join(im.root, surfaces_file), collision) {
 		fail(im, "stage %s: collision did not write", stage.id)
 		return
 	}

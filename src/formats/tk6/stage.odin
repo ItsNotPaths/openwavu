@@ -10,9 +10,14 @@ Stage :: struct {
 	first: int,  // global index of the first layer's mesh file
 }
 
-// The stage list comes later.
-// (hole tk6-stages :tags (tk6 importer) :sev gap) only stage_00, name unknown; the next one starts at file 2166 if the +42 spacing holds per stage.
-STAGES :: [?]Stage{{"stage_00", 2124}}
+// Every stage, 42 files apart (each "elmt" at first + 18). Files 3132.. hold a stub with empty layers, not a stage.
+// (hole tk6-stage-names :tags (tk6 importer) :sev polish) stages are named by number; the game's names are unread.
+STAGES :: [?]Stage{
+	{"stage_00", 2124}, {"stage_01", 2166}, {"stage_02", 2208}, {"stage_03", 2250}, {"stage_04", 2292}, {"stage_05", 2334},
+	{"stage_06", 2376}, {"stage_07", 2418}, {"stage_08", 2460}, {"stage_09", 2502}, {"stage_10", 2544}, {"stage_11", 2586},
+	{"stage_12", 2628}, {"stage_13", 2670}, {"stage_14", 2712}, {"stage_15", 2754}, {"stage_16", 2796}, {"stage_17", 2838},
+	{"stage_18", 2880}, {"stage_19", 2922}, {"stage_20", 2964},
+}
 
 STAGE_LAYERS :: 6
 STAGE_LAYER_FILES :: 3  // meshes, textures, nodes
@@ -30,15 +35,17 @@ Stage_Layer :: struct {
 
 // A layer's meshes. A mesh object's single_bind is a node of its element (counted past the root); the element is the
 // one that names a mesh of the object, else the one before it (objects run element by element). Bind -1: world space.
+// Stage 15 has no texture files: a bare stage.
 // (hole tk6-stage-states :tags (tk6 importer look) :sev gap) every element is drawn: branch on and off pairs (dispon, dispoff), break pieces (koware, ANIMEFF) and erase sets (keshi) all show at once.
 // (hole tk6-stage-root-nodes :tags (tk6 importer look) :sev polish) root node places are not applied; all are zero except the two layer 4 waterfall roots (y 1037 mm).
 read_stage_layer :: proc(game: Game_Files, stage: Stage, layer: int, allocator := context.allocator) -> (out: Stage_Layer, ok: bool) {
 	context.allocator = allocator
 	first := stage.first + STAGE_LAYER_FILES * layer
 	mesh_file := read_file(game, first, allocator = context.temp_allocator) or_return
-	texture_file := read_file(game, first + 1, allocator = context.temp_allocator) or_return
 	node_file := read_file(game, first + 2, allocator = context.temp_allocator) or_return
-	out.textures = tk5.read_ntp3(texture_file) or_return
+	if texture_file, has_textures := read_file(game, first + 1, allocator = context.temp_allocator); has_textures {
+		out.textures = tk5.read_ntp3(texture_file) or_return
+	}
 	elements, element_of := node_elements(node_file) or_return
 
 	meshes := make([dynamic]tk5.Mesh)
@@ -126,41 +133,87 @@ node_matrix :: proc(record: []byte) -> (out: [16]f32) {
 
 WALL_COUNT :: 0x24
 WALL_TABLE :: 0x28
-WALL_RECORD :: 0x90  // u32 size, u32 material, f32 centre x, z, radius², i32 link, 2 x u32, f32 normal[4], corner[4][4]
+WALL_RECORD :: 0x90  // u32 size, u32 material, f32 centre x, z, radius², i32 object, 2 x u32, f32 normal[4], corner[4][4]
+STAGE_FLOOR :: 21     // from the first file
+FLOOR_COUNT :: 0x20
+FLOOR_TABLE :: 0x24
+FLOOR_TRIANGLES :: 0x18  // floor record: u32 triangle count, 0 or 1
+FLOOR_TRIANGLE :: 0x40   // floor record: the triangle, 0x38 bytes
+FLOOR_NORMAL :: 0x10     // triangle: f32 normal[3]
+FLOOR_CORNERS :: 0x20    // triangle: f32 (x, z)[3]
 
-// The wall quads of the "hitd" file, and the floor as one flat polygon over them [guess: the "flor" file is not read].
-read_stage_collision :: proc(game: Game_Files, stage: Stage, allocator := context.allocator) -> (out: tk5.Stage, ok: bool) {
+// A wall quad; object: the stage object it belongs to (breakable walls), -1 none.
+Stage_Wall :: struct {
+	object:  i32,
+	normal:  [3]f32,
+	corners: [4][3]f32,
+}
+
+// A floor triangle; every TK6 floor is flat at y 0.
+Stage_Floor :: struct {
+	normal:  [3]f32,
+	corners: [3][3]f32,
+}
+
+Stage_Collision :: struct {
+	walls:  []Stage_Wall,
+	floors: []Stage_Floor,
+}
+
+// The wall quads of the "hitd" file and the floor triangles of the "flor" file. A stage with no walls is open.
+read_stage_collision :: proc(game: Game_Files, stage: Stage, allocator := context.allocator) -> (out: Stage_Collision, ok: bool) {
 	context.allocator = allocator
+	out.walls = read_walls(game, stage) or_return
+	out.floors = read_floors(game, stage) or_return
+	return out, len(out.floors) > 0
+}
+
+@(private = "file")
+read_walls :: proc(game: Game_Files, stage: Stage) -> (walls: []Stage_Wall, ok: bool) {
 	file := read_file(game, stage.first + STAGE_WALLS, allocator = context.temp_allocator) or_return
 	parts := sections(file, context.temp_allocator) or_return
 	if len(parts) == 0 || len(parts[0]) < WALL_TABLE + 4 || string(parts[0][:4]) != "hitd" do return
-	walls := parts[0]
-	count, table := int(tk5.be_u32(walls, WALL_COUNT)), int(tk5.be_u32(walls, WALL_TABLE))
-	if table + 4 * count > len(walls) do return
-	out.quads = make([]tk5.Stage_Quad, count)
-	low, high := [3]f32{max(f32), 0, max(f32)}, [3]f32{min(f32), 0, min(f32)}
-	for &quad, index in out.quads {
-		at := int(tk5.be_u32(walls, table + 4 * index))
-		if at + WALL_RECORD > len(walls) do return
-		quad.link = tk5.be_i32(walls, at + 0x14)
-		quad.normal = vector(walls, at + 0x20)
-		for &corner, number in quad.corners {
-			corner = vector(walls, at + 0x30 + 0x10 * number)
-			low, high = {min(low.x, corner.x), 0, min(low.z, corner.z)}, {max(high.x, corner.x), 0, max(high.z, corner.z)}
-		}
+	data := parts[0]
+	count, table := int(tk5.be_u32(data, WALL_COUNT)), int(tk5.be_u32(data, WALL_TABLE))
+	if table + 4 * count > len(data) do return
+	walls = make([]Stage_Wall, count)
+	for &wall, index in walls {
+		at := int(tk5.be_u32(data, table + 4 * index))
+		if at + WALL_RECORD > len(data) do return
+		wall.object = tk5.be_i32(data, at + 0x14)
+		wall.normal = vector(data, at + 0x20)
+		for &corner, number in wall.corners do corner = vector(data, at + 0x30 + 0x10 * number)
 	}
-	if count == 0 do return
-	centre := (low + high) / 2
-	corners := [][3]f32{{high.x, 0, high.z}, {high.x, 0, low.z}, {low.x, 0, low.z}, {low.x, 0, high.z}}
-	half := (high - low) / 2
-	polygon := tk5.Floor_Polygon{centre, half.x * half.x + half.z * half.z, {0, 1, 0}, corners}
-	FLOOR_UNDER_FIGHTERS :: 1
-	out.floors = make([]tk5.Floor_Zone, 1)
-	out.floors[0] = {polygon.centre, polygon.radius_sq, FLOOR_UNDER_FIGHTERS, make([]tk5.Floor_Polygon, 1)}
-	out.floors[0].polygons[0] = polygon
-	out.floors[0].polygons[0].points = make([][3]f32, len(corners))
-	copy(out.floors[0].polygons[0].points, corners)
-	return out, true
+	return walls, true
+}
+
+// Floor file: "flor", u32 record count, offset of u32 record offsets; a record holds one triangle or none.
+@(private = "file")
+read_floors :: proc(game: Game_Files, stage: Stage) -> (floors: []Stage_Floor, ok: bool) {
+	file := read_file(game, stage.first + STAGE_FLOOR, allocator = context.temp_allocator) or_return
+	parts := sections(file, context.temp_allocator) or_return
+	if len(parts) == 0 || len(parts[0]) < FLOOR_TABLE + 4 || string(parts[0][:4]) != "flor" do return
+	data := parts[0]
+	count, table := int(tk5.be_u32(data, FLOOR_COUNT)), int(tk5.be_u32(data, FLOOR_TABLE))
+	if table + 4 * count > len(data) do return
+	list := make([dynamic]Stage_Floor)
+	for index in 0 ..< count {
+		at := int(tk5.be_u32(data, table + 4 * index))
+		if at + FLOOR_TRIANGLE > len(data) do return
+		switch tk5.be_u32(data, at + FLOOR_TRIANGLES) {
+		case 0: continue
+		case 1:
+		case: return  // never in the retail stages
+		}
+		triangle := at + FLOOR_TRIANGLE
+		if triangle + FLOOR_CORNERS + 24 > len(data) do return
+		floor := Stage_Floor{normal = vector(data, triangle + FLOOR_NORMAL)}
+		for &corner, number in floor.corners {
+			corner.x, corner.z = tk5.be_f32(data, triangle + FLOOR_CORNERS + 8 * number), tk5.be_f32(data, triangle + FLOOR_CORNERS + 8 * number + 4)
+		}
+		append(&list, floor)
+	}
+	return list[:], true
 }
 
 @(private = "file")

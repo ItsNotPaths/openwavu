@@ -11,9 +11,27 @@ Character :: struct {
 	number:   int,     // the game's character number: picks the body and part files
 }
 
-// The roster comes later; each entry needs only its number and move set name.
-// (hole tk6-roster :tags (tk6 importer) :sev gap) only Kazuya; each character needs an entry here, its anim container pairing checked, the special body rows (Kuma, Yoshimitsu...) and its shop table.
-CHARACTERS :: [?]Character{{"kazuya", "Kazuya Mishima", "[KAZUYA]", 15}}
+// The playable roster, in character number order. Panda's move set is "[1]", NANCY-MI847J's "[Bonus]"; each "[NAME]1"
+// after a move set has more moves [guess: the scenario campaign copy].
+// (hole tk6-mokujin-moves :tags (tk6 importer) :sev gap) Mokujin's own move set holds 54 moves; the game gives him another character's each round, unread.
+CHARACTERS :: [?]Character{
+	{"paul", "Paul Phoenix", "[Paul]", 0}, {"law", "Marshall Law", "[LAW]", 1}, {"lei", "Lei Wulong", "[Lei_Wulong]", 2},
+	{"king", "King", "[KING]", 3}, {"yoshimitsu", "Yoshimitsu", "[YOSHIMITSU]", 4}, {"nina", "Nina Williams", "[NINA]", 5},
+	{"hwoarang", "Hwoarang", "[HWOARANG]", 6}, {"xiaoyu", "Ling Xiaoyu", "[Lin_Xiaoyu]", 7},
+	{"christie", "Christie Monteiro", "[CHRISTIE]", 8}, {"jin", "Jin Kazama", "[JIN]", 9}, {"julia", "Julia Chang", "[JULIA]", 10},
+	{"kuma", "Kuma", "[Kuma]", 11}, {"panda", "Panda", "[1]", 12}, {"bryan", "Bryan Fury", "[Bryan]", 13},
+	{"heihachi", "Heihachi Mishima", "[HEIHACHI]", 14}, {"kazuya", "Kazuya Mishima", "[KAZUYA]", 15},
+	{"lee", "Lee Chaolan", "[LEE]", 16}, {"steve", "Steve Fox", "[Steve_Fox]", 17}, {"marduk", "Craig Marduk", "[MARDUK]", 18},
+	{"mokujin", "Mokujin", "Mokujin", 19}, {"eddy", "Eddy Gordo", "[EDDY]", 20}, {"jack6", "Jack-6", "[Jack]", 21},
+	{"roger", "Roger Jr.", "[ROGER]", 22}, {"anna", "Anna Williams", "[ANNA]", 23}, {"wang", "Wang Jinrei", "[Wang]", 24},
+	{"ganryu", "Ganryu", "[GANRYU]", 25}, {"asuka", "Asuka Kazama", "[Asuka]", 26}, {"bruce", "Bruce Irvin", "[BRUCE]", 27},
+	{"baek", "Baek Doo San", "[BAEK_DOO_SAN]", 28}, {"devil_jin", "Devil Jin", "[DEVIL_JIN]", 29}, {"raven", "Raven", "[RAVEN]", 30},
+	{"feng", "Feng Wei", "[FENG]", 31}, {"armor_king", "Armor King", "[ARMOR_KING]", 32}, {"lili", "Lili", "[EMILIE]", 33},
+	{"dragunov", "Sergei Dragunov", "[Dragunov]", 34}, {"bob", "Bob", "[BOB_SATSUMA]", 35}, {"zafina", "Zafina", "[ZAFINA]", 36},
+	{"miguel", "Miguel Caballero Rojo", "[Miguel]", 37}, {"leo", "Leo", "[Eleonor]", 38}, {"azazel", "Azazel", "[AZAZEL]", 39},
+	{"lars", "Lars Alexandersson", "[Lars]", 40}, {"alisa", "Alisa Bosconovitch", "[Alisa]", 41},
+	{"nancy", "NANCY-MI847J", "[Bonus]", 42},
+}
 
 COMMON_ANIMS :: 147277  // the shared MOTA bank (0x8000 anim ids)
 BODY_FIRST :: 491       // body model of character n: BODY_FIRST + BODY_FILES * n
@@ -83,7 +101,7 @@ read_costume :: proc(game: Game_Files, character: Character, costume: int, alloc
 	list := make([dynamic]Costume_Part, allocator)
 	for definition in definitions {
 		if definition.costumes & (1 << uint(costume)) == 0 || definition.part == NO_PART do continue
-		append(&list, Costume_Part{int(definition.part), slice.clone(definition.hidden_meshes, allocator)})
+		wear(&list, int(definition.part), definition.hidden_meshes, allocator)
 		if definition.scalp_hair do out.body_texture_set = SCALP_HAIR_SET
 	}
 	out.parts = list[:]
@@ -93,6 +111,16 @@ read_costume :: proc(game: Game_Files, character: Character, costume: int, alloc
 		for colour, channel in record.colours do if colour != NO_COLOUR do out.colours[channel] = int(colour)
 	}
 	return out, true
+}
+
+// Adds a part, or its hidden meshes to the part when another definition of the costume wears the same slot.
+@(private = "file")
+wear :: proc(list: ^[dynamic]Costume_Part, slot: int, hidden_meshes: []int, allocator := context.allocator) {
+	for &part in list do if part.slot == slot {
+		part.hidden_meshes = slice.concatenate([][]int{part.hidden_meshes, hidden_meshes}, allocator)
+		return
+	}
+	append(list, Costume_Part{slot, slice.clone(hidden_meshes, allocator)})
 }
 
 // Shop table: u32 count, u32 0, then records: u16 item, u16 name length, name, u32 price, u8 costume, u8, u8 count,

@@ -19,6 +19,7 @@ INPUT_SEQUENCE_FIRST :: 0x800d // and up: input_sequences[high half - this] [gue
 // Animation id bank bits; the low 14 bits index the bank.
 CONTAINER_BANK :: 0x4000
 COMMON_BANK :: 0x8000
+ANIM_INDEX :: 0x3fff
 
 // Header table order. Embedded_Bank is "table 25": the MOTA bank embedded animation ids index.
 Table :: enum {

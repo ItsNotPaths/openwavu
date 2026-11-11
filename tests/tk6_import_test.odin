@@ -1,5 +1,5 @@
-// The TK6 import of Kazuya and one stage gives a pack the TK6 sim plays and the host draws. Needs ../tk6decomp/game and
-// build.sh's build/modules/tk6; skips without the game.
+// The TK6 import of the whole roster and every stage gives a pack the TK6 sim plays and the host draws. Needs
+// ../tk6decomp/game and build.sh's build/modules/tk6; skips without the game.
 package tests
 
 import "core:os"
@@ -13,6 +13,7 @@ import "../src/render"
 import "../src/sim"
 import "../src/titlepack"
 import "../src/wasm"
+import tk6 "../src/formats/tk6"
 import tk6_importer "../src/importer/tk6"
 
 TK6_GAME :: "../tk6decomp/game"
@@ -129,6 +130,39 @@ tk6_import_plays_a_match :: proc(t: ^testing.T) {
 	for event in w.inputs.events do if event.kind == .KO do kos += 1
 	ended := len(w.inputs.events) > 0 && w.inputs.events[len(w.inputs.events) - 1].kind == imports.Event_Kind.Match_End
 	testing.expect(t, ended && kos >= 2, "the match did not end in falls")
+}
+
+// Every character against itself, each on the next stage in turn: the sim starts and two bots fight for a while.
+@(test)
+tk6_roster_plays :: proc(t: ^testing.T) {
+	pack_dir, imported := tk6_pack(t)
+	if !imported do return
+	code, read_err := os.read_entire_file(TK6_GAMEPLAY, context.temp_allocator)
+	if !testing.expect(t, read_err == nil, "build.sh builds " + TK6_GAMEPLAY) do return
+	pack, opened := content.open_pack(pack_dir)
+	if !testing.expect(t, opened) do return
+	defer content.close_pack(&pack)
+	engine := wasm.engine_create()
+	defer wasm.engine_destroy(engine)
+	module, compile_err := wasm.compile(engine, code)
+	if !testing.expect_value(t, compile_err, "") do return
+	defer wasm.module_destroy(module)
+
+	FIGHT_FRAMES :: 600
+	stages := tk6.STAGES
+	for character, number in tk6.CHARACTERS {
+		params := make(map[string]string, context.temp_allocator)
+		params["stage"] = stages[number % len(stages)].id
+		w, err := sim.create(engine, module, &pack, params, {loadout_bytes(character.id), loadout_bytes(character.id)}, 7)
+		if !testing.expectf(t, err == "", "%s on %s: %s", character.id, params["stage"], err) do continue
+		defer sim.destroy(w)
+		for _ in 0 ..< FIGHT_FRAMES {
+			pads: [2]sim.Input
+			for side in 0 ..< 2 do pads[side], err = sim.bot_pad(w, side)
+			if err == "" do err = sim.step(w, pads)
+			if !testing.expectf(t, err == "", "%s: %s", character.id, err) do break
+		}
+	}
 }
 
 // The fighter's parts and the stage load in the host's model loader, with their textures.
