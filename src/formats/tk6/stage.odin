@@ -26,6 +26,7 @@ SPAWNED_LAYER :: 0       // its elements (break pieces, effects, sound dummies) 
 EFHD_FLAGS :: 0x10       // efhd: u32 flags
 EFHD_NODES :: 0x30       // efhd: u32 node count, {u32 offset, u32 size}[count] from here
 HIDDEN_AT_START :: 0x1   // efhd flag: shown only by a break sequence (FUN_001712ec)
+GROUND_TILE :: 0x100     // efhd flag: one floor tile ("inf_gnd", stages 01, 07, 13, 20), a single node
 NODE_RENDER_RECORD :: 0x0c  // node record: u32 node file section 3 record, ROOT_NODE for an element's root ("ANIM1_", "ANIMEFF_")
 NODE_TRANSLATION :: 0x10    // node record: f32 translation[3], euler[3], scale[3]
 ROOT_NODE :: 0xffffffff
@@ -38,6 +39,10 @@ Stage_Layer :: struct {
 
 // A layer's meshes. A mesh object's single_bind is a node of its element (counted past the root); the element is the
 // one that names a mesh of the object, else the one before it (objects run element by element). Bind -1: world space.
+// An object that names no element and has only world space meshes is base scenery, shown whatever the element before
+// it (stage 02 ground, stage 09 floor). In a layer with ground tiles, an object that names no element holds tile
+// meshes: bind k is the k-th tile element.
+// (hole tk6-infinite-tiles :tags (tk6 importer sim) :sev gap) ground tiles stay at their homes, so the tile stages (01, 07, 13, 20; user: 01 is infinite) play walled; the game's tile pool (period, radius) and whether it drops their hitd walls are not read.
 // Only meshes of elements shown at match start; stage 15 has no texture files: a bare stage. tk6decomp docs/data.md
 // "Element visibility".
 // (hole tk6-stage-states :tags (tk6 importer look) :sev gap) only the start state: the sqef break sequences (show, hide, spawn at a posf point) are not imported.
@@ -50,7 +55,7 @@ read_stage_layer :: proc(game: Game_Files, stage: Stage, layer: int, allocator :
 	if texture_file, has_textures := read_file(game, first + 1, allocator = context.temp_allocator); has_textures {
 		out.textures = tk5.read_ntp3(texture_file) or_return
 	}
-	elements, element_of := node_elements(node_file) or_return
+	elements, element_of, tiles := node_elements(node_file) or_return
 
 	meshes := make([dynamic]tk5.Mesh)
 	matrices := make([dynamic]Maybe([16]f32))
@@ -58,11 +63,18 @@ read_stage_layer :: proc(game: Game_Files, stage: Stage, layer: int, allocator :
 	current := -1
 	for object in objects {
 		group := tk5.read_ndp3(object, material_slots = MATERIAL_SLOTS) or_return
-		for mesh in group do if element, named := element_of[mesh.name]; named do current = element
-		if current >= 0 && elements[current].hidden do continue
+		names_element := false
+		for mesh in group do if element, named := element_of[mesh.name]; named do current, names_element = element, true
+		tile_object := !names_element && len(tiles) > 0
+		bound := false
+		for mesh in group do bound ||= mesh.single_bind >= 0
+		owned := names_element || (bound && !tile_object)
+		if owned && current >= 0 && elements[current].hidden do continue
 		for mesh in group {
 			placed: Maybe([16]f32)
-			if mesh.single_bind >= 0 && current >= 0 {
+			if tile_object {
+				if mesh.single_bind >= 0 && int(mesh.single_bind) < len(tiles) do placed = tiles[mesh.single_bind]
+			} else if mesh.single_bind >= 0 && current >= 0 {
 				element := elements[current]
 				node := int(mesh.single_bind) + element.first_bind
 				if node < len(element.places) do placed = element.places[node]
@@ -96,9 +108,11 @@ Element :: struct {
 }
 
 // Node file: section 0 holds an "efhd" per element with its node records, section 1 per element its node names
-// (records of 32 or more bytes, a C string first), in the same order. element_of: node name -> element.
+// (records of 32 or more bytes, a C string first), in the same order. element_of: node name -> element. tiles: the
+// place of each ground tile element, in element order.
 @(private = "file")
-node_elements :: proc(data: []byte) -> (elements: []Element, element_of: map[string]int, ok: bool) {
+node_elements :: proc(data: []byte) -> (elements: []Element, element_of: map[string]int, tiles: [][16]f32, ok: bool) {
+	tile_places := make([dynamic][16]f32, context.temp_allocator)
 	element_of = make(map[string]int, context.temp_allocator)
 	files := sections(data, context.temp_allocator) or_return
 	if len(files) < 2 do return
@@ -119,8 +133,9 @@ node_elements :: proc(data: []byte) -> (elements: []Element, element_of: map[str
 			element_of[tk5.cstring_at(names[node], 0)] = element
 		}
 		elements[element].places = places
+		if tk5.be_u32(header, EFHD_FLAGS) & GROUND_TILE != 0 && len(places) > 0 do append(&tile_places, places[0])
 	}
-	return elements, element_of, true
+	return elements, element_of, tile_places[:], true
 }
 
 // Scale, then the turns about x, y and z, then the move, for row vectors [guess: Maya's default order].
