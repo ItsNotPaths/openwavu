@@ -246,13 +246,13 @@ import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 	layers: [dynamic]int
 	meshes.allocator, matrices.allocator, layers.allocator = context.temp_allocator, context.temp_allocator, context.temp_allocator
 	for layer in 0 ..< tk6.STAGE_LAYERS {
-		if layer == tk6.SPAWNED_LAYER do continue
 		read, ok := tk6.read_stage_layer(im.game, stage, layer, context.temp_allocator)
 		if !ok {
 			fail(im, "stage %s: layer %d did not read", stage.id, layer)
 			return
 		}
 		for texture in read.textures do textures[texture.hash] = texture
+		if layer == tk6.SPAWNED_LAYER do continue  // its textures are the other layers' too
 		append(&meshes, ..read.meshes)
 		append(&matrices, ..read.matrices)
 		for _ in read.meshes do append(&layers, layer)
