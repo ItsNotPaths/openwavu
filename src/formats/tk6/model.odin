@@ -7,8 +7,10 @@ import tk5 "../tk5"
 MODEL_TEXTURES :: 0
 MODEL_MESHES :: 1
 MODEL_BONES :: 2
-// Body models: a container of 20 NTP3 sets, 0..16 filled, same hashes each (Kazuya: the face) [guess: set 0 = default].
+// Body models: a container of 20 NTP3 sets, 0..16 filled, same hashes each (Kazuya: the face, bald in set 0, hair
+// painted on the scalp in set SCALP_HAIR_SET).
 MODEL_TEXTURE_SETS :: 12
+SCALP_HAIR_SET :: 1
 // Poly material slots that hold materials; the fourth points at other data in TK6 models.
 MATERIAL_SLOTS :: 3
 

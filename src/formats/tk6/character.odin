@@ -66,9 +66,16 @@ Costume_Part :: struct {
 	colours:       [COLOUR_CHANNELS]int,
 }
 
-// The parts a default costume (PLAYER_ONE, ...) wears on the body model. Their colours come from the costume's free shop
-// records of the same item or category (1P gloves: record item 48, definition item 49, both gloves).
-read_costume :: proc(game: Game_Files, character: Character, costume: int, allocator := context.allocator) -> (parts: []Costume_Part, ok: bool) {
+// The parts a default costume (PLAYER_ONE, ...) wears on the body model, and the body's texture set.
+Costume :: struct {
+	parts:            []Costume_Part,
+	body_texture_set: int,  // MODEL_TEXTURE_SETS set; SCALP_HAIR_SET when a part wants hair painted on the scalp
+}
+
+// Part colours come from the costume's free shop records of the same item or category (1P gloves: record item 48,
+// definition item 49, both gloves).
+// (hole tk6-body-texture-sets :tags (tk6 importer look) :sev polish) only sets 0 and 1 are picked; Jin (8 sets) and Lei (4) pair them with something unread.
+read_costume :: proc(game: Game_Files, character: Character, costume: int, allocator := context.allocator) -> (out: Costume, ok: bool) {
 	data := read_file(game, PART_FIRST + PART_FILES * character.number + ITEM_FILE, allocator = context.temp_allocator) or_return
 	files := sections(data, context.temp_allocator) or_return
 	if len(files) < 2 do return
@@ -84,8 +91,10 @@ read_costume :: proc(game: Game_Files, character: Character, costume: int, alloc
 			for colour, channel in record.colours do if colour != NO_COLOUR do part.colours[channel] = int(colour)
 		}
 		append(&list, part)
+		if definition.scalp_hair do out.body_texture_set = SCALP_HAIR_SET
 	}
-	return list[:], true
+	out.parts = list[:]
+	return out, true
 }
 
 // Shop table: u32 count, u32 0, then records: u16 item, u16 name length, name, u32 price, u8 costume, u8, u8 count,
@@ -122,14 +131,16 @@ read_shop_records :: proc(table: []byte, allocator := context.allocator) -> (rec
 }
 
 // Definition record ("IM03"): name, then u32 words: [1] high byte the shop category, [4] the shop item, [5] low byte the
-// default costumes that wear it (bit n = costume n, 0 = shop only), [11] the part slot or NO_PART, and lists {u32
-// target, u32 count, u32 0, u32 value[count]}; target BODY_MESHES lists body meshes the part covers.
+// default costumes that wear it (bit n = costume n, 0 = shop only), [11] the part slot or NO_PART, [13] 1: the body
+// wants hair painted on the scalp (hair parts), and lists {u32 target, u32 count, u32 0, u32 value[count]}; target
+// BODY_MESHES lists body meshes the part covers.
 @(private = "file")
 Item_Definition :: struct {
 	category:      u8,
 	item:          u16,
 	costumes:      u8,
 	part:          u32,
+	scalp_hair:    bool,
 	hidden_meshes: []int,
 }
 
@@ -150,7 +161,7 @@ read_item_definitions :: proc(table: []byte, allocator := context.allocator) -> 
 		if size < DEFINITION_LISTS || string(record[:4]) != "IM03" do continue
 		word :: proc(record: []byte, number: int) -> u32 {return tk5.be_u32(record, DEFINITION_WORDS + 4 * number)}
 		definition.category, definition.item = u8(word(record, 1) >> 24), u16(word(record, 4))
-		definition.costumes, definition.part = u8(word(record, 5)), word(record, 11)
+		definition.costumes, definition.part, definition.scalp_hair = u8(word(record, 5)), word(record, 11), word(record, 13) == 1
 		definition.hidden_meshes = hidden_meshes(record, allocator)
 	}
 	return definitions, true

@@ -145,14 +145,14 @@ import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone
 	w := &im.w
 	id := character.id
 	name := fmt.tprintf("%d", costume + 1)
-	parts, read := tk6.read_costume(im.game, character, costume, context.temp_allocator)
+	worn, read := tk6.read_costume(im.game, character, costume, context.temp_allocator)
 	if !read {
 		fail(im, "%s: costume %s did not read", id, name)
 		return
 	}
 	db.insert(w, "costume", id, name)
 	body_part := fmt.tprintf("%s_%s_body", id, name)
-	first_mesh_node, written := write_part(im, id, body_part, "body", body_part, tk6.body_file(character))
+	first_mesh_node, written := write_part(im, id, body_part, "body", body_part, tk6.body_file(character), texture_set = worn.body_texture_set)
 	if !written {
 		fail(im, "%s: body model did not convert", id)
 		return
@@ -165,7 +165,7 @@ import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone
 		db.insert(w, "bone", body_part, i64(index), i64(joint.parent), joint_name, standard)
 	}
 	hidden := make(map[int]bool, context.temp_allocator)
-	for part in parts {
+	for part in worn.parts {
 		// (hole tk6-costume-effects :tags (tk6 importer look) :sev polish) aura and rage glow parts (effect models, particles in section 9) are skipped.
 		if tk6.is_effect_model(im.game, tk6.part_file(character, part.slot)) do continue
 		for mesh in part.hidden_meshes do hidden[mesh] = true
@@ -182,9 +182,9 @@ import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone
 }
 
 // One model file as parts/<owner>/<part>.glb on its own skeleton (the body's bones, then its cloth joints), and its
-// part row. Its textures are its own, the set of each colour channel's colour and the first of its texture sets.
+// part row. Its textures are its own, the set of each colour channel's colour and its texture set.
 // (hole tk6-physics :tags (tk6 importer) :sev polish) ties and cloth flaps are rigid (user: no physics for now); model section 3 is the swing data, unread.
-write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: int, colours: [tk6.COLOUR_CHANNELS]int = {}) -> (first_mesh_node: int, ok: bool) {
+write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: int, colours: [tk6.COLOUR_CHANNELS]int = {}, texture_set := 0) -> (first_mesh_node: int, ok: bool) {
 	sections := tk6.sections(read_file(im, file) or_return, context.temp_allocator) or_return
 	if len(sections) <= tk6.MODEL_BONES do return
 	bone := tk6.read_bone(sections[tk6.MODEL_BONES], context.temp_allocator) or_return
@@ -197,7 +197,7 @@ write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: 
 	}
 	if len(sections) > tk6.MODEL_TEXTURE_SETS {
 		sets := tk6.sections(sections[tk6.MODEL_TEXTURE_SETS], context.temp_allocator) or_else nil
-		if len(sets) > 0 do append(&texture_sections, sets[0])
+		if texture_set < len(sets) do append(&texture_sections, sets[texture_set])
 	}
 	textures := make(tk5_convert.Textures, context.temp_allocator)
 	for section in texture_sections {
