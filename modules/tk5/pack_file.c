@@ -37,7 +37,7 @@ void t5_file_set_free(T5FileSet *file_set) {
     *file_set = (T5FileSet){};
 }
 
-// (hole arena-reserve :tags tk5mod :sev polish) the arena comes from calloc; reserve its pages once with memory.grow instead.
+// (hole arena-reserve :tags tk5mod :sev polish) the arena comes from calloc; reserve its pages once with memory.grow instead. tekken 6 as well modules/tk6/pack_file.c:t6_new_arena
 const char *t5_new_arena(T5Arena *arena, size_t bytes) {
     *arena = (T5Arena){calloc(1, bytes + 1), bytes, 0};  // + 1: calloc of 0 may give NULL
     return arena->base ? NULL : "out of memory";

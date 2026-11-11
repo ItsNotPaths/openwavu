@@ -29,7 +29,7 @@ typedef struct {
     T5FighterData data;  // the move set of this round, a copy (properties write its aliases)
 } T5SideData;
 
-// Read only after init, except each side's data, which a round start copies in and properties write (hole snapshot-range).
+// Read only after init, except each side's data, which a round start copies in and properties write (hole snapshot-range) tekken 6 as well modules/tk6/gameplay/match.h
 typedef struct {
     T5SideData sides[T5_FIGHTER_COUNT];
     T5Stage stage;

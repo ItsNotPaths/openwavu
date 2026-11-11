@@ -1,0 +1,75 @@
+id = "tekken6"
+name = "Tekken 6"
+main = "app.wasm"
+
+[modes.versus]
+sim = "gameplay.wasm"
+presenter = "gamerender.wasm"
+
+[params.stage]
+kind = "text"
+default = "stage_00"
+expose = true
+
+[params.start_health]
+kind = "number"
+default = 180
+min = 1
+max = 999
+expose = true
+
+[params.damage_percent]
+kind = "number"
+default = 100
+min = 0
+max = 1000
+expose = true
+
+[params.pushback_percent]
+kind = "number"
+default = 100
+min = 0
+max = 1000
+expose = true
+
+[params.clean_hit_bonus_percent]  # extra damage on a fighter who stands, crouches or starts a jump
+kind = "number"
+default = 20
+min = 0
+max = 1000
+expose = true
+
+[params.rage_health]  # health points at or below which a fighter is in rage
+kind = "number"
+default = 20
+min = 0
+max = 999
+expose = true
+
+[params.rage_bonus_percent]  # extra damage of a fighter in rage
+kind = "number"
+default = 35
+min = 0
+max = 1000
+expose = true
+
+[params.bounds_per_combo]
+kind = "number"
+default = 1
+min = 0
+max = 99
+expose = true
+
+[params.rounds_to_win]  # ft3, ft7, ...
+kind = "number"
+default = 2
+min = 1
+max = 10
+expose = true
+
+[params.round_time]  # seconds; 0 = no clock
+kind = "number"
+default = 60
+min = 0
+max = 99
+expose = true

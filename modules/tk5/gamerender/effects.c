@@ -8,10 +8,10 @@
 #include "sim/properties.h"
 #include "sqlite3.h"
 
-// (hole effect-dust :tags (tk5mod effects)) the ground dust (properties 0x8009, 0x800a: effects/dust by the ground kind under the fighter) is not played.
-// (hole effect-light :tags (tk5mod effects) :sev polish) a heavy hit does not light the hit point with record 0's colour (character_effect_row.light).
-// (hole effect-past-ring :tags (tk5mod effects) :sev polish) an effect whose cue leaves the ring (60 frames) stops; none of the shared sparks lives that long.
-// (hole effect-follow :tags (tk5mod effects) :sev polish) every effect plays at a world point; records 0x1b (joint glued) and kind 15 do not follow their fighter.
+// (hole effect-dust :tags (tk5mod effects)) the ground dust (properties 0x8009, 0x800a: effects/dust by the ground kind under the fighter) is not played. tekken 6 as well modules/tk6/gamerender/effects.c
+// (hole effect-light :tags (tk5mod effects) :sev polish) a heavy hit does not light the hit point with record 0's colour (character_effect_row.light). tekken 6 as well modules/tk6/gamerender/effects.c
+// (hole effect-past-ring :tags (tk5mod effects) :sev polish) an effect whose cue leaves the ring (60 frames) stops; none of the shared sparks lives that long. tekken 6 as well modules/tk6/gamerender/effects.c
+// (hole effect-follow :tags (tk5mod effects) :sev polish) every effect plays at a world point; records 0x1b (joint glued) and kind 15 do not follow their fighter. tekken 6 as well modules/tk6/gamerender/effects.c
 
 enum { SHARED_RECORDS = 41, FIGHTER_RECORDS = 16, FIGHTER_ROWS = 16, HEAVY_DAMAGE = 20 };
 
@@ -110,7 +110,7 @@ static void hit_effects(FxList *list, const T5CueEntry *entry, float age) {
     }
 }
 
-// (hole reaction-effect-owner :tags (tk5mod effects)) 0x8019/0x801c on a reaction move (jin/He_PopAte2n) play the reacting fighter's row 0, so Kazuya's crumple or launch envelops Jin in Jin's red; by effects.md the game does too (P slot), but it looks wrong: check whether the game's slot is the attacker's, or whether those reactions run in the attacker's set.
+// (hole reaction-effect-owner :tags (tk5mod effects)) 0x8019/0x801c on a reaction move (jin/He_PopAte2n) play the reacting fighter's row 0, so Kazuya's crumple or launch envelops Jin in Jin's red; by effects.md the game does too (P slot), but it looks wrong: check whether the game's slot is the attacker's, or whether those reactions run in the attacker's set. tekken 6 as well modules/tk6/gamerender/effects.c:property_effects
 static void property_effects(FxList *list, const T5CueEntry *entry, float age) {
     T5Vec3 none = {};
     T5Who self = entry->cue.key.side;

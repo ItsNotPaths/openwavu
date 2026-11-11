@@ -121,7 +121,7 @@ static void scan(Bot *bot, const T5Motbin *motbin, const T5Cancel *entry) {
     }
 }
 
-// (hole mokujin-bot :tags (tk5mod) :sev polish) a Mokujin bot presses the moves of his first round's move set in every round.
+// (hole mokujin-bot :tags (tk5mod) :sev polish) a Mokujin bot presses the moves of his first round's move set in every round. tekken 6 as well modules/tk6/gameplay/bot.c:t6_bots_begin
 const char *t5_bots_begin(uint64_t seed) {
     bots = calloc(T5_FIGHTER_COUNT, sizeof *bots);
     if (!bots) return "out of memory for the bots";

@@ -7,7 +7,7 @@
 #include "gamerender/presenter.h"
 #include "sim/constants.h"
 
-// (hole mod-hud-look :tags tk5mod :needs menu-layouts :sev polish) the HUD is plain debug text and bars, placed by us, not the TK5 look.
+// (hole mod-hud-look :tags tk5mod :needs menu-layouts :sev polish) the HUD is plain debug text and bars, placed by us, not the TK5 look. tekken 6 as well modules/tk6/gamerender/hud.c
 
 enum {
     SCALE = 2,             // debug text glyphs are 8 px, drawn at this scale

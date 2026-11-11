@@ -10,9 +10,9 @@
 #include "sim/anim.h"
 #include "sqlite3.h"
 
-// (hole sdk-camera :tags (sdk tk5mod round-show) :sev gap) the fight camera is the demo's follow camera, eased, in pack code: no SDK camera that frames both fighters by params (distance, zoom, lag), and the game's rules (0x772cc) are not ported.
-// (hole throw-camera-gaps :tags (tk5mod round-show) :sev polish) a track is not low-passed (0x7f970, 0.1 a frame) and does not ease in over its first 60 frames; aim_at_fighters aims at the fighters' middle (0x7a5a4 not used); a hand-coded shot does not end at a chain throw's next step.
-// (hole sdk-timeline :tags (sdk tk5mod round-show) :needs (sdk-camera intro-timelines)) the shot player is pack code, not an SDK library, and plays only cameras: no effects, sounds or voices on the intro and win timelines.
+// (hole sdk-camera :tags (sdk tk5mod round-show) :sev gap) the fight camera is the demo's follow camera, eased, in pack code: no SDK camera that frames both fighters by params (distance, zoom, lag), and the game's rules (0x772cc) are not ported. tekken 6 as well modules/tk6/gamerender/camera.c
+// (hole throw-camera-gaps :tags (tk5mod round-show) :sev polish) a track is not low-passed (0x7f970, 0.1 a frame) and does not ease in over its first 60 frames; aim_at_fighters aims at the fighters' middle (0x7a5a4 not used); a hand-coded shot does not end at a chain throw's next step. tekken 6 as well modules/tk6/gamerender/camera.c
+// (hole sdk-timeline :tags (sdk tk5mod round-show) :needs (sdk-camera intro-timelines)) the shot player is pack code, not an SDK library, and plays only cameras: no effects, sounds or voices on the intro and win timelines. tekken 6 as well modules/tk6/gamerender/camera.c
 
 static const float DISTANCE = 3.6f;      // metres from the midpoint, along the view normal; the closest it gets
 static const float FIGHTER_ROOM = 1.2f;  // metres kept on screen past the two fighters' roots, both sides together
@@ -221,7 +221,7 @@ typedef struct {
     int16_t yaw;
 } Anchor;
 
-// (hole shot-height-ease :tags (tk5mod round-show) :sev polish) a shot's anchor height is set once; the game eases it toward the fighter's height (0x7d4c4), so a jump or crouch in a pose does not move the camera.
+// (hole shot-height-ease :tags (tk5mod round-show) :sev polish) a shot's anchor height is set once; the game eases it toward the fighter's height (0x7d4c4), so a jump or crouch in a pose does not move the camera. tekken 6 as well modules/tk6/gamerender/camera.c:placed
 // A track point in the anchor's frame, in the world: turned by -yaw about y, then moved to the anchor.
 static OwVec3 placed(Anchor anchor, const float local[3], bool mirror_x, bool mirror_z) {
     float x = mirror_x ? -local[0] : local[0], z = mirror_z ? -local[2] : local[2];

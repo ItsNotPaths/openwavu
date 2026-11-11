@@ -62,7 +62,7 @@ static T5Face relax(T5Face face, uint16_t blend_frames) {
     return face;
 }
 
-// (hole face-effect :tags (tk5mod effects fighter-detail) :sev polish) the face effect 0xb1f84 (shared record 0x1d at the head, on the down face of a move start and the effort face) is not played: its game checks (0x84a9c, 0x70e50, mask 0x40 << slot) are open.
+// (hole face-effect :tags (tk5mod effects fighter-detail) :sev polish) the face effect 0xb1f84 (shared record 0x1d at the head, on the down face of a move start and the effort face) is not played: its game checks (0x84a9c, 0x70e50, mask 0x40 << slot) are open. tekken 6 as well modules/tk6/gamerender/face.c:move_face
 // 0x2fd5c: the face a new move sets, unless a clip plays.
 static T5Face move_face(T5Face face, const T5ViewFace *fighter) {
     float value = face.play.time;

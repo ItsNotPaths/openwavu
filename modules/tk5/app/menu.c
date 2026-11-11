@@ -16,7 +16,7 @@
 #include "openwavu.h"
 #include "ow_db.h"
 
-// (hole mod-menus :tags tk5mod :needs menu-layouts :sev gap) the menus use the TK5 art placed by hand, not the SWG layouts: no animation, no versus screen; mode labels are our own styled Michroma, other text the TK5 bold font; the online screens are our own (online.c).
+// (hole mod-menus :tags tk5mod :needs menu-layouts :sev gap) the menus use the TK5 art placed by hand, not the SWG layouts: no animation, no versus screen; mode labels are our own styled Michroma, other text the TK5 bold font; the online screens are our own (online.c). tekken 6 as well modules/tk6/app/menu.c
 
 enum Screen { SCREEN_TITLE, SCREEN_MODE, SCREEN_CHARACTERS, SCREEN_STAGE, SCREEN_MATCH, SCREEN_LOBBIES, SCREEN_LOBBY };
 enum Mode { MODE_VERSUS_CPU, MODE_VERSUS, MODE_WATCH, MODE_ONLINE, MODE_EXIT, MODES };

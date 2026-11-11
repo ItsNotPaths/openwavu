@@ -11,7 +11,7 @@
 #include "sim/properties.h"
 #include "sqlite3.h"
 
-// (hole mod-sound :tags (tk5mod audio effects) :sev gap) not played: the stage records of voice selectors 9 and 10 (0x90fc4, 0x910c8; also sent by 0xa1eb0 on move_end, touchdown and a foot or the hips reaching the floor), the crowd of 0x815c/0x815d, properties 0x80dd, 0x80de and 0x80e0, the stage sounds of hit effects (EFP sound_row goes through effect generators, not dumped), "you win"/"you lose", and looped records.
+// (hole mod-sound :tags (tk5mod audio effects) :sev gap) not played: the stage records of voice selectors 9 and 10 (0x90fc4, 0x910c8; also sent by 0xa1eb0 on move_end, touchdown and a foot or the hips reaching the floor), the crowd of 0x815c/0x815d, properties 0x80dd, 0x80de and 0x80e0, the stage sounds of hit effects (EFP sound_row goes through effect generators, not dumped), "you win"/"you lose", and looped records. tekken 6 as well modules/tk6/gamerender/sound.c
 
 enum {
     SOUNDS_MAX = 512,

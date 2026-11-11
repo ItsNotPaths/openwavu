@@ -8,7 +8,7 @@
 #include "sim/properties.h"
 #include "sim/rng.h"
 
-// (hole hit-sound-yell :tags (tk5mod audio) :sev polish) the hit sound leaves out the target's voice word (P+0x8a0): a target of character 0x13, or of kind 0x12 in some modes, yells (its record 14, or a random one of 0..4) in place of the hit sound while its voice is free.
+// (hole hit-sound-yell :tags (tk5mod audio) :sev polish) the hit sound leaves out the target's voice word (P+0x8a0): a target of character 0x13, or of kind 0x12 in some modes, yells (its record 14, or a random one of 0..4) in place of the hit sound while its voice is free. tekken 6 as well modules/tk6/sim/voice_clip.c:hit_sound
 
 enum { SELECTOR_SHIFT = 12, NUMBER_MASK = 0xfff };
 

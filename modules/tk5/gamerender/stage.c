@@ -7,8 +7,8 @@
 #include "gamerender/presenter.h"
 #include "sqlite3.h"
 
-// (hole infinite-stage-focus :tags (tk5mod look) :sev polish) the game's floor focus is not found (stages.md 8.9): the stage follows the fighters' midpoint, a guess.
-// (hole infinite-stage-layer-order :tags (tk5mod look) :sev polish) the game draws layers 2 and 3 swapped on infinite stages (stages.md 8.6); the host's depth test decides here.
+// (hole infinite-stage-focus :tags (tk5mod look) :sev polish) the game's floor focus is not found (stages.md 8.9): the stage follows the fighters' midpoint, a guess. tekken 6 as well modules/tk6/gamerender/stage.c
+// (hole infinite-stage-layer-order :tags (tk5mod look) :sev polish) the game draws layers 2 and 3 swapped on infinite stages (stages.md 8.6); the host's depth test decides here. tekken 6 as well modules/tk6/gamerender/stage.c
 
 enum { LAYER_COUNT = 6, TILE_LAYER = 2, TILES_MAX = 196 };  // glb nodes 0..5 are the layer roots
 

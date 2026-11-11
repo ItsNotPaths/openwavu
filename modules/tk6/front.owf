@@ -1,0 +1,19 @@
+// Tekken 6, built on this machine from your own game files.
+page version=1 height=1230
+
+image  ui/pic1.png x=0 y=0 w=1280  // the disc's background art
+image  ui/pic0.png x=40 y=40 w=900  // the disc's title art
+
+button play      x=40  y=290 w=176 h=56 label="Play"
+button update    x=232 y=290 w=176 h=56 label="Update"
+button install   x=424 y=290 w=176 h=56 label="Install"
+button uninstall x=616 y=290 w=176 h=56 label="Uninstall"
+button credits   x=808 y=290 w=176 h=56 label="Credits"
+
+rect   x=28 y=364 w=640 h=40 color=#000000b0
+text   "Built on this machine from your own game files." x=40 y=374 w=620 size=16 color=#c8cad0
+
+credits "Tekken 6 (c) Bandai Namco Entertainment Inc."
+credits "This pack is built on your machine from your own copy of the game."
+credits "Fighter sim: the tk5decomp port of the game's code, forked for Tekken 6."
+credits "Launcher, importer and netcode: openwavu."

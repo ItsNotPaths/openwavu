@@ -1,0 +1,191 @@
+#include "sim/anim.h"
+
+#include <math.h>
+#include <string.h>
+
+#include "sim/math.h"
+#include "sim/quat.h"
+
+// --- .anim file (docs/formats.md): "OWAN", u32 version, char[8] layout, u32 frames, u32 fps, f32 metres per unit,
+// u32 channels, per channel {u8 kind, u8 components, i16 bone}, then f32 keys[frames][channels][components]
+
+enum { ANIM_VERSION = 2, HEADER_BYTES = 32, CHANNEL_BYTES = 4, KEY_COMPONENTS = 3 };
+
+static uint32_t read32(const uint8_t *bytes) {  // little endian
+    return (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8 | (uint32_t)bytes[2] << 16 | (uint32_t)bytes[3] << 24;
+}
+
+uint16_t t6_anim_file(T6Bytes file, const char *layout, int32_t channels, T6KeyKind (*kind_of)(int32_t), const float **keys) {
+    const size_t start = HEADER_BYTES + (size_t)channels * CHANNEL_BYTES, frame_bytes = (size_t)channels * KEY_COMPONENTS * sizeof(float);
+    if (file.size < start || memcmp(file.data, "OWAN", 4) != 0 || read32(file.data + 4) != ANIM_VERSION) return 0;
+    if (strncmp((const char *)file.data + 8, layout, 8) != 0 || read32(file.data + 28) != (uint32_t)channels) return 0;
+    uint32_t frames = read32(file.data + 16);
+    if (frames > UINT16_MAX || (file.size - start) / frame_bytes < frames) return 0;
+    const uint8_t *channel = file.data + HEADER_BYTES;
+    for (int32_t index = 0; index < channels; index++, channel += CHANNEL_BYTES) {
+        if (channel[0] != kind_of(index) || channel[1] != KEY_COMPONENTS) return 0;
+    }
+    *keys = (const float *)(file.data + start);
+    return (uint16_t)frames;
+}
+
+int t6_anim_parse(T6Anim *anim, T6Bytes file) {
+    const float *keys;
+    uint16_t frames = t6_anim_file(file, "tk5", T6_CHANNELS, t6_channel_kind, &keys);  // the layout the samplers read
+    *anim = frames ? (T6Anim){frames, (const T6AnimKeys *)keys} : (T6Anim){0};
+    return frames ? 0 : -1;
+}
+
+void t6_anim_keys(const T6Anim *anim, T6Vec4 *out, int32_t frame, int32_t count) {
+    static const T6AnimKeys NONE;
+    const T6AnimKeys *keys = &NONE;
+    if (anim->keys) {
+        if (frame < 0) frame = 0;  // before the start: the first frame
+        if (frame + 1 >= anim->frame_count) frame = anim->frame_count - 1;  // past the end: the last frame
+        keys = &anim->keys[frame];
+    }
+    for (int32_t channel = 0; channel < count; channel++)
+        for (int axis = 0; axis < 3; axis++) out[channel].v[axis] = (*keys)[channel][axis];
+}
+
+// --- samplers
+
+static const float LERP_MIN = 1e-5f;
+
+void t6_anim_key_turn(T6Vec4 *turn, const T6Vec4 *key) {
+    T6Mat4 matrix;
+    t6_mat_identity(&matrix);
+    t6_mat_rotate_y(&matrix, t6_rad_to_angle_round(key->y));
+    t6_mat_rotate_x(&matrix, t6_rad_to_angle_round(key->x));
+    T6Vec4 axis = {{matrix.m[2][0], matrix.m[2][1], matrix.m[2][2], matrix.m[2][3]}};
+    t6_quat_axis_angle(turn, key->z, &axis);
+}
+
+static void lerp3(T6Vec4 *out, float weight, const T6Vec4 *from, const T6Vec4 *to) {
+    float remaining = 1.0f - weight;  // weight is how far we are towards the next key
+    for (int axis = 0; axis < 3; axis++) out->v[axis] = fmaf(remaining, from->v[axis], weight * to->v[axis]);
+}
+
+static int32_t next_frame(int32_t frame) { return frame + 1; }  // the frame after this one
+
+void t6_anim_sample(const T6Anim *anim, float frame, T6Vec4 pose[T6_CHANNELS], bool keep_hips) {
+    float whole;
+    float weight = t6_modf(frame, &whole);  // split the time into whole frame and fraction between frames
+    int32_t whole_frame = t6_fctiwz(whole);
+    T6Vec4 keys_now[T6_CHANNELS], keys_next[T6_CHANNELS];
+    t6_anim_keys(anim, keys_now, whole_frame, T6_CHANNELS);
+    if (weight >= LERP_MIN) {  // between two frames: decode both and blend
+        t6_anim_keys(anim, keys_next, next_frame(whole_frame), T6_CHANNELS);
+        for (int32_t channel = 0; channel < T6_CHANNELS; channel++) {
+            if (!t6_channel_is_rotation(channel)) {  // positions blend in a straight line
+                lerp3(&pose[channel], weight, &keys_now[channel], &keys_next[channel]);
+                continue;
+            }
+            T6Vec4 turn_now, turn_next;
+            t6_anim_key_turn(&turn_now, &keys_now[channel]);
+            t6_anim_key_turn(&turn_next, &keys_next[channel]);
+            t6_quat_nlerp(&pose[channel], weight, &turn_now, &turn_next);  // rotations blend as turns
+        }
+    } else {
+        for (int32_t channel = 0; channel < T6_CHANNELS; channel++) {
+            if (t6_channel_is_rotation(channel)) t6_anim_key_turn(&pose[channel], &keys_now[channel]);
+            else for (int axis = 0; axis < 3; axis++) pose[channel].v[axis] = keys_now[channel].v[axis];
+        }
+    }
+    pose[CHANNEL_ROOT].z = -pose[CHANNEL_ROOT].z;  // flip the depth axis of the root
+    pose[CHANNEL_HIP].z = -pose[CHANNEL_HIP].z;  // flip the depth axis of the hip
+    if (!keep_hips) t6_pose_level_hips(pose);  // unless asked to keep them, level the hips
+}
+
+enum { YAW_CHANNELS = CHANNEL_ROOT_YAW + 1 };  // the decoder reads channels in order, up to the root yaw
+
+void t6_anim_sample_yaw(const T6Anim *anim, float frame, T6Vec4 *turn) {
+    float whole;
+    float weight = t6_modf(frame, &whole);  // split the time into whole frame and fraction between frames
+    int32_t whole_frame = t6_fctiwz(whole);
+    T6Vec4 keys_now[YAW_CHANNELS], keys_next[YAW_CHANNELS], turn_now, turn_next;
+    t6_anim_keys(anim, keys_now, whole_frame, YAW_CHANNELS);
+    if (!(weight >= LERP_MIN)) {  // on a whole frame: no blend needed
+        t6_anim_key_turn(turn, &keys_now[CHANNEL_ROOT_YAW]);
+        return;
+    }
+    t6_anim_keys(anim, keys_next, next_frame(whole_frame), YAW_CHANNELS);
+    t6_anim_key_turn(&turn_now, &keys_now[CHANNEL_ROOT_YAW]);
+    t6_anim_key_turn(&turn_next, &keys_next[CHANNEL_ROOT_YAW]);
+    t6_quat_nlerp(turn, weight, &turn_now, &turn_next);  // blend the two yaw turns
+}
+
+// The single-frame path converts the frame itself, not its integer part (same value).
+void t6_anim_sample_root(const T6Anim *anim, float frame, T6Vec4 root[2]) {
+    float whole;
+    float weight = t6_modf(frame, &whole);  // split the time into whole frame and fraction between frames
+    T6Vec4 keys_now[2], keys_next[2];
+    if (weight >= LERP_MIN) {  // between two frames: decode both and blend
+        int32_t whole_frame = t6_fctiwz(whole);
+        t6_anim_keys(anim, keys_now, whole_frame, 2);
+        t6_anim_keys(anim, keys_next, next_frame(whole_frame), 2);
+        // blend root and hip positions
+        for (int channel = 0; channel < 2; channel++) lerp3(&root[channel], weight, &keys_now[channel], &keys_next[channel]);
+    } else {
+        t6_anim_keys(anim, keys_now, t6_fctiwz(frame), 2);
+        for (int channel = 0; channel < 2; channel++)
+            for (int axis = 0; axis < 3; axis++) root[channel].v[axis] = keys_now[channel].v[axis];
+    }
+    root[0].z = -root[0].z;  // flip the depth axis, same as the full sampler
+    root[1].z = -root[1].z;
+}
+
+// --- pose fix-ups
+
+
+// matrix * inverse, with row 3 of both set to (0,0,0,1) first
+static void times_rotation(T6Mat4 *matrix, const T6Mat4 *inverse) {
+    static const float W[4] = {0, 0, 0, 1};
+    T6Mat4 product = *inverse, rows = *matrix;
+    memcpy(product.m[3], W, sizeof W);
+    memcpy(rows.m[3], W, sizeof W);
+    t6_mat_multiply(&product, &rows);  // inverse times matrix
+    *matrix = product;
+}
+
+static void quat_mat(T6Mat4 *matrix, const T6Vec4 *turn) {
+    t6_mat_identity(matrix);
+    t6_quat_to_mat(matrix, turn);
+}
+
+static const float LEVEL_HIPS_MIN = 0.707106709f;  // one ulp under cos 45 degrees 
+
+void t6_pose_level_hips(T6Vec4 pose[T6_CHANNELS]) {
+    static const T6Vec4 DOWN = {{0, -1, 0, 0}};
+    T6Mat4 hips, spine, pelvis, product;
+    quat_mat(&hips, &pose[CHANNEL_HIPS]);  // hips, spine and pelvis turns as matrices
+    if (fabsf(hips.m[1][1]) < LEVEL_HIPS_MIN) return;  // hips tilted more than 45 degrees (lying, flipping): leave the pose alone
+    quat_mat(&spine, &pose[CHANNEL_SPINE]);
+    quat_mat(&pelvis, &pose[CHANNEL_PELVIS]);
+    product = hips;
+    t6_mat_multiply(&product, &spine);
+    spine = product;
+    product = hips;
+    t6_mat_multiply(&product, &pelvis);
+    pelvis = product;
+
+    // hips keep only the facing turn (root yaw)
+    t6_quat_axis_angle(&pose[CHANNEL_HIPS], t6_quat_yaw(&pose[CHANNEL_ROOT_YAW]), &DOWN);
+    t6_quat_to_mat(&hips, &pose[CHANNEL_HIPS]);
+    t6_mat_inverse(&hips);  // undo the hips change
+    times_rotation(&spine, &hips);  // spine and pelvis take over the tilt the hips gave up
+    times_rotation(&pelvis, &hips);
+    t6_mat_to_quat(&pose[CHANNEL_SPINE], &spine);  // write the new spine and pelvis turns back
+    t6_mat_to_quat(&pose[CHANNEL_PELVIS], &pelvis);
+}
+
+void t6_pose_scale_root(T6Vec4 root[2], float scale_xz, float scale_xz_add, float scale_y) {
+    float scale_xz_total = scale_xz + scale_xz_add;  // sideways and depth scale (body width)
+    for (int channel = 0; channel < 2; channel++) {  // root and hip
+        root[channel].x *= scale_xz_total;
+        root[channel].y *= scale_y;  // height scale
+        root[channel].z *= scale_xz_total;
+    }
+}
+
+bool t6_anim_same(const T6Anim *first, const T6Anim *second) { return first == second || (first && second && first->keys == second->keys); }

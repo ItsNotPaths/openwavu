@@ -605,7 +605,7 @@ enum { ANCHOR_SPECIAL_FIRST = 0x6e };
 
 // Where an effect property plays: a bone of skeleton B or a special point of the fighter, or of its target for the two
 // ids that name the target. The ids with a record in the low byte keep the anchor in the high byte.
-// (hole effect-anchor-slots :tags (tk5mod effects) :sev polish) anchors 0x6c, 0x6d and 0x74..0x79 name the game's special slots 6..9, which properties 0x80ad..0x80b0 set; the sim has no such slots, so they play at the fighter's base position.
+// (hole effect-anchor-slots :tags (tk5mod effects) :sev polish) anchors 0x6c, 0x6d and 0x74..0x79 name the game's special slots 6..9, which properties 0x80ad..0x80b0 set; the sim has no such slots, so they play at the fighter's base position. tekken 6 as well modules/tk6/sim/properties.c:effect_anchor
 static T5Vec3 effect_anchor(const T5World *w, const T5Fighter *f, uint16_t id, uint16_t value) {
     uint16_t offset = (uint16_t)(id - T5_PROPERTY_BASE);
     bool on_target = offset == 0x1d || offset == 0x2c;
