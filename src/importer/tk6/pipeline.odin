@@ -166,9 +166,11 @@ import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone
 	}
 	hidden := make(map[int]bool, context.temp_allocator)
 	for part in parts {
+		// (hole tk6-costume-effects :tags (tk6 importer look) :sev polish) aura and rage glow parts (effect models, particles in section 9) are skipped.
+		if tk6.is_effect_model(im.game, tk6.part_file(character, part.slot)) do continue
 		for mesh in part.hidden_meshes do hidden[mesh] = true
 		part_id := fmt.tprintf("%s_part_%d", id, part.slot)
-		if _, part_written := write_part(im, id, part_id, "item", body_part, tk6.part_file(character, part.slot)); !part_written {
+		if _, part_written := write_part(im, id, part_id, "item", body_part, tk6.part_file(character, part.slot), part.colours); !part_written {
 			fail(im, "%s: part %d did not convert", id, part.slot)
 			continue
 		}
@@ -180,25 +182,33 @@ import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone
 }
 
 // One model file as parts/<owner>/<part>.glb on its own skeleton (the body's bones, then its cloth joints), and its
-// part row. Its textures are its own and the first set of each colour file after it [guess: the default colour].
+// part row. Its textures are its own, the set of each colour channel's colour and the first of its texture sets.
 // (hole tk6-physics :tags (tk6 importer) :sev polish) ties and cloth flaps are rigid (user: no physics for now); model section 3 is the swing data, unread.
-write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: int) -> (first_mesh_node: int, ok: bool) {
+write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: int, colours: [tk6.COLOUR_CHANNELS]int = {}) -> (first_mesh_node: int, ok: bool) {
 	sections := tk6.sections(read_file(im, file) or_return, context.temp_allocator) or_return
 	if len(sections) <= tk6.MODEL_BONES do return
 	bone := tk6.read_bone(sections[tk6.MODEL_BONES], context.temp_allocator) or_return
+	texture_sections := make([dynamic][]byte, context.temp_allocator)
+	append(&texture_sections, sections[tk6.MODEL_TEXTURES])
+	for colour, channel in colours {
+		file_after_part, set := tk6.colour_set(channel, colour)
+		colour_sections := tk6.sections(read_file(im, file + file_after_part) or_continue, context.temp_allocator) or_continue
+		if set < len(colour_sections) do append(&texture_sections, colour_sections[set])
+	}
+	if len(sections) > tk6.MODEL_TEXTURE_SETS {
+		sets := tk6.sections(sections[tk6.MODEL_TEXTURE_SETS], context.temp_allocator) or_else nil
+		if len(sets) > 0 do append(&texture_sections, sets[0])
+	}
 	textures := make(tk5_convert.Textures, context.temp_allocator)
-	for colour in 0 ..< tk6.PART_SLOT_FILES {
-		colour_sections := sections
-		if colour > 0 do colour_sections = tk6.sections(read_file(im, file + colour) or_continue, context.temp_allocator) or_continue
-		if len(colour_sections) == 0 do continue
-		list := tk5.read_ntp3(colour_sections[tk6.MODEL_TEXTURES], context.temp_allocator) or_continue
+	for section in texture_sections {
+		list := tk5.read_ntp3(section, context.temp_allocator) or_continue
 		for texture in list do if texture.hash not_in textures do textures[texture.hash] = texture
 	}
 	meshes := tk5.read_ndp3(sections[tk6.MODEL_MESHES], context.temp_allocator, tk6.MATERIAL_SLOTS) or_return
 	skeleton := tk6_convert.glb_skeleton(bone, meshes, context.temp_allocator)
 	make_dir(join(im.root, "parts", owner)) or_return
 	glb := fmt.tprintf("parts/%s/%s.glb", owner, part)
-	first_mesh_node = tk5_convert.write_model(im.root, glb, meshes, write_textures(im, owner, textures), nil, skeleton) or_return
+	first_mesh_node = tk6_convert.write_model(im.root, glb, meshes, write_textures(im, owner, textures), nil, skeleton) or_return
 	db.insert(&im.w, "part", part, owner, slot, skeleton_part, glb)
 	return first_mesh_node, true
 }
@@ -228,7 +238,7 @@ import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 	for &order, layer in layer_orders do order = layer
 	file := fmt.tprintf("stages/%s.glb", stage.id)
 	texture_files := write_textures(im, stage.id, textures)
-	if _, written := tk5_convert.write_model(im.root, file, meshes[:], texture_files, nil, nil, matrices[:], layers[:], layer_orders[:]); !written {
+	if _, written := tk6_convert.write_model(im.root, file, meshes[:], texture_files, nil, nil, matrices[:], layers[:], layer_orders[:]); !written {
 		fail(im, "stage %s: model did not write", stage.id)
 		return
 	}
@@ -242,7 +252,6 @@ import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 }
 
 // Each new hash of owner as a texture row. Returns the file of every hash, written now or before.
-// (hole tk6-face-white :tags (tk6 importer look) :sev gap) Kazuya's face renders solid white; cause not looked at.
 write_textures :: proc(im: ^Import, owner: string, textures: tk5_convert.Textures) -> (files: tk5_convert.Texture_Files) {
 	files = make(tk5_convert.Texture_Files, context.temp_allocator)
 	if !make_dir(join(im.root, "textures", owner)) {

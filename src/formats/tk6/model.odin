@@ -7,6 +7,8 @@ import tk5 "../tk5"
 MODEL_TEXTURES :: 0
 MODEL_MESHES :: 1
 MODEL_BONES :: 2
+// Body models: a container of 20 NTP3 sets, 0..16 filled, same hashes each (Kazuya: the face) [guess: set 0 = default].
+MODEL_TEXTURE_SETS :: 12
 // Poly material slots that hold materials; the fourth points at other data in TK6 models.
 MATERIAL_SLOTS :: 3
 
@@ -22,6 +24,13 @@ sections :: proc(data: []byte, allocator := context.allocator) -> (out: [][]byte
 		section = data[offset:][:size]
 	}
 	return out, true
+}
+
+// Effect models (aura and rage glows) have an empty BONE section; section 9 holds their particles ("SPTX").
+is_effect_model :: proc(game: Game_Files, file: int) -> bool {
+	HEAD :: 4 + 8 * (MODEL_BONES + 1)
+	head, read := read_file(game, file, HEAD, context.temp_allocator)
+	return read && len(head) == HEAD && tk5.be_u32(head, 8 + 8 * MODEL_BONES) == 0
 }
 
 BONE_HEADER :: 0x40
