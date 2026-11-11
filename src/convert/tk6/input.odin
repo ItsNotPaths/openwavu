@@ -29,6 +29,7 @@ cancel_input :: proc(motbin: formats.Motbin, cancel: formats.Cancel) -> (kind, t
 	case code > COMMAND_END && code <= COMMAND_SPECIAL_LAST:
 		input, _ = command.parse(fmt.tprintf("%s@0..0>0", tk5_convert.SPECIAL_INPUTS[code - COMMAND_END - 1]), TK6_NAMES)
 	case code >= COMMAND_STICK_FIRST && code <= COMMAND_STICK_LAST:
+		// (hole tk6-stick-buttons :tags (tk6 input) :sev polish) analog stick tests read as digital and buttons 5, 6 go to L1/R1 are guesses.
 		if buttons != 0 {  // the stick column holds the test
 			input.steps[0], readable = step(0, buttons, false)
 			input.step_count = 1

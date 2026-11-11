@@ -16,7 +16,7 @@ enum {
     PARTS_MAX = 8,      // per fighter
     HIDDEN_MESHES_MAX = 32,  // per fighter: part meshes its move set does not show
     BODY_JOINTS = 23,   // glb joints 0..22: the root, then the body bones the sim's skeleton B moves
-    // (hole tk6-finger-face-joints :tags importer :sev polish) the TK6 helper bones are not mapped to the sim's finger and face bones, so they keep their rest pose.
+    // (hole tk6-finger-face-joints :tags (tk6 importer) :sev polish) the TK6 helper bones are not mapped to the sim's finger and face bones, so they keep their rest pose.
     POSED_BONES = BODY_JOINTS,  // later joints are left out: they keep their rest pose
     STAGE_NODES_MAX = 256,  // layers and floor tiles
     NODES_MAX = T6_FIGHTER_COUNT * (PARTS_MAX + HIDDEN_MESHES_MAX) + STAGE_NODES_MAX,

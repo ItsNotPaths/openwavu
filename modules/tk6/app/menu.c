@@ -216,6 +216,7 @@ static Uint8 cursor_alpha(const T6Cursor *cursor) {
     return cursor->locked ? 255 : (Uint8)(150 + 100 * sinf((float)frames * 0.15f));
 }
 
+// (hole tk6-menu-art :tags (tk6 importer) :sev polish) testing menus: plain text, no TK6 menu art imported.
 static void draw_title(void) {
     art_draw(art("pic1"), 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     art_draw(art("pic2"), CANVAS_WIDTH / 2.0f - 384, 20, 768, 600);

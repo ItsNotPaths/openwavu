@@ -19,6 +19,7 @@ Keys :: struct {
 // Move flag columns by TK6 bit (schema move); bit 10 is move_ai.ai_follow_up_input.
 FLAG_FOLLOW_UP_INPUT :: 10
 @(rodata)
+// (hole tk6-move-flags :tags (tk6 sim) :sev gap) the TK6 move flag bit to TK5 meaning map is a guess from data, seven bits stay unknown, and Xiaoyu's rides_partner is written as 0.
 FLAG_COLUMNS := [32]string{
 	"unknown_flag_0", "unknown_flag_1", "keeps_hips", "turns_at_end", "looks_at_opponent", "follows_floor", "unknown_flag_6",
 	"blends_in_active", "unknown_flag_8", "reaction_continues", "", "practice_dummy_recovery", "unknown_flag_12",

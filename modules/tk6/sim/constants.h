@@ -23,6 +23,7 @@ static constexpr T6Frames SNAP_MATCH_END = {20};  // the match end cut
 static constexpr T6Frames DASH_FRAMES = {20};  // the frame window of a dash command
 static constexpr T6Frames TAP_FRAMES = {16};  // the frame window of a tap command
 // The arena (world.c t6_arena_pass): fighters further apart than the pull-in distance are pulled back onto the ring.
+// (hole tk6-stage12-arena :tags (tk6 sim) :sev polish) stage 12 uses radius 5000, pull-in 7391.95; the db has no column, one arena for all.
 static constexpr float ARENA_RADIUS = 4012.0f;    // mm
 static constexpr float ARENA_PULL_IN = 5931.3f;   // mm
 static constexpr float RING_OUT_DISTANCE = 7000000.0f;  // ground distance from the stage origin: this far or more is a ring out

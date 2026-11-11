@@ -33,6 +33,7 @@ main :: proc() {
 		fmt.eprintln("usage: openwavu-import <rpcs3 dir | game dir | file.pkg [file.rap] | tk6 game folder> [-o packs]")
 		os.exit(2)
 	}
+	// (hole tk6-360-importer :tags (tk6 importer) :sev gap) PS3 only; the 360 files need a second front end (user: the importer must take both).
 	build_pack := tk6.find_usrdir(args.inputs) != "" ? tk6.build_pack : tk5.build_pack
 	if err := build_pack(args.inputs, args.out); err != "" {
 		fmt.eprintln("openwavu-import:", err)

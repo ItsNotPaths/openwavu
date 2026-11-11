@@ -6,19 +6,26 @@ import tk5_convert "../tk5"
 
 // What a converter did with a TK6 number the sim has no exact match for. Counts are by the TK6 number.
 Fallback :: enum {
+	// (hole tk6-open-requirements :tags (tk6 sim) :sev gap) 1112 uses of requirements whose state the sim lacks are written as never true (sim_contract 'open'); 0x181..0x18c lose their extra pass bit.
 	Requirement_Open,      // the state it reads has no sim field: never true
 	Requirement_Unknown,   // in no table: never true
 	Requirement_Campaign,  // a Scenario Campaign or object test: never true in versus
+	// (hole tk6-dropped-properties :tags (tk6 sim) :sev gap) 36128 uses dropped over about 130 ids; 181 property map rows are guesses, some may matter to the sim.
 	Property_Dropped,      // no sim meaning (effects, model layers, HUD, guesses)
 	Property_Dead,         // read by nothing in the game
 	Facing_Property_Dropped, // a facing mode in a start, end or requirement list, or the opponent's mode
+	// (hole tk6-facing-rows :tags (tk6 sim) :sev gap) facing mode 2 uses the nearest TK5 mode (18 uses); the contract's rows for modes 2 and 13 are not built, and which of 3..6 are new is open.
 	Facing_Nearest,        // a facing mode new in TK6: the nearest TK5 mode
+	// (hole tk6-motion-codes :tags (tk6 sim) :sev gap) motion codes 4 and 21 (86 uses) use the nearest TK5 code.
 	Motion_Nearest,        // a motion code new in TK6: the nearest TK5 code
 	Motion_None,           // a motion code past the game's table: none
 	Transition_Class_Start,  // a transition class with no sim class: start
+	// (hole tk6-state-classes :tags (tk6 sim) :sev gap) state classes 0x15, 0x16, 0x1d..0x1f (326 uses) become invulnerable; the sim has no class for them.
 	State_Class_Nearest,   // a state class with no sim class: invulnerable
 	Command_Never,         // an input the command syntax can not hold: the cancel never matches
+	// (hole tk6-special-hit-points :tags (tk6 sim) :sev gap) 2831 hitbox slots use special point codes 0x16..0x3c, meaning open; the point stays.
 	Hitbox_Keep,           // a hitbox point code that is not a bone: the point stays
+	// (hole tk6-flow-states :tags (tk6 sim) :sev polish) game flow state tests are guessed (1257 uses).
 	Flow_State_Guessed,    // a game flow state test (by state)
 	Frame_Truncated,       // a frame number wider than the sim's 16 bits, cut (by move record offset, property id, or 0 for cancels)
 }

@@ -143,5 +143,6 @@ odin build src/tools/bot -out:build/openwavu-bot$exe "${odin_flags[@]}" -vet -st
 odin check src/tools/animconv -vet -strict-style
 odin check src/tools/ow -vet -strict-style
 if [ "$run_tests" = 1 ]; then
+	# (hole test-parallel-interrupt :tags tools :sev gap) parallel test runs end on 'Caught interrupt signal' with one test undone; single-threaded runs pass (-define:ODIN_TEST_THREADS=1).
 	odin test tests -out:build/tests -o:speed -vet -strict-style "$sdl_libs"
 fi

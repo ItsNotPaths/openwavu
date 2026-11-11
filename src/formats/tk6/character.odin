@@ -12,6 +12,7 @@ Character :: struct {
 }
 
 // The roster comes later; each entry needs only its number and move set name.
+// (hole tk6-roster :tags (tk6 importer) :sev gap) only Kazuya; each character needs an entry here, its anim container pairing checked, the special body rows (Kuma, Yoshimitsu...) and its shop table.
 CHARACTERS :: [?]Character{{"kazuya", "Kazuya Mishima", "[KAZUYA]", 15}}
 
 COMMON_ANIMS :: 147277  // the shared MOTA bank (0x8000 anim ids)

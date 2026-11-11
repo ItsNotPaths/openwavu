@@ -82,6 +82,7 @@ enum : uint16_t {
     T6_ALIAS_IDLE_STAND = T6_ALIAS_BASE + 1,
     T6_ALIAS_IDLE_CROUCH = T6_ALIAS_BASE + 2,
     T6_ALIAS_KO = T6_ALIAS_BASE + 25,
+    // (hole tk6-ko-forced-moves :tags (tk6 sim) :sev gap) the KO variant pick, forced guard and forced reaction moves have slots but no sim code; their rules are in TK6's reaction pick, unread.
     T6_ALIAS_KO_VARIANT = T6_ALIAS_BASE + 26,  // the three KO variants the game picks by the opponent's state; not read yet
     T6_ALIAS_KO_VARIANT_LAST = T6_ALIAS_BASE + 28,
     T6_ALIAS_LAUNCH = T6_ALIAS_BASE + 29,      // the first of the six generic launches (T6LaunchEntry)

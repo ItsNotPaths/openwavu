@@ -523,6 +523,7 @@ static bool ko_cuts(const T6Move *move) {
 }
 
 // The stats (outside the sim) are left out.
+// (hole tk6-reaction-input-diff :tags (tk6 sim) :sev gap) TK6's reaction pick and input pass are not compared with the game; simdiff still lacks those rows, a facing row and a whole-frame row (needs the full fighter layout).
 void t6_decide_object(T6World *w, T6Fighter *f) {
     uint8_t moveset = f->moveset;  // keep the move set from before the hit
     f->self_damage.effect = SELF_DAMAGE_NONE;  // the points stay, as in the game

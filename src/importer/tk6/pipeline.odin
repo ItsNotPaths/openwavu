@@ -34,6 +34,7 @@ Import :: struct {
 }
 
 // The game's files under usrdir -> the stock pack's files under root.
+// (hole tk6-sound :tags (tk6 importer audio) :sev gap) no sound or music import; the converter already keeps full voice words.
 run :: proc(usrdir, root: string, progress: ^Progress = nil) -> (err: string) {
 	game, opened := tk6.open_game_files(usrdir)
 	if !opened do return fmt.tprintf("cannot open the game files in %s", usrdir)
@@ -106,7 +107,7 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	banks, unpacked := tk5.sections(container, context.temp_allocator)
 	if !unpacked || len(banks) == 0 do return fmt.tprintf("%s: anim container did not read", id)
 	write_bank(im, id, banks[0])
-	// (hole tk6-hand-face-camera-banks :tags importer :sev polish) container sections 1, 2 and 5 (hands, face, move cameras) are not imported.
+	// (hole tk6-hand-face-camera-banks :tags (tk6 importer) :sev polish) container sections 1, 2 and 5 (hands, face, move cameras) are not imported.
 
 	body_data, has_body := read_file(im, tk6.body_file(character))
 	if !has_body do return fmt.tprintf("%s: no body model", id)
@@ -118,7 +119,7 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	tk5_convert.write_skeleton_rows(w, id, skeleton)
 	idle, has_idle := idle_anim(im, motbin, banks[0])
 	if !has_idle do return fmt.tprintf("%s: standing idle did not read", id)
-	// (hole tk6-body-rows :tags importer :sev polish) hurt and push radii, points and gaze are TK5's defaults, not read from TK6.
+	// (hole tk6-body-rows :tags (tk6 importer) :sev polish) hurt and push radii, points and gaze are TK5's defaults, not read from TK6.
 	tk5_convert.write_body(w, id, character.number, tk5_convert.head_top(&skeleton, idle))
 	tk5_convert.write_body_points(w, id, -1)
 	tk5_convert.write_gaze(w, id, -1)
@@ -139,6 +140,7 @@ idle_anim :: proc(im: ^Import, motbin: tk6.Motbin, own_bank: []byte) -> (idle: t
 }
 
 // The body model and the costume's parts. The body model's part is the costume's own: it hides the meshes the parts cover.
+// (hole tk6-costumes :tags (tk6 importer) :sev polish) only costume 1 is imported; the 2P parts are mapped.
 import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone: tk5.Skeleton) {
 	w := &im.w
 	id := character.id
@@ -179,6 +181,7 @@ import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone
 
 // One model file as parts/<owner>/<part>.glb on its own skeleton (the body's bones, then its cloth joints), and its
 // part row. Its textures are its own and the first set of each colour file after it [guess: the default colour].
+// (hole tk6-physics :tags (tk6 importer) :sev polish) ties and cloth flaps are rigid (user: no physics for now); model section 3 is the swing data, unread.
 write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: int) -> (first_mesh_node: int, ok: bool) {
 	sections := tk6.sections(read_file(im, file) or_return, context.temp_allocator) or_return
 	if len(sections) <= tk6.MODEL_BONES do return
@@ -201,7 +204,9 @@ write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: 
 }
 
 // The six layers as one glb, each placed by its nodes, and the walls and floor.
-// (hole tk6-stage-look :tags importer :sev polish) stage blend modes, layer draw order, node anims (gyas) and the effect list are not read.
+// (hole tk6-stage-look :tags (tk6 importer) :sev polish) stage blend modes, layer draw order, node anims (gyas) and the effect list are not read.
+// (hole tk6-stage-floor :tags (tk6 importer) :sev gap) one flat floor polygon over the wall bounds; the flor file and the start points are not read, so the sim's fallback line places the fighters.
+// (hole tk6-floor-breaks :tags (tk6 importer) :sev gap) floor and wall breaks are not imported; they look like stage objects (properties touch them), not fighter code [guess].
 import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 	textures := make(tk5_convert.Textures, context.temp_allocator)
 	meshes: [dynamic]tk5.Mesh
@@ -237,6 +242,7 @@ import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 }
 
 // Each new hash of owner as a texture row. Returns the file of every hash, written now or before.
+// (hole tk6-face-white :tags (tk6 importer look) :sev gap) Kazuya's face renders solid white; cause not looked at.
 write_textures :: proc(im: ^Import, owner: string, textures: tk5_convert.Textures) -> (files: tk5_convert.Texture_Files) {
 	files = make(tk5_convert.Texture_Files, context.temp_allocator)
 	if !make_dir(join(im.root, "textures", owner)) {

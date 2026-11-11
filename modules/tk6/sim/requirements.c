@@ -403,6 +403,7 @@ static bool opponent_control_is(Ask ask) {  // opponent's control type is the pa
     return t6_input_control_is(&ask.opponent->input, ask.param);
 }
 
+// (hole tk6-costume-variant-table :tags (tk6 sim) :sev polish) this is the TK5 table; TK6's 102-entry table is not extracted.
 // 155: a costume variant, by costume (other values read record 0).
 enum { COSTUMES = 86 };
 static const int16_t COSTUME_VARIANT[COSTUMES] = {

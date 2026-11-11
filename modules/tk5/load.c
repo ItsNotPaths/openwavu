@@ -491,6 +491,7 @@ static void sequence_bytes(const Sequences *counted, size_t *sequences, size_t *
 
 static constexpr enum T5TransitionClass TRANSITION_CLASS_PASS = 9;  // an entry of this class does not end the cancel scan
 
+// (hole tk5-load-address :tags tk5mod :sev polish) the comment below names a game address; clean room wants it gone.
 // T5Cancel.option as the game's loader computes it (0xc8508): from the requirement ids, the command and the transition.
 static uint16_t cancel_option(const T5Motbin *motbin, const T5Cancel *cancel) {
     uint16_t option = cancel->command.code || cancel->command.buttons ? T5_OPTION_INPUT : T5_OPTION_NO_INPUT;

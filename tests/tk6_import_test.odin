@@ -64,6 +64,7 @@ build_pose_tool :: proc() -> bool {
 
 // Kazuya's standing idle stands: head over chest over hips over feet, feet on the floor, and within a few mm of TK5's
 // idle through the same pose code (the two games share this clip).
+// (hole tk6-scenario-tests :tags (tk6 sim) :sev gap) no scripted-input harness; must cover Kazuya counter hit d/f+2 into the just-frame electric, and d/f+1,2 bounding on hit two while d/f+1 alone gives no airborne status, one bound per combo.
 @(test)
 tk6_idle_stands :: proc(t: ^testing.T) {
 	pack_dir, imported := tk6_pack(t)

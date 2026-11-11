@@ -28,6 +28,7 @@ Converter :: struct {
 Kept :: []u32
 
 // The motbin in sim numbers: the same tables and records; ids rewritten, rows with no sim meaning dropped.
+// (hole tk6-kazuya-ss12-neutral :tags (tk6 importer fighter-detail) :sev gap) Kazuya's sidestep 1+2 (same move as TK5) holds a neutral pose for its whole length; cause unknown, no anim of his is static, so check its anim id, transition and motion code.
 sim_motbin :: proc(motbin: formats.Motbin, fallbacks: ^Fallbacks) -> (sim: formats.Motbin) {
 	converter := Converter{motbin = motbin, fallbacks = fallbacks}
 	sim = motbin

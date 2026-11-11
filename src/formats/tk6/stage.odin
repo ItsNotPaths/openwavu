@@ -11,6 +11,7 @@ Stage :: struct {
 }
 
 // The stage list comes later.
+// (hole tk6-stages :tags (tk6 importer) :sev gap) only stage_00, name unknown; the next one starts at file 2166 if the +42 spacing holds per stage.
 STAGES :: [?]Stage{{"stage_00", 2124}}
 
 STAGE_LAYERS :: 6

@@ -177,6 +177,7 @@ static int32_t at_least_one(int16_t damage, int32_t scaled) {
 
 // Standing, crouching or starting a jump on the ground: not in a hit reaction, knockdown, fallen or juggle state.
 // Only the air window counts as off the ground here, not the launched state bit.
+// (hole tk6-hit-flags :tags (tk6 sim) :sev polish) two new TK6 hit flags (bits 20, 21) are open, and what reads the damage total without the clean hit bonus.
 static bool on_ground_stance(const T6World *w, const T6Fighter *defender, const T6Fighter *attacker, uint32_t flags) {
     (void)w, (void)attacker, (void)flags;
     uint8_t class_ = defender->state_class;
