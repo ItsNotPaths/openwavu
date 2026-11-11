@@ -89,7 +89,7 @@ step :: proc(im: ^Import) {
 import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Roster_Entry) -> (err: string) {
 	w := &im.w
 	id := character.id
-	db.insert(w, "character", id, character.name, i64(character.number), i64(character.number))
+	db.insert(w, "character", id, character.name, i64(character.chara), i64(character.model))
 
 	motbin_index := -1
 	for entry in roster do if entry.name == character.motbin do motbin_index = entry.index
@@ -121,7 +121,8 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	idle, has_idle := idle_anim(im, motbin, banks[0])
 	if !has_idle do return fmt.tprintf("%s: standing idle did not read", id)
 	// (hole tk6-body-rows :tags (tk6 importer) :sev polish) hurt and push radii, points and gaze are TK5's defaults, not read from TK6.
-	tk5_convert.write_body(w, id, character.number, tk5_convert.head_top(&skeleton, idle))
+	body_model := character.model == tk5_convert.MODEL_JINPACHI ? 0 : character.model  // TK6 has no Jinpachi: 34 is Bob
+	tk5_convert.write_body(w, id, body_model, tk5_convert.head_top(&skeleton, idle))
 	tk5_convert.write_body_points(w, id, -1)
 	tk5_convert.write_gaze(w, id, -1)
 

@@ -8,29 +8,31 @@ import tk5 "../tk5"
 Character :: struct {
 	id, name: string,
 	motbin:   string,  // the move set's header name
-	number:   int,     // the game's character number: picks the body and part files
+	number:   int,     // file number: picks the body and part files
+	chara:    int,     // P+0x54, what "own character is" compares (FUN_0023ade0 table, row word 3); Mokujin 0 until a round gives him a set
+	model:    int,     // P+0x58, what "own model id is" compares (row word 0)
 }
 
 // The playable roster, in character number order. Panda's move set is "[1]", NANCY-MI847J's "[Bonus]"; each "[NAME]1"
 // after a move set has more moves [guess: the scenario campaign copy].
 // (hole tk6-mokujin-moves :tags (tk6 importer) :sev gap) Mokujin's own move set holds 54 moves; the game gives him another character's each round, unread.
 CHARACTERS :: [?]Character{
-	{"paul", "Paul Phoenix", "[Paul]", 0}, {"law", "Marshall Law", "[LAW]", 1}, {"lei", "Lei Wulong", "[Lei_Wulong]", 2},
-	{"king", "King", "[KING]", 3}, {"yoshimitsu", "Yoshimitsu", "[YOSHIMITSU]", 4}, {"nina", "Nina Williams", "[NINA]", 5},
-	{"hwoarang", "Hwoarang", "[HWOARANG]", 6}, {"xiaoyu", "Ling Xiaoyu", "[Lin_Xiaoyu]", 7},
-	{"christie", "Christie Monteiro", "[CHRISTIE]", 8}, {"jin", "Jin Kazama", "[JIN]", 9}, {"julia", "Julia Chang", "[JULIA]", 10},
-	{"kuma", "Kuma", "[Kuma]", 11}, {"panda", "Panda", "[1]", 12}, {"bryan", "Bryan Fury", "[Bryan]", 13},
-	{"heihachi", "Heihachi Mishima", "[HEIHACHI]", 14}, {"kazuya", "Kazuya Mishima", "[KAZUYA]", 15},
-	{"lee", "Lee Chaolan", "[LEE]", 16}, {"steve", "Steve Fox", "[Steve_Fox]", 17}, {"marduk", "Craig Marduk", "[MARDUK]", 18},
-	{"mokujin", "Mokujin", "Mokujin", 19}, {"eddy", "Eddy Gordo", "[EDDY]", 20}, {"jack6", "Jack-6", "[Jack]", 21},
-	{"roger", "Roger Jr.", "[ROGER]", 22}, {"anna", "Anna Williams", "[ANNA]", 23}, {"wang", "Wang Jinrei", "[Wang]", 24},
-	{"ganryu", "Ganryu", "[GANRYU]", 25}, {"asuka", "Asuka Kazama", "[Asuka]", 26}, {"bruce", "Bruce Irvin", "[BRUCE]", 27},
-	{"baek", "Baek Doo San", "[BAEK_DOO_SAN]", 28}, {"devil_jin", "Devil Jin", "[DEVIL_JIN]", 29}, {"raven", "Raven", "[RAVEN]", 30},
-	{"feng", "Feng Wei", "[FENG]", 31}, {"armor_king", "Armor King", "[ARMOR_KING]", 32}, {"lili", "Lili", "[EMILIE]", 33},
-	{"dragunov", "Sergei Dragunov", "[Dragunov]", 34}, {"bob", "Bob", "[BOB_SATSUMA]", 35}, {"zafina", "Zafina", "[ZAFINA]", 36},
-	{"miguel", "Miguel Caballero Rojo", "[Miguel]", 37}, {"leo", "Leo", "[Eleonor]", 38}, {"azazel", "Azazel", "[AZAZEL]", 39},
-	{"lars", "Lars Alexandersson", "[Lars]", 40}, {"alisa", "Alisa Bosconovitch", "[Alisa]", 41},
-	{"nancy", "NANCY-MI847J", "[Bonus]", 42},
+	{"paul", "Paul Phoenix", "[Paul]", 0, 0, 0}, {"law", "Marshall Law", "[LAW]", 1, 1, 1}, {"lei", "Lei Wulong", "[Lei_Wulong]", 2, 2, 2},
+	{"king", "King", "[KING]", 3, 3, 3}, {"yoshimitsu", "Yoshimitsu", "[YOSHIMITSU]", 4, 4, 4}, {"nina", "Nina Williams", "[NINA]", 5, 5, 5},
+	{"hwoarang", "Hwoarang", "[HWOARANG]", 6, 6, 6}, {"xiaoyu", "Ling Xiaoyu", "[Lin_Xiaoyu]", 7, 7, 7},
+	{"christie", "Christie Monteiro", "[CHRISTIE]", 8, 8, 8}, {"jin", "Jin Kazama", "[JIN]", 9, 9, 9}, {"julia", "Julia Chang", "[JULIA]", 10, 10, 10},
+	{"kuma", "Kuma", "[Kuma]", 11, 11, 11}, {"panda", "Panda", "[1]", 12, 32, 11}, {"bryan", "Bryan Fury", "[Bryan]", 13, 12, 12},
+	{"heihachi", "Heihachi Mishima", "[HEIHACHI]", 14, 13, 13}, {"kazuya", "Kazuya Mishima", "[KAZUYA]", 15, 14, 14},
+	{"lee", "Lee Chaolan", "[LEE]", 16, 15, 15}, {"steve", "Steve Fox", "[Steve_Fox]", 17, 16, 16}, {"marduk", "Craig Marduk", "[MARDUK]", 18, 17, 17},
+	{"mokujin", "Mokujin", "Mokujin", 19, 0, 18}, {"eddy", "Eddy Gordo", "[EDDY]", 20, 33, 33}, {"jack6", "Jack-6", "[Jack]", 21, 18, 19},
+	{"roger", "Roger Jr.", "[ROGER]", 22, 19, 20}, {"anna", "Anna Williams", "[ANNA]", 23, 20, 21}, {"wang", "Wang Jinrei", "[Wang]", 24, 21, 22},
+	{"ganryu", "Ganryu", "[GANRYU]", 25, 22, 23}, {"asuka", "Asuka Kazama", "[Asuka]", 26, 23, 24}, {"bruce", "Bruce Irvin", "[BRUCE]", 27, 24, 25},
+	{"baek", "Baek Doo San", "[BAEK_DOO_SAN]", 28, 25, 26}, {"devil_jin", "Devil Jin", "[DEVIL_JIN]", 29, 26, 27}, {"raven", "Raven", "[RAVEN]", 30, 27, 28},
+	{"feng", "Feng Wei", "[FENG]", 31, 28, 29}, {"armor_king", "Armor King", "[ARMOR_KING]", 32, 29, 30}, {"lili", "Lili", "[EMILIE]", 33, 30, 31},
+	{"dragunov", "Sergei Dragunov", "[Dragunov]", 34, 31, 32}, {"bob", "Bob", "[BOB_SATSUMA]", 35, 34, 34}, {"zafina", "Zafina", "[ZAFINA]", 36, 35, 35},
+	{"miguel", "Miguel Caballero Rojo", "[Miguel]", 37, 36, 36}, {"leo", "Leo", "[Eleonor]", 38, 37, 37}, {"azazel", "Azazel", "[AZAZEL]", 39, 38, 38},
+	{"lars", "Lars Alexandersson", "[Lars]", 40, 40, 40}, {"alisa", "Alisa Bosconovitch", "[Alisa]", 41, 41, 41},
+	{"nancy", "NANCY-MI847J", "[Bonus]", 42, 39, 39},
 }
 
 COMMON_ANIMS :: 147277  // the shared MOTA bank (0x8000 anim ids)

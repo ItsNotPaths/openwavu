@@ -28,8 +28,7 @@ Converter :: struct {
 Kept :: []u32
 
 // The motbin in sim numbers: the same tables and records; ids rewritten, rows with no sim meaning dropped.
-// (hole tk6-kazuya-ss12-neutral :tags (tk6 importer fighter-detail) :sev gap) Kazuya's sidestep 1+2 (same move as TK5) holds a neutral pose for its whole length; cause unknown, no anim of his is static, so check its anim id, transition and motion code.
-// (hole tk6-heihachi-hellsweep-grounded :tags (tk6 importer fighter-detail) :sev gap) Heihachi's 1+2, then his hellsweep on the opponent lying after it: the sweep passes through instead of hitting the grounded opponent; check its hit level and the grounded-hit requirements and reaction.
+// (hole tk6-heihachi-hellsweep-grounded :tags (tk6 importer fighter-detail) :sev gap) Heihachi's 1+2, then his hellsweep on the opponent lying after it: the sweep sometimes passes through the grounded opponent (no hit, no damage; inconsistent, any opponent, input as fast as allowed); the sweep, the victim's launched and lying chain and the down-hit reactions all match TK5's rows, and hit.c is the same, so check timing (the 56-frame launched move) and the hurtboxes.
 sim_motbin :: proc(motbin: formats.Motbin, fallbacks: ^Fallbacks) -> (sim: formats.Motbin) {
 	converter := Converter{motbin = motbin, fallbacks = fallbacks}
 	sim = motbin
