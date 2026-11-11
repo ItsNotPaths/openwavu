@@ -40,6 +40,7 @@ Draw :: struct {
 	scenery: bool,  // fades where it hides a fighter
 	blend:   bool,  // drawn over what is behind, after the opaque draws, by draw_order then far to near
 	draw_order: int,  // stage layer sort value, lower first; 0 for the rest
+	sort_bias: f32,   // metres nearer the camera it sorts among blended draws
 	blend_state: Blend_State,
 	unlit:   bool,  // base color only, no scene lights
 	double_sided: bool,  // false: back faces culled
@@ -263,7 +264,7 @@ draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: 
 	Blended :: struct {
 		index:      int,
 		draw_order: int,
-		distance:   f32,  // of its centre from the camera
+		distance:   f32,  // of its centre from the camera, less its sort bias
 	}
 	blended := make([dynamic]Blended, context.temp_allocator)
 	for draw, index in draws {
@@ -273,7 +274,7 @@ draw_3d :: proc(gpu: ^Gpu, command: ^sdl.GPUCommandBuffer, size: [2]u32, scene: 
 		}
 		centre := draw.mesh.centre
 		if len(draw.joints) > 0 do centre = (draw.joints[0] * [4]f32{centre.x, centre.y, centre.z, 1}).xyz
-		append(&blended, Blended{index, draw.draw_order, linalg.distance(centre, scene.camera.position)})
+		append(&blended, Blended{index, draw.draw_order, linalg.distance(centre, scene.camera.position) - draw.sort_bias})
 	}
 	slice.sort_by(blended[:], proc(first, second: Blended) -> bool {
 		if first.draw_order != second.draw_order do return first.draw_order < second.draw_order

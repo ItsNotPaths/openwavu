@@ -29,6 +29,7 @@ Model_Node :: struct {
 	skin:     int,  // -1: not skinned
 	bone:     int,  // its joint in the first skin, which a scene node's bones pose; -1: none
 	draw_order: int,  // extras draw_order: for its subtree, 0 for none
+	sort_bias: f32,   // extras sort_bias: metres its blended draws sort nearer the camera, this node only
 }
 
 Primitive :: struct {
@@ -112,8 +113,8 @@ model_fill :: proc(gpu: ^Gpu, upload: Upload, assets: ^Assets, model: ^Model, fi
 			mesh = file_node.mesh != nil ? int(cgltf.mesh_index(file, file_node.mesh)) : -1,
 			skin = file_node.skin != nil ? int(cgltf.skin_index(file, file_node.skin)) : -1,
 			bone = -1,
-			draw_order = draw_order(file_node.extras),
 		}
+		model.nodes[index].draw_order, model.nodes[index].sort_bias = sort_extras(file_node.extras)
 		cgltf.node_transform_local(&file_node, cast([^]f32)&model.nodes[index].local)
 	}
 	scene := file.scene
@@ -203,10 +204,10 @@ material_extras :: proc(extras: cgltf.extras_t) -> (read: Material_Extras) {
 }
 
 @(private = "file")
-draw_order :: proc(extras: cgltf.extras_t) -> int {
-	read: struct {draw_order: int}
-	if extras.data == nil || json.unmarshal_string(string(cstring(extras.data)), &read, allocator = context.temp_allocator) != nil do return 0
-	return read.draw_order
+sort_extras :: proc(extras: cgltf.extras_t) -> (draw_order: int, sort_bias: f32) {
+	read: struct {draw_order: int, sort_bias: f32}
+	if extras.data == nil || json.unmarshal_string(string(cstring(extras.data)), &read, allocator = context.temp_allocator) != nil do return
+	return read.draw_order, read.sort_bias
 }
 
 // A material extension's JSON into out; false when the material has none.
