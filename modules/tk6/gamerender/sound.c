@@ -1,10 +1,10 @@
 // Stock TK6 presenter (gamerender.wasm): plays the sound, voice, announcer and music cues of the view's cue ring, each
-// cue number once. Outside rollback.
+// cue number once. Outside rollback. Moves and voices name a sound by its sound number, the announcer by its record name
+// (sound_name).
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "gamerender/face.h"
 #include "gamerender/presenter.h"
 #include "ow_sound.h"
 #include "sim/constants.h"
@@ -13,48 +13,47 @@
 
 
 enum {
-    SOUNDS_MAX = 512,
+    SOUNDS_MAX = 2048,
+    NAME_BYTES = 48,
     PATH_BYTES = 64,
-    VOICE_KINDS = 8,
+    VOICE_KINDS = 10,
     VOICE_ROWS_MAX = 32,
-    SPECIALS_MAX = 18,
     MUSIC_FADE_SECONDS = 3,
     FRAMES_PER_SECOND = 60,
 };
+enum { NUMBER_MASK = 0xfff };  // the game reads a voice word's sound number from its low 12 bits
+enum { ANY_ROW_KIND = 8, ANY_ROW_KIND_TOO = 9 };
+enum { SHARED = -1 };  // the owner of the shared and the stage's sounds
+enum { BODY_FALL_SOUND = 27 };
+enum { WINS_DELAY = 64 };  // frames from the winner's name to "wins" [guess: TK5's average]
 
-typedef enum { BANK_COMMON, BANK_ROUND_CALLS, BANK_STAGE, BANK_VOICES_1, BANK_VOICES_2, BANK_STREAM_1, BANK_STREAM_2 } Bank;
-
-// The announcer's records: round_calls, then common.
-enum { ROUND_CALL_FIRST = 9, FINAL_ROUND = 19 };
-static const int LINE_RECORD[] = {
-    [T6_LINE_FIGHT] = 37, [T6_LINE_KO] = 64, [T6_LINE_TIME_UP] = 45, [T6_LINE_DOUBLE_KO] = 42,
-    [T6_LINE_PERFECT] = 39, [T6_LINE_GREAT] = 38, [T6_LINE_DRAW] = 46,
+static const char *const LINE_NAME[] = {
+    [T6_LINE_FINAL_ROUND] = "syvo_fnl_round", [T6_LINE_FIGHT] = "syvo_fight", [T6_LINE_KO] = "syvo_ko",
+    [T6_LINE_TIME_UP] = "syvo_timeup", [T6_LINE_DOUBLE_KO] = "syvo_wko", [T6_LINE_PERFECT] = "syvo_prfct",
+    [T6_LINE_GREAT] = "syvo_great", [T6_LINE_DRAW] = "syvo_draw",
 };
-enum { WINS_RECORD = 47, SELECTOR_9_RECORD = 20 };
 
-// Voice property ids; their value is a voice word (cue.h).
+// Voice property ids; their value is a voice word (cue.h), the stream voice's a sound number.
 enum { VOICE_COMMON = T6_PROPERTY_BASE + 0x159, VOICE_SELF = T6_PROPERTY_BASE + 0x15a, VOICE_TARGET = T6_PROPERTY_BASE + 0x15b,
        STREAM_VOICE = T6_PROPERTY_BASE + 0x15e };
 enum { MOVE_VOICE_KIND_FIRST = 5 };  // selectors 2..4: voice kinds 5..7
 
 typedef struct {
-    Bank bank;
-    int record;
+    int number;  // 0: none
+    int owner;   // the side whose banks hold it, or SHARED
+    char name[NAME_BYTES];
     char file[PATH_BYTES];
     OwSoundTone tone;
 } Sound;
 
 typedef struct {
-    int record;     // in the costume's voices bank
+    int number;
     uint16_t face;  // VOICE_FACE_CLIP + clip, a face value, or VOICE_FACE_NONE
 } VoiceRow;
 
 typedef struct {
-    int voice;  // voice character; -1: none
     VoiceRow kind_rows[VOICE_KINDS][VOICE_ROWS_MAX];
     int kind_counts[VOICE_KINDS];
-    int specials[SPECIALS_MAX];  // record per special sound id; -1: none
-    int name, wins_delay;        // the announcer's name of it, in its voices bank; frames to "wins"
 } Speaker;
 
 static Sound sounds[SOUNDS_MAX];
@@ -72,39 +71,30 @@ static sqlite3_stmt *query(sqlite3 *db, const char *sql) {
     return sqlite3_prepare_v2(db, sql, -1, &rows, NULL) == SQLITE_OK ? rows : NULL;
 }
 
-static void copy_text(char *to, const unsigned char *text) { snprintf(to, PATH_BYTES, "%s", text ? (const char *)text : ""); }
+static void copy_text(char *to, size_t size, const unsigned char *text) { snprintf(to, size, "%s", text ? (const char *)text : ""); }
 
 // The game's dB, cents and degrees as a tone.
 static OwSoundTone tone_of(double decibels, int cents, double degrees) {
     return (OwSoundTone){powf(10, (float)decibels / 20), sinf(RAD_FROM_DEG((float)degrees)), powf(2, (float)cents / 1200)};
 }
 
-static void load_bank(sqlite3 *db, Bank bank, const char *name) {
-    sqlite3_stmt *rows = query(db, "SELECT idx, file, volume, pitch, pan FROM sound WHERE bank = ?1");
+// The sounds of the banks under folder (shared, a character, a stage).
+static void load_banks(sqlite3 *db, const char *folder, int owner) {
+    sqlite3_stmt *rows = query(db, "SELECT sound_name.number, sound_name.name, sound.file, sound.volume, sound.pitch, sound.pan "
+                                   "FROM sound JOIN sound_name USING (bank, idx) WHERE bank GLOB ?1");
     if (!rows) return;
-    sqlite3_bind_text(rows, 1, name, -1, SQLITE_STATIC);
+    char pattern[PATH_BYTES];
+    snprintf(pattern, sizeof pattern, "%s/*", folder);
+    sqlite3_bind_text(rows, 1, pattern, -1, SQLITE_TRANSIENT);
     while (sound_count < SOUNDS_MAX && sqlite3_step(rows) == SQLITE_ROW) {
         Sound *sound = &sounds[sound_count++];
-        sound->bank = bank;
-        sound->record = sqlite3_column_int(rows, 0);
-        copy_text(sound->file, sqlite3_column_text(rows, 1));
-        sound->tone = tone_of(sqlite3_column_double(rows, 2), sqlite3_column_int(rows, 3), sqlite3_column_double(rows, 4));
+        sound->number = sqlite3_column_int(rows, 0);
+        sound->owner = owner;
+        copy_text(sound->name, sizeof sound->name, sqlite3_column_text(rows, 1));
+        copy_text(sound->file, sizeof sound->file, sqlite3_column_text(rows, 2));
+        sound->tone = tone_of(sqlite3_column_double(rows, 3), sqlite3_column_int(rows, 4), sqlite3_column_double(rows, 5));
     }
     sqlite3_finalize(rows);
-}
-
-// The costume's part, whose name its banks carry.
-static bool costume_part(sqlite3 *db, const T6Loadout *loadout, char *part) {
-    sqlite3_stmt *rows = query(db, "SELECT part FROM costume_part WHERE character = ?1 AND costume = ?2 AND part NOT GLOB '*_lod'");
-    if (!rows) return false;
-    char costume[16];
-    snprintf(costume, sizeof costume, "%u", loadout->costume);
-    sqlite3_bind_text(rows, 1, loadout->character, -1, SQLITE_STATIC);
-    sqlite3_bind_text(rows, 2, costume, -1, SQLITE_STATIC);
-    bool found = sqlite3_step(rows) == SQLITE_ROW;
-    if (found) copy_text(part, sqlite3_column_text(rows, 0));
-    sqlite3_finalize(rows);
-    return found;
 }
 
 static int costume_voice(sqlite3 *db, const T6Loadout *loadout) {
@@ -119,38 +109,25 @@ static int costume_voice(sqlite3 *db, const T6Loadout *loadout) {
     return voice;
 }
 
-// Row n of kind k is the n-th row of the voice character with bit k.
+static void add_row(Speaker *speaker, int kind, VoiceRow row) {
+    if (speaker->kind_counts[kind] < VOICE_ROWS_MAX) speaker->kind_rows[kind][speaker->kind_counts[kind]++] = row;
+}
+
+// Row n of kind k is the n-th row of the voice character with bit k; kind 8 is every row.
 static void load_speaker(sqlite3 *db, Speaker *speaker, int voice) {
-    *speaker = (Speaker){.voice = voice, .name = -1};
-    memset(speaker->specials, -1, sizeof speaker->specials);
-    sqlite3_stmt *rows = query(db, "SELECT record, face, kinds FROM voice WHERE voice = ?1 ORDER BY idx");
-    if (rows) {
-        sqlite3_bind_int(rows, 1, voice);
-        while (sqlite3_step(rows) == SQLITE_ROW) {
-            VoiceRow row = {sqlite3_column_int(rows, 0), (uint16_t)sqlite3_column_int(rows, 1)};
-            int kinds = sqlite3_column_int(rows, 2);
-            for (int kind = 0; kind < VOICE_KINDS; kind++) {
-                if ((kinds >> kind & 1) && speaker->kind_counts[kind] < VOICE_ROWS_MAX) speaker->kind_rows[kind][speaker->kind_counts[kind]++] = row;
-            }
+    *speaker = (Speaker){};
+    sqlite3_stmt *rows = query(db, "SELECT number, face, kinds FROM voice WHERE voice = ?1 ORDER BY idx");
+    if (!rows) return;
+    sqlite3_bind_int(rows, 1, voice);
+    while (sqlite3_step(rows) == SQLITE_ROW) {
+        VoiceRow row = {sqlite3_column_int(rows, 0), (uint16_t)sqlite3_column_int(rows, 1)};
+        int kinds = sqlite3_column_int(rows, 2);
+        for (int kind = 0; kind < ANY_ROW_KIND; kind++) {
+            if (kinds >> kind & 1) add_row(speaker, kind, row);
         }
-        sqlite3_finalize(rows);
+        add_row(speaker, ANY_ROW_KIND, row);
     }
-    if ((rows = query(db, "SELECT id, record FROM special_sound WHERE voice = ?1"))) {
-        sqlite3_bind_int(rows, 1, voice);
-        while (sqlite3_step(rows) == SQLITE_ROW) {
-            int id = sqlite3_column_int(rows, 0);
-            if (id >= 0 && id < SPECIALS_MAX) speaker->specials[id] = sqlite3_column_int(rows, 1);
-        }
-        sqlite3_finalize(rows);
-    }
-    if ((rows = query(db, "SELECT own_record, wins_delay FROM voice_name WHERE voice = ?1"))) {
-        sqlite3_bind_int(rows, 1, voice);
-        if (sqlite3_step(rows) == SQLITE_ROW) {
-            speaker->name = sqlite3_column_int(rows, 0);
-            speaker->wins_delay = sqlite3_column_int(rows, 1);
-        }
-        sqlite3_finalize(rows);
-    }
+    sqlite3_finalize(rows);
 }
 
 static void load_music(sqlite3 *db, const char *stage) {
@@ -158,7 +135,7 @@ static void load_music(sqlite3 *db, const char *stage) {
     if (!rows) return;
     sqlite3_bind_text(rows, 1, stage, -1, SQLITE_STATIC);
     if (sqlite3_step(rows) == SQLITE_ROW) {
-        copy_text(music_file, sqlite3_column_text(rows, 0));
+        copy_text(music_file, sizeof music_file, sqlite3_column_text(rows, 0));
         music_loop_start = sqlite3_column_int64(rows, 1);
         music_loop_length = sqlite3_column_int64(rows, 2);
     }
@@ -167,18 +144,12 @@ static void load_music(sqlite3 *db, const char *stage) {
 
 void t6_sound_init(sqlite3 *db, const T6View *view) {
     ow_sound_skip_to(0);
-    load_bank(db, BANK_COMMON, "common");
-    load_bank(db, BANK_ROUND_CALLS, "round_calls");
-    load_bank(db, BANK_STAGE, view->stage);
+    sound_count = 0;
+    load_banks(db, "shared", SHARED);
+    load_banks(db, view->stage, SHARED);
     for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
         const T6Loadout *loadout = &view->fighters[side].loadout;
-        char part[PATH_BYTES], bank[PATH_BYTES + 16];
-        if (costume_part(db, loadout, part)) {
-            snprintf(bank, sizeof bank, "%s/voices", part);
-            load_bank(db, BANK_VOICES_1 + side, bank);
-            snprintf(bank, sizeof bank, "%s/stream_voices", part);
-            load_bank(db, BANK_STREAM_1 + side, bank);
-        }
+        load_banks(db, loadout->character, side);
         load_speaker(db, &speakers[side], costume_voice(db, loadout));
         ow_sound_channel_open(&voices[side], 1);
     }
@@ -187,89 +158,81 @@ void t6_sound_init(sqlite3 *db, const T6View *view) {
     ow_sound_channel_open(&announcer, 1);
 }
 
-static void play(Bank bank, int record, OwSoundChannel *channel) {
+static void play_sound(const Sound *sound, OwSoundChannel *channel) {
+    if (sound) ow_sound_play(channel, (OwStr){(uint32_t)strlen(sound->file), sound->file}, sound->tone);
+}
+
+static const Sound *numbered(int number) {
+    for (int index = 0; index < sound_count; index++) {
+        if (number > 0 && sounds[index].number == number) return &sounds[index];
+    }
+    return NULL;
+}
+
+// The first sound of owner with the name, or whose name starts with it when prefix.
+static const Sound *named(const char *name, int owner, bool prefix) {
     for (int index = 0; index < sound_count; index++) {
         const Sound *sound = &sounds[index];
-        if (sound->bank == bank && sound->record == record) {
-            ow_sound_play(channel, (OwStr){(uint32_t)strlen(sound->file), sound->file}, sound->tone);
+        bool fits = prefix ? strncmp(sound->name, name, strlen(name)) == 0 : strcmp(sound->name, name) == 0;
+        if (sound->owner == owner && fits) return sound;
+    }
+    return NULL;
+}
+
+static int side_of(T6Who who) { return who == T6_SIDE_1 ? 0 : who == T6_SIDE_2 ? 1 : -1; }
+
+// Row `row` of `kind`, with its face.
+static void play_row(int side, int kind, int row) {
+    VoiceRow voice = speakers[side].kind_rows[kind][row];
+    play_sound(numbered(voice.number), &voices[side]);
+    t6_scene_voice_face(playing, side, voice.face);
+}
+
+// The kind as the selector, the roll as the number: row roll % count of the kind.
+static void random_voice(int side, uint32_t value) {
+    int kind = (int)(value >> T6_VOICE_SELECTOR_SHIFT);
+    if (kind == ANY_ROW_KIND_TOO) kind = ANY_ROW_KIND;
+    if (kind >= VOICE_KINDS) return;
+    int count = speakers[side].kind_counts[kind];
+    if (count > 0) play_row(side, kind, (int)((value & NUMBER_MASK) % (uint32_t)count));
+}
+
+// A body falling to the floor, and the stage's own impact (water, snow) where it has one.
+static void stage_fall(void) {
+    play_sound(numbered(BODY_FALL_SOUND), &effects);
+    for (int index = 0; index < sound_count; index++) {
+        if (sounds[index].owner == SHARED && strstr(sounds[index].name, "_impact_")) {
+            play_sound(&sounds[index], &effects);
             return;
         }
     }
 }
 
-static int side_of(T6Who who) { return who == T6_SIDE_1 ? 0 : who == T6_SIDE_2 ? 1 : -1; }
-
-static void play_voice(int side, int record) {
-    if (record >= 0) play(BANK_VOICES_1 + side, record, &voices[side]);
-}
-
-// The record of row `row` of `kind`, and the face of that row of `face_kind`. The newest voice's face wins.
-static void play_row(int side, int kind, int face_kind, int row) {
-    play_voice(side, speakers[side].kind_rows[kind][row].record);
-    t6_scene_voice_face(playing, side, speakers[side].kind_rows[face_kind][row].face);
-}
-
-static void play_special(int side, int number) {
-    if (number < SPECIALS_MAX) play_voice(side, speakers[side].specials[number]);
-}
-
-// 0x815a / 0x815b: by selector, a common record, a move voice, a special sound or (9) the common record 20.
+// A voice word of a move clip or of 0x815a / 0x815b, by selector: a sound number, a row of a move voice kind, or the
+// stage's fall.
+// (hole tk6-voice-selectors :tags (tk6 audio) :sev gap) selectors 8 (special sounds, table 0x909f9c), 10 (the step, played at the foot by floor kind), 12 (an event) and 9's numbers 1 and 2 are not played.
 static void fighter_voice(int side, uint32_t value) {
-    int selector = (int)(value >> T6_VOICE_SELECTOR_SHIFT), number = (int)(value & T6_VOICE_NUMBER_MASK);
-    const Speaker *speaker = &speakers[side];
+    int selector = (int)(value >> T6_VOICE_SELECTOR_SHIFT), number = (int)(value & NUMBER_MASK);
     switch (selector) {
-    case 1: case 6: case 7: play(BANK_COMMON, number, &effects); break;
+    case 1: case 6: case 7: case 11: play_sound(numbered(number), &effects); break;
     case 2: case 3: case 4: {
-        int kind = MOVE_VOICE_KIND_FIRST + selector - 2, count = speaker->kind_counts[kind];
-        if (number <= 998 && count > 0) play_row(side, kind, kind, number % count);
+        int kind = MOVE_VOICE_KIND_FIRST + selector - 2, count = speakers[side].kind_counts[kind];
+        if (count > 0) play_row(side, kind, number % count);
         break;
     }
-    case 8: play_special(side, number); break;
-    case 9: if (number != 1) play(BANK_COMMON, SELECTOR_9_RECORD, &effects); break;
+    case 9: stage_fall(); break;
     default: break;
-    }
-}
-
-// A move's voice clip (sim/voice_clip.c): 2 and 3 entry n of the move voices, 6 a common record, 8 and 11 a special sound;
-// after the clips, 9 and 10 as in a property.
-static void clip_voice(int side, uint32_t value) {
-    int selector = (int)(value >> T6_VOICE_SELECTOR_SHIFT), number = (int)(value & T6_VOICE_NUMBER_MASK);
-    const int *counts = speakers[side].kind_counts;
-    switch (selector) {
-    case 2: case 3: {
-        int counted = MOVE_VOICE_KIND_FIRST + selector - 2;  // 3 counts kind 6 and takes its face, but plays kind 5, as the game does
-        if (number < counts[counted] && number < counts[MOVE_VOICE_KIND_FIRST]) play_row(side, MOVE_VOICE_KIND_FIRST, counted, number);
-        break;
-    }
-    case 6: play(BANK_COMMON, number, &effects); break;
-    case 8: case 11: play_special(side, number); break;
-    case 9: case 10: fighter_voice(side, value); break;
-    default: break;
-    }
-}
-
-// The kind as the selector, the roll as the number: row roll % count of the kind.
-static void random_voice(int side, uint32_t value) {
-    const Speaker *speaker = &speakers[side];
-    int kind = (int)(value >> T6_VOICE_SELECTOR_SHIFT), count = speaker->kind_counts[kind];
-    if (count > 0) play_row(side, kind, kind, (int)((value & T6_VOICE_NUMBER_MASK) % (uint32_t)count));
-}
-
-// voice character << 8 | record, from the stream bank of the fighter with that voice character.
-static void stream_voice(uint32_t value) {
-    for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
-        if (speakers[side].voice == (int)(value >> 8)) play(BANK_STREAM_1 + side, value & 0xff, &voices[side]);
     }
 }
 
 static void sound_cue(const T6Cue *cue) {
     int side = side_of(cue->owner);
     switch (cue->id) {
-    case T6_VOICE_CLIP: if (side >= 0) clip_voice(side, cue->value); break;
+    case T6_VOICE_CLIP: if (side >= 0) fighter_voice(side, cue->value); break;
     case T6_VOICE_RANDOM: if (side >= 0) random_voice(side, cue->value); break;
-    case VOICE_COMMON: if (cue->value >> T6_VOICE_SELECTOR_SHIFT != 0) play(BANK_COMMON, (int)(cue->value & T6_VOICE_NUMBER_MASK), &effects); break;
+    case VOICE_COMMON: if (cue->value >> T6_VOICE_SELECTOR_SHIFT != 0) play_sound(numbered((int)(cue->value & NUMBER_MASK)), &effects); break;
     case VOICE_SELF: case VOICE_TARGET: if (side >= 0) fighter_voice(side, cue->value); break;
-    case STREAM_VOICE: stream_voice(cue->value); break;
+    case STREAM_VOICE: if (side >= 0) play_sound(numbered((int)cue->value), &voices[side]); break;
     default: break;
     }
 }
@@ -277,16 +240,22 @@ static void sound_cue(const T6Cue *cue) {
 static void announce(const T6Cue *cue) {
     wins_in = -1;  // a newer line, such as the next round's call after a skipped win pose, drops a waiting "wins"
     switch ((T6Line)cue->id) {
-    case T6_LINE_ROUND: play(BANK_ROUND_CALLS, ROUND_CALL_FIRST + cue->value, &announcer); break;
-    case T6_LINE_FINAL_ROUND: play(BANK_ROUND_CALLS, FINAL_ROUND, &announcer); break;
+    case T6_LINE_ROUND: {
+        char name[NAME_BYTES];
+        snprintf(name, sizeof name, "syvo_round%02u", (unsigned)cue->value);
+        play_sound(named(name, SHARED, false), &announcer);
+        break;
+    }
     case T6_LINE_WINNER: {
         int side = side_of(cue->owner);
         if (side < 0) break;
-        play(BANK_VOICES_1 + side, speakers[side].name, &announcer);
-        wins_in = (float)speakers[side].wins_delay / FRAMES_PER_SECOND;
+        play_sound(named("syvo_name_", side, true), &announcer);
+        wins_in = (float)WINS_DELAY / FRAMES_PER_SECOND;
         break;
     }
-    default: play(BANK_COMMON, LINE_RECORD[cue->id], &announcer); break;
+    default:
+        if (cue->id < sizeof LINE_NAME / sizeof LINE_NAME[0] && LINE_NAME[cue->id]) play_sound(named(LINE_NAME[cue->id], SHARED, false), &announcer);
+        break;
     }
 }
 
@@ -308,6 +277,6 @@ void t6_sound_play(const T6View *view, float seconds) {
         else if (kind == T6_CUE_MUSIC) music_cue(&entry->cue);
         else sound_cue(&entry->cue);
     }
-    if (wins_in >= 0 && (wins_in -= seconds) < 0) play(BANK_COMMON, WINS_RECORD, &announcer);
+    if (wins_in >= 0 && (wins_in -= seconds) < 0) play_sound(named("syvo_wins", SHARED, false), &announcer);
     ow_music_step(&music, seconds);
 }

@@ -35,8 +35,8 @@ typedef enum : uint16_t {
 } T6Line;
 
 // The ids of the voice cues of the per-frame move sounds (voice_clip.c); a property's voice cue has the property id.
-// T6_VOICE_CLIP: a move's clip, with selectors 1 and 7 turned into 6 and the common record of the hit sound; after the clips, 6
-// a common record, 9 and 10 the stage sounds as in a property value. T6_VOICE_RANDOM: kind as the selector, a roll of
+// T6_VOICE_CLIP: a move's clip, with selectors 1 and 7 turned into 6 and the sound number of the hit sound; after the clips,
+// 6 a sound number, 9 and 10 the stage sounds as in a property value. T6_VOICE_RANDOM: kind as the selector, a roll of
 // 0..0xfff as the number; the presenter plays row roll % count of the kind.
 enum : uint16_t { T6_VOICE_CLIP = 0, T6_VOICE_RANDOM = 1 };
 
