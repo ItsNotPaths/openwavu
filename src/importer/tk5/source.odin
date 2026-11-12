@@ -42,13 +42,15 @@ find_game :: proc(inputs: []string, scratch: string) -> (game: Game, err: string
 			if os.is_dir(dir) do game_dir = dir
 		}
 	}
-	if game_dir == "" do return game, "no supported game found (Tekken 5 DR, NPUB30009)"
+	if game_dir == "" do return game, fmt.tprintf("no game found; openwavu needs:\n%s", formats.wanted_builds())
 
 	sfo, sfo_err := os.read_entire_file(join(game_dir, "PARAM.SFO"), context.temp_allocator)
 	if sfo_err != nil do return game, "cannot read PARAM.SFO"
+	title, _ := ps3.read_sfo_string(sfo, "TITLE")
 	title_id, _ := ps3.read_sfo_string(sfo, "TITLE_ID")
-	build, known := formats.find_build(title_id)
-	if !known do return game, fmt.tprintf("unsupported game %q", title_id)
+	version, _ := ps3.read_sfo_string(sfo, "VERSION")
+	build, known := formats.find_build(title_id, version)
+	if !known do return game, fmt.tprintf("this is %s %s version %s; openwavu needs:\n%s", title, title_id, version, formats.wanted_builds())
 
 	if rap_path == "" {
 		patterns := make([dynamic]string, context.temp_allocator)
@@ -67,7 +69,7 @@ find_game :: proc(inputs: []string, scratch: string) -> (game: Game, err: string
 	if self_err != nil || rap_err != nil do return game, "cannot read EBOOT.BIN or the .rap"
 	elf, decrypt_err := ps3.decrypt_self(self, rap)
 	if decrypt_err != "" do return game, decrypt_err
-	if sha256_hex(elf) != build.elf_sha256 do return game, fmt.tprintf("%s EBOOT is a different version (game update?)", title_id)
+	if sha256_hex(elf) != build.elf_sha256 do return game, fmt.tprintf("%s version %s has a changed EBOOT; openwavu needs it unchanged:\n%s", title_id, version, formats.wanted_builds())
 
 	game.build = build
 	game.dir = strings.clone(game_dir)

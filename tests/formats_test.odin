@@ -14,7 +14,7 @@ TK5 :: "../tk5decomp"
 read_table :: proc() -> (table: []formats.Entry, ok: bool) {
 	eboot, err := os.read_entire_file(TK5 + "/game/USRDIR/EBOOT.elf", context.temp_allocator)
 	if err != nil do return nil, false
-	build, _ := formats.find_build("NPUB30009")
+	build, _ := formats.find_build("NPUB30009", "01.01")
 	return formats.read_file_table(eboot, build)
 }
 

@@ -73,7 +73,7 @@ throw_cameras_name_real_tracks :: proc(t: ^testing.T) {
 	defer free_all(context.temp_allocator)
 	eboot, err := os.read_entire_file(TK5 + "/game/USRDIR/EBOOT.elf", context.temp_allocator)
 	if err != nil do return
-	build, _ := formats.find_build("NPUB30009")
+	build, _ := formats.find_build("NPUB30009", "01.01")
 	records, read := formats.read_throw_cameras(eboot, build, context.temp_allocator)
 	if !testing.expect(t, read, "throw camera table did not read") do return
 	categories := map[int]bool{}

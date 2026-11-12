@@ -120,7 +120,7 @@ Archive :: struct {
 open_archive :: proc() -> (a: Archive, ok: bool) {
 	eboot, err := os.read_entire_file(TK5 + "/game/USRDIR/EBOOT.elf", context.temp_allocator)
 	if err != nil do return {}, false
-	build, _ := formats.find_build("NPUB30009")
+	build, _ := formats.find_build("NPUB30009", "01.01")
 	a.table = formats.read_file_table(eboot, build) or_return
 	f, open_err := os.open(TK5 + "/game/USRDIR/T55DATA1.BIN")
 	if open_err != nil {

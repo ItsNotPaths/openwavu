@@ -1,9 +1,13 @@
 // Values that differ per game build. Add a row for each dump that is checked.
-// (hole other-builds :tags importer :sev polish) only NPUB30009 is mapped; EU/JP builds (NPEA00019, ...) are refused with no hint of what the files are.
 package tk5_formats
+
+import "core:fmt"
+import "core:strings"
 
 Build :: struct {
 	title_id:                string,
+	version:                 string,  // PARAM.SFO VERSION
+	name:                    string,  // shown when another build is given
 	elf_sha256:              string,  // decrypted EBOOT; a game update changes it
 	table_offset:            int,     // EBOOT file offset of the file table
 	table_count:             int,
@@ -23,6 +27,8 @@ Build :: struct {
 BUILDS :: [?]Build{
 	{  // vaddr 0x10043940
 		title_id                = "NPUB30009",
+		version                 = "01.01",
+		name                    = "TEKKEN 5 DARK RESURRECTION, US PSN (not the ONLINE edition)",
 		elf_sha256              = "6760ad3fb730deb1245d6b4cf293a34159500508b66e843cd62ae9cebfe0c155",
 		table_offset            = 0x3b3940,
 		table_count             = 2297,
@@ -40,9 +46,16 @@ BUILDS :: [?]Build{
 	},
 }
 
-find_build :: proc(title_id: string) -> (Build, bool) {
+find_build :: proc(title_id, version: string) -> (Build, bool) {
 	for b in BUILDS {
-		if b.title_id == title_id do return b, true
+		if b.title_id == title_id && b.version == version do return b, true
 	}
 	return {}, false
+}
+
+// The builds an import accepts, one per line, for refusal messages.
+wanted_builds :: proc() -> string {
+	lines := make([dynamic]string, context.temp_allocator)
+	for b in BUILDS do append(&lines, fmt.tprintf("  %s %s version %s", b.name, b.title_id, b.version))
+	return strings.join(lines[:], "\n", context.temp_allocator)
 }
