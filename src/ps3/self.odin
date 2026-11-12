@@ -1,5 +1,5 @@
-// SELF/NPDRM decryption, a port of RPCS3 rpcs3/Crypto/unself.cpp (64-bit ELF only).
-// The SCE keys ship in keys.odin. The user supplies the RAP (per-game license).
+// SELF decryption (disc and NPDRM), a port of RPCS3 rpcs3/Crypto/unself.cpp (64-bit ELF only).
+// The SCE keys ship in keys.odin. For a PSN game the user supplies the RAP (per-game license).
 package ps3
 
 import "core:bytes"
@@ -13,21 +13,23 @@ META_INFO_SIZE :: 0x40
 META_HEADER_SIZE :: 0x20
 META_SECTION_SIZE :: 0x30
 SUPPLEMENTAL_NPDRM :: 3
+PROGRAM_APP :: 4  // a disc game
+PROGRAM_NPDRM :: 8
 
 be16 :: proc(b: []byte, off: int) -> u16 {v, _ := endian.get_u16(b[off:], .Big); return v}
 be32 :: proc(b: []byte, off: int) -> u32 {v, _ := endian.get_u32(b[off:], .Big); return v}
 be64 :: proc(b: []byte, off: int) -> int {v, _ := endian.get_u64(b[off:], .Big); return int(v)}
 
-// EBOOT.BIN + RAP -> plain ELF, byte for byte what `rpcs3 --decrypt` writes.
+// EBOOT.BIN -> plain ELF, byte for byte what `rpcs3 --decrypt` writes. rap: a PSN game's license; nil for a disc game.
 decrypt_self :: proc(self: []byte, rap: []byte, allocator := context.allocator) -> (elf: []byte, err: string) {
 	if len(self) < 0x90 || string(self[:4]) != "SCE\x00" do return nil, "not a SELF file"
-	if len(rap) != 16 do return nil, "RAP file is not 16 bytes"
 	key_revision := be16(self, 0x08)
 	if key_revision & 0x8000 != 0 do return nil, "debug SELF is not supported"
 	meta_offset := int(be32(self, 0x0c)) + SCE_HEADER_SIZE
 	header_size := be64(self, 0x10)
 
 	ext := SCE_HEADER_SIZE  // extended header: u64 offsets
+	program_type := be32(self, be64(self, ext + 0x08) + 0x0c)
 	ehdr_offset := be64(self, ext + 0x10)
 	phdr_offset := be64(self, ext + 0x18)
 	shdr_offset := be64(self, ext + 0x20)
@@ -39,26 +41,29 @@ decrypt_self :: proc(self: []byte, rap: []byte, allocator := context.allocator) 
 	phoff, shoff := be64(ehdr, 0x20), be64(ehdr, 0x28)
 	phnum, shnum := int(be16(ehdr, 0x38)), int(be16(ehdr, 0x3c))
 
-	npdrm_key: [16]byte
-	license: u32 = 0
-	for off := supp_offset; off < supp_offset + supp_size; off += int(be32(self, off + 4)) {
-		if be32(self, off) == SUPPLEMENTAL_NPDRM do license = be32(self, off + 0x18)
-	}
-	switch license {
-	case 1, 2: npdrm_key = rap_to_klicensee(rap)
-	case 0: return nil, "SELF has no NPDRM header"
-	case: return nil, "free-license SELF is not supported"
-	}
-
-	key, ok := find_npdrm_key(key_revision)
+	if program_type != PROGRAM_APP && program_type != PROGRAM_NPDRM do return nil, "SELF type is not supported"
+	key, ok := find_self_key(program_type, key_revision)
 	if !ok do return nil, "no key for this SELF key revision"
 
-	// Metadata info: NPDRM layer (klicensee), then the SELF key.
+	// Metadata info: the NPDRM layer (klicensee) of a PSN game, then the SELF key.
 	info: [META_INFO_SIZE]byte
 	copy(info[:], self[meta_offset:])
-	klic := aes_ecb_decrypt_block(NP_KLIC_KEY[:], npdrm_key[:])
-	zero_iv: [16]byte
-	aes_cbc_decrypt(klic[:], zero_iv[:], info[:])
+	if program_type == PROGRAM_NPDRM {
+		if len(rap) != 16 do return nil, "RAP file is not 16 bytes"
+		license: u32 = 0
+		for off := supp_offset; off < supp_offset + supp_size; off += int(be32(self, off + 4)) {
+			if be32(self, off) == SUPPLEMENTAL_NPDRM do license = be32(self, off + 0x18)
+		}
+		switch license {
+		case 1, 2:
+		case 0: return nil, "SELF has no NPDRM header"
+		case: return nil, "free-license SELF is not supported"
+		}
+		npdrm_key := rap_to_klicensee(rap)
+		klic := aes_ecb_decrypt_block(NP_KLIC_KEY[:], npdrm_key[:])
+		zero_iv: [16]byte
+		aes_cbc_decrypt(klic[:], zero_iv[:], info[:])
+	}
 	erk, _ := hex.decode(transmute([]byte)key.erk, context.temp_allocator)
 	riv, _ := hex.decode(transmute([]byte)key.riv, context.temp_allocator)
 	aes_cbc_decrypt(erk, riv, info[:])
@@ -105,9 +110,11 @@ decrypt_self :: proc(self: []byte, rap: []byte, allocator := context.allocator) 
 	return out[:], ""
 }
 
-find_npdrm_key :: proc(revision: u16) -> (Self_Key, bool) {
-	for k in NPDRM_KEYS {
-		if k.revision == revision do return k, true
+find_self_key :: proc(program_type: u32, revision: u16) -> (Self_Key, bool) {
+	if program_type == PROGRAM_APP {
+		for key in APP_KEYS do if key.revision == revision do return key, true
+	} else {
+		for key in NPDRM_KEYS do if key.revision == revision do return key, true
 	}
 	return {}, false
 }
