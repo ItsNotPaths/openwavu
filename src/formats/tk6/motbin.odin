@@ -51,7 +51,7 @@ Motbin :: struct {
 	aliases_copy:                   [ALIAS_COUNT]u16,
 	unknown_12c:                    []byte,  // header 0x12c..0x174
 	tables:                         [Table]Table_Place,
-	banks:                          [BANK_COUNT]int,  // header 0x23c, from the start of the data
+	banks:                          [BANK_COUNT]int,  // header 0x23c: embedded banks of slots 1..6, from the start of the data
 	embedded_animation_count:       int,
 
 	reactions:          []tk5.Reaction,
@@ -291,6 +291,14 @@ read_motbin :: proc(data: []byte, allocator := context.allocator) -> (motbin: Mo
 	records = table(&motbin, data, .Table_24, &motbin.table_24) or_return
 	for &entry, number in motbin.table_24 do entry = {tk5.be_u32(records, number * 8), tk5.be_u32(records, number * 8 + 4)}
 	return motbin, true
+}
+
+// The embedded bank that pairs with container section `section` (tk5.BANK_HANDS, BANK_FACE, BANK_CAMERAS): header slot
+// `section`, which is banks[section - 1]. tk6decomp docs/data.md "Hands, face and move cameras".
+embedded_bank :: proc(motbin: Motbin, data: []byte, section: int) -> (bank: []byte, ok: bool) {
+	start := motbin.banks[section - 1]
+	if start + 4 > len(data) do return
+	return data[start:], true
 }
 
 // Animation count of the MOTA bank at `start`: "MOTA", u32, u32 offset table start (0x14), u32 count.

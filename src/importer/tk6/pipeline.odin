@@ -111,7 +111,11 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	if !unpacked || len(banks) == 0 do return fmt.tprintf("%s: anim container did not read", id)
 	if !bank_fits(motbin, banks[0]) do return fmt.tprintf("%s: anim container %d does not fit the move set", id, container_index)
 	write_bank(im, id, banks[0])
-	// (hole tk6-hand-face-camera-banks :tags (tk6 importer) :sev polish) container sections 1, 2 and 5 (hands, face, move cameras) are not imported.
+	hand_poses, has_hand_poses := tk6.embedded_bank(motbin, data, tk5.BANK_HANDS)
+	if !has_hand_poses || len(banks) <= tk5.BANK_HANDS do return fmt.tprintf("%s: no hand banks", id)
+	write_hand_bank(im, fmt.tprintf("%s/hand_poses", id), hand_poses)
+	if !tk5.empty_bank(banks[tk5.BANK_HANDS]) do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", id), banks[tk5.BANK_HANDS])  // Mokujin's is empty
+	// (hole tk6-face-camera-banks :tags (tk6 importer) :sev polish) the face banks (embedded slot and container section 2) and the move cameras (section 5) are not imported.
 
 	body_data, has_body := read_file(im, tk6.body_file(character))
 	if !has_body do return fmt.tprintf("%s: no body model", id)
@@ -351,6 +355,28 @@ write_bank :: proc(im: ^Import, owner: string, data: []byte) {
 		}
 		written[start] = {file, anim.frames}
 		db.insert(&im.w, "anim", owner, i64(index), i64(anim.frames), file)
+	}
+}
+
+// Every clip of a hand bank (TK5's layout) as anims/<owner>/<idx>.anim. The pose bank's clip 0 is the pose library: frame i = pose i.
+write_hand_bank :: proc(im: ^Import, owner: string, data: []byte) {
+	bank, ok := tk5.read_hand_bank(data)
+	if !ok {
+		fail(im, "%s: hand bank did not read", owner)
+		return
+	}
+	if !make_dir(join(im.root, "anims", owner)) {
+		fail(im, "cannot create anims/%s", owner)
+		return
+	}
+	for index in 0 ..< bank.count {
+		frames, decoded := tk5.read_hand_clip(bank, index, context.temp_allocator)
+		file := fmt.tprintf("anims/%s/%d.anim", owner, index)
+		if !decoded || !tk5_convert.write_hand_anim(join(im.root, file), frames) {
+			fail(im, "%s: hand clip %d did not convert", owner, index)
+			continue
+		}
+		db.insert(&im.w, "anim", owner, i64(index), i64(len(frames)), file)
 	}
 }
 

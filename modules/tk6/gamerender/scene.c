@@ -16,8 +16,9 @@ enum {
     PARTS_MAX = 8,      // per fighter
     HIDDEN_MESHES_MAX = 32,  // per fighter: part meshes its move set does not show
     BODY_JOINTS = 23,   // glb joints 0..22: the root, then the body bones the sim's skeleton B moves
-    // (hole tk6-finger-face-joints :tags (tk6 importer) :sev polish) the TK6 helper bones are not mapped to the sim's finger and face bones, so they keep their rest pose.
-    POSED_BONES = BODY_JOINTS,  // later joints are left out: they keep their rest pose
+    FIRST_FINGER_JOINT = FIRST_FINGER_BONE + 25,  // glb joints 76..105 (BONE records 75..104) are A bones 51..80
+    // (hole tk6-face-joints :tags (tk6 importer) :sev polish) the TK6 face bones (BONE records 107..146) are not mapped to the sim's face bones, so they keep their rest pose.
+    POSED_BONES = FIRST_FINGER_JOINT + FINGER_BONES,  // joints 23..75 are left zero: they keep their rest pose
     STAGE_NODES_MAX = 256,  // layers and floor tiles
     NODES_MAX = T6_FIGHTER_COUNT * (PARTS_MAX + HIDDEN_MESHES_MAX) + STAGE_NODES_MAX,
     FX_MAX = 128,
@@ -182,6 +183,8 @@ static OwTransform transform_of(const T6Mat4 *matrix) {
 static void pose_fighter(OwTransform bones[POSED_BONES], const T6Rig *rig) {
     bones[0] = transform_of(&rig->root.world);
     for (int joint = 1; joint < BODY_JOINTS; joint++) bones[joint] = transform_of(&rig->bones_b[BODY_SLOT[joint]].world);
+    for (int bone = 0; bone < FINGER_BONES; bone++)
+        bones[FIRST_FINGER_JOINT + bone] = transform_of(&rig->bones_a[FIRST_FINGER_BONE + bone].world);
 }
 
 static const OwTransform PLACE_AT_ORIGIN = {.rotation = {0, 0, 0, 1}, .scale = {1, 1, 1}};
