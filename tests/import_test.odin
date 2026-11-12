@@ -37,7 +37,8 @@ import_writes_full_pack :: proc(t: ^testing.T) {
 	// A fighter with no body row would have no hurtboxes; Mokujin has his own whatever move set he takes.
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM character WHERE id NOT IN (SELECT character FROM body)"), 0)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM part WHERE slot = 'body'"), 85)
-	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 19439)  // 783 of them camera tracks, 1100 face clips
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM anim"), 16228)  // 783 of them camera tracks
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM clip_bank"), 136)  // finger and face banks
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM move_camera"), 342)  // every intro and win pose
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM stage"), 37)
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM sound WHERE bank = 'common'"), 79)  // hits, announcer, system

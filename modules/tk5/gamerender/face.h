@@ -32,13 +32,13 @@ typedef struct {
 } T5Face;
 
 // The neutral face at once (a reset, a round start).
-T5Face t5_face_start(T5FaceBanks banks);
+T5Face t5_face_start(const T5FaceBanks *banks);
 // One sim tick, after the sim step: the move start, the face property, the clock, the blinks, the sample, the eyes, the tilt.
-T5Face t5_face_tick(T5Face face, T5FaceBanks banks, const T5ViewFighter *fighter, T5Phase phase);
+T5Face t5_face_tick(T5Face face, const T5FaceBanks *banks, const T5ViewFighter *fighter, T5Phase phase);
 // The face of a voice row that starts (0xa0d5c): a face clip of the poses with VOICE_FACE_CLIP, else a face value. The newest
 // voice wins.
 T5Face t5_face_voice(T5Face face, const T5ViewFighter *fighter, T5Phase phase, uint16_t voice_face);
 // Writes the face bones, the eyes and the head tilt into the rig, and rebuilds the worlds they move.
-void t5_face_pose_rig(T5Rig *rig, const T5Face *face, const T5ViewFighter *fighter);
+void t5_face_pose_rig(T5Rig *rig, const T5Face *face, const T5ViewFighter *fighter, const T5FaceBanks *banks);
 
 #endif

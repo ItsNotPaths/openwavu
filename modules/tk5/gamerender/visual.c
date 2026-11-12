@@ -7,18 +7,18 @@ static const float TICK_SECONDS = 1.0f / 60.0f;
 enum { MAX_CATCH_UP = 10 };  // a longer jump of the sim frame is a seek
 
 static bool has_hands(const T5VisualFighter *visual, const T5ViewFighter *fighter) {  // fighters with hand pose data loaded
-    return fighter->hands.posable && visual->banks.poses.clips != NULL;
+    return fighter->hands.posable && visual->banks.poses.clip_count > 0;
 }
 
 static bool has_face(const T5VisualFighter *visual, const T5ViewFighter *fighter) {  // fighters with face data loaded
-    return fighter->face.posable && visual->faces.poses.clips != NULL;
+    return fighter->face.posable && visual->faces.poses.clip_count > 0;
 }
 
 static T5FingerBones finger_bones(T5Hands hands) {
     T5FingerBones bones;
-    for (int joint = 0; joint < FINGER_JOINTS; joint++) {  // per joint: right turn, then left turn mirrored
+    for (int joint = 0; joint < FINGER_JOINTS; joint++) {  // per joint: right turn, then left turn
         bones.turn[joint] = hands.right.pose.joint[joint];
-        bones.turn[FINGER_JOINTS + joint] = t5_left_finger_turn(hands.left.pose.joint[joint], joint);
+        bones.turn[FINGER_JOINTS + joint] = hands.left.pose.joint[joint];
     }
     return bones;
 }
@@ -46,16 +46,16 @@ static void pose_fingers(T5VisualFighter *visual, const T5ViewFighter *fighter) 
 static void pose_rig(T5VisualFighter *visual, const T5ViewFighter *fighter) {
     visual->rig = fighter->rig;  // no hand or face data: the sim's bones stay
     if (has_hands(visual, fighter)) pose_fingers(visual, fighter);
-    if (has_face(visual, fighter)) t5_face_pose_rig(&visual->rig, &visual->face, fighter);
+    if (has_face(visual, fighter)) t5_face_pose_rig(&visual->rig, &visual->face, fighter, &visual->faces);
 }
 
 static void start(T5Visual *visual, const T5View *view) {
     for (int slot = 0; slot < T5_FIGHTER_COUNT; slot++) {
         T5VisualFighter *fighter = &visual->fighter[slot];
         const T5ViewFighter *shown = &view->fighters[slot];
-        if (has_hands(fighter, shown)) fighter->hands = t5_hands_idle(fighter->hands, fighter->banks, &shown->hands);  // idle at once
+        if (has_hands(fighter, shown)) fighter->hands = t5_hands_idle(fighter->hands, &fighter->banks, &shown->hands);  // idle at once
         fighter->from = finger_bones(fighter->hands);  // no old pose to blend from: start at the hands
-        if (has_face(fighter, shown)) fighter->face = t5_face_start(fighter->faces);
+        if (has_face(fighter, shown)) fighter->face = t5_face_start(&fighter->faces);
     }
     visual->started = true;
     visual->frame = view->frame;
@@ -67,8 +67,8 @@ static void tick(T5Visual *visual, const T5View *view) {
         T5VisualFighter *fighter = &visual->fighter[slot];
         const T5ViewFighter *shown = &view->fighters[slot];
         fighter->from = fighter->shown;  // the pose on screen is the next blend's start
-        if (has_hands(fighter, shown)) fighter->hands = t5_hands_tick(fighter->hands, fighter->banks, &shown->hands);  // one sim tick of hands
-        if (has_face(fighter, shown)) fighter->face = t5_face_tick(fighter->face, fighter->faces, shown, view->phase);
+        if (has_hands(fighter, shown)) fighter->hands = t5_hands_tick(fighter->hands, &fighter->banks, &shown->hands);  // one sim tick of hands
+        if (has_face(fighter, shown)) fighter->face = t5_face_tick(fighter->face, &fighter->faces, shown, view->phase);
     }
 }
 

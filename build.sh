@@ -94,7 +94,7 @@ game_module() {
 	shift 3
 	if [ ! -f "$out" ] || [ -n "$(find "modules/$module" sdk build/sdk -newer "$out" -print -quit)" ]; then
 		vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -fwrapv -ffp-contract=off -fno-fast-math -mexec-model=reactor -s \
-			-I"modules/$module" -Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $link \
+			-I"modules/$module" -Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/cgltf/src -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $link \
 			-o "$out" "$@" build/sdk/libow_db.a build/sdk/libow_sound.a
 	fi
 }

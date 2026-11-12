@@ -142,12 +142,14 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 	m, data, read := read_character_motbin(im, char_index)
 	if !read do return fmt.tprintf("%s: motbin did not read", c.id)
 	if err = convert.write_moveset_rows(w, c.id, owner, char_index, m); err != "" do return err
-	if bank, has := formats.embedded_bank(m, data, 0); has do write_bank(im, convert.embedded_owner(c.id), bank)
-	if bank, has := formats.embedded_bank(m, data, formats.BANK_HANDS); has do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), bank)
-	if bank, has := formats.embedded_bank(m, data, formats.BANK_FACE); has do write_face_bank(im, fmt.tprintf("%s/face_poses", c.id), bank)
-	if bank, has := formats.embedded_bank(m, data, formats.BANK_CAMERAS); has do write_camera_bank(im, fmt.tprintf("%s/cameras", convert.embedded_owner(c.id)), bank, .Scaled)
-	skeleton, has_skeleton := character_skeleton(im, c)
+	bones, has_bones := character_bones(im, c)
+	if !has_bones do return fmt.tprintf("%s: skeleton did not read", c.id)
+	skeleton, has_skeleton := convert.sim_skeleton(bones)
 	if !has_skeleton do return fmt.tprintf("%s: skeleton did not read", c.id)
+	if bank, has := formats.embedded_bank(m, data, 0); has do write_bank(im, convert.embedded_owner(c.id), bank)
+	if bank, has := formats.embedded_bank(m, data, formats.BANK_HANDS); has do write_hand_bank(im, fmt.tprintf("%s/hand_poses", c.id), bank, bones)
+	if bank, has := formats.embedded_bank(m, data, formats.BANK_FACE); has do write_face_bank(im, fmt.tprintf("%s/face_poses", c.id), bank, bones)
+	if bank, has := formats.embedded_bank(m, data, formats.BANK_CAMERAS); has do write_camera_bank(im, fmt.tprintf("%s/cameras", convert.embedded_owner(c.id)), bank, .Scaled)
 	convert.write_skeleton_rows(w, c.id, skeleton)
 	top, measured := idle_head_top(im, c, m, data, &skeleton)
 	if !measured do return fmt.tprintf("%s: standing idle did not read", c.id)
@@ -159,9 +161,9 @@ import_character :: proc(im: ^Import, c: formats.Character, char_index: int) -> 
 		sections, read_sections := formats.sections(container, context.temp_allocator)
 		if !read_sections do fail(im, "%s: container did not read", c.id)
 		if len(sections) > 0 do write_bank(im, owner, sections[0])
-		if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
+		if len(sections) > formats.BANK_HANDS do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS], bones)
 		if len(sections) > formats.BANK_FACE && !formats.empty_bank(sections[formats.BANK_FACE]) {
-			write_face_bank(im, fmt.tprintf("%s/face_clips", owner), sections[formats.BANK_FACE])
+			write_face_bank(im, fmt.tprintf("%s/face_clips", owner), sections[formats.BANK_FACE], bones)
 		}
 		if len(sections) > formats.BANK_CAMERAS do write_camera_bank(im, fmt.tprintf("%s/cameras", owner), sections[formats.BANK_CAMERAS], .Scaled)
 	}
@@ -308,9 +310,14 @@ costume_swings :: proc(sections: [][]byte) -> (mop: formats.Mop) {
 
 // The sim's skeleton: the one of the first costume.
 character_skeleton :: proc(im: ^Import, c: formats.Character) -> (s: convert.Sim_Skeleton, ok: bool) {
+	return convert.sim_skeleton(character_bones(im, c) or_return)
+}
+
+// The bone tree of the character's body model.
+character_bones :: proc(im: ^Import, c: formats.Character) -> (bones: formats.Skeleton, ok: bool) {
 	model := read_entry(im, c.container + formats.GROUP_MODEL) or_return
 	sections := formats.sections(model, context.temp_allocator) or_return
-	return convert.sim_skeleton(largest_skeleton(sections))
+	return largest_skeleton(sections), true
 }
 
 // The unpacked motbin of the character at char_index and its moves.
@@ -402,49 +409,39 @@ write_bank :: proc(im: ^Import, owner: string, data: []byte) {
 	}
 }
 
-// Every clip of a finger bank as anims/<owner>/<idx>.anim. The pose bank's clip 0 is the pose library: frame i = pose i.
-write_hand_bank :: proc(im: ^Import, owner: string, data: []byte) {
+// A finger bank as anims/<owner>.glb on the character's bones. The pose bank's clip 0 is the pose library: frame i = pose i.
+write_hand_bank :: proc(im: ^Import, owner: string, data: []byte, bones: formats.Skeleton) {
 	bank, ok := formats.read_hand_bank(data)
 	if !ok {
 		fail(im, "%s: hand bank did not read", owner)
 		return
 	}
-	if !make_dir(join(im.root, "anims", owner)) {
-		fail(im, "cannot create anims/%s", owner)
-		return
-	}
-	for i in 0 ..< bank.count {
-		frames, decoded := formats.read_hand_clip(bank, i, context.temp_allocator)
-		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
-		if !decoded || !convert.write_hand_anim(join(im.root, file), frames) {
-			fail(im, "%s: hand clip %d did not convert", owner, i)
-			continue
-		}
-		db.insert(&im.w, "anim", owner, i64(i), i64(len(frames)), file)
-	}
+	write_clip_bank(im, owner, bank, bones, convert.write_hand_clips)
 }
 
-// Every clip of a face bank as anims/<owner>/<idx>.anim. The pose bank's clip 0 is the face values: frame i = face value i;
-// its other clips are the voice faces. The clip bank holds the intro and win faces.
-write_face_bank :: proc(im: ^Import, owner: string, data: []byte) {
+// A face bank as anims/<owner>.glb on the character's bones. The pose bank's clip 0 is the face values: frame i = face
+// value i; its other clips are the voice faces. The clip bank holds the intro and win faces.
+write_face_bank :: proc(im: ^Import, owner: string, data: []byte, bones: formats.Skeleton) {
 	bank, ok := formats.read_face_bank(data)
 	if !ok {
 		fail(im, "%s: face bank did not read", owner)
 		return
 	}
-	if !make_dir(join(im.root, "anims", owner)) {
-		fail(im, "cannot create anims/%s", owner)
+	write_clip_bank(im, owner, bank, bones, convert.write_face_clips)
+}
+
+write_clip_bank :: proc(im: ^Import, owner: string, bank: formats.Clip_Bank, bones: formats.Skeleton,
+                        write: proc(path: string, bones: formats.Skeleton, bank: formats.Clip_Bank) -> bool) {
+	file := fmt.tprintf("anims/%s.glb", owner)
+	if !make_dir(join(im.root, "anims", owner[:strings.last_index_byte(owner, '/')])) {
+		fail(im, "cannot create the folder of %s", file)
 		return
 	}
-	for i in 0 ..< bank.count {
-		raw, decoded := formats.read_clip(bank, i, context.temp_allocator)
-		file := fmt.tprintf("anims/%s/%d.anim", owner, i)
-		if !decoded || !convert.write_face_anim(join(im.root, file), bank, raw) {
-			fail(im, "%s: face clip %d did not convert", owner, i)
-			continue
-		}
-		db.insert(&im.w, "anim", owner, i64(i), i64(len(raw) / (3 * bank.channels)), file)
+	if !write(join(im.root, file), bones, bank) {
+		fail(im, "%s: clips did not convert", owner)
+		return
 	}
+	db.insert(&im.w, "clip_bank", owner, file)
 }
 
 // Every track of a camera bank as anims/<owner>/<idx>.anim. Clip i is property 0x8153's clip (fighter banks) or camera id - 0x67 (global).

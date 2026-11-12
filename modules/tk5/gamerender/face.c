@@ -36,8 +36,6 @@ enum { KUMA = 11, PANDA = 32 };  // their voices start face clips in any phase
 
 static const float SAME_TIME = 1e-5f;  // times closer than this count as equal
 static const float PLAY_RATE = (float)PLAY_SPEED / CLOCK_PER_FRAME;  // clip frames a tick
-static const float MOVE_SCALE = 0.2f;   // a move channel's bon units per step
-static const float SIZE_SCALE = 0.01f;  // a scale channel: 100 = as is
 
 // --- what the face plays
 
@@ -45,10 +43,12 @@ static T5FacePlay value_play(float value, uint16_t blend_frames) { return (T5Fac
 
 static bool plays_clip(T5FacePlay play) { return play.clip != 0; }
 
-static T5FaceBank bank_of(T5FaceBanks banks, T5FacePlay play) { return (play.clip & FACE_CLIP_BANK) ? banks.clips : banks.poses; }
+static const T5ClipBank *bank_of(const T5FaceBanks *banks, T5FacePlay play) {
+    return (play.clip & FACE_CLIP_BANK) ? &banks->clips : &banks->poses;
+}
 
-static float clip_length(T5FaceBanks banks, T5FacePlay play) {
-    return (float)t5_face_clip_frames(bank_of(banks, play), play.clip & FACE_CLIP_INDEX);
+static float clip_length(const T5FaceBanks *banks, T5FacePlay play) {
+    return (float)t5_clip_frames(bank_of(banks, play), play.clip & FACE_CLIP_INDEX);
 }
 
 // After the match a clip stops on its last frame: the win pose keeps its face.
@@ -88,7 +88,7 @@ static T5Face take_property(T5Face face, T5PoseProp property) {
 }
 
 // 0x2ff10: the clip clock, then, while no clip plays and no property posed the face, the effort face and the blinks.
-static T5Face step(T5Face face, T5FaceBanks banks, const T5ViewFace *fighter, T5Phase phase) {
+static T5Face step(T5Face face, const T5FaceBanks *banks, const T5ViewFace *fighter, T5Phase phase) {
     float length = clip_length(banks, face.play);
     if (plays_clip(face.play) && (!holds_clip(phase) || face.play.time < length)) face.play.time += PLAY_RATE;
     if (face.play.time > length) face = relax(face, CLIP_END_BLEND);  // the clip is over, or a face value past the poses
@@ -117,10 +117,10 @@ static bool same_play(T5FacePlay first, T5FacePlay second) {
 }
 
 // 0xbe0a8, 0xc2358: the target a 1 / blend_frames step from the last pose. The game samples only when the play changed.
-static T5Face sample(T5Face face, T5FaceBanks banks) {
+static T5Face sample(T5Face face, const T5FaceBanks *banks) {
     if (face.has_sample && same_play(face.sampled, face.play)) return face;
     T5FacePose target = t5_face_clip_sample(bank_of(banks, face.play), face.play.clip & FACE_CLIP_INDEX, face.play.time);
-    if (face.has_sample && face.play.blend_frames > 0) target = t5_face_pose_blend(face.pose, target, 1.0f / face.play.blend_frames);
+    if (face.has_sample && face.play.blend_frames > 0) target = t5_face_pose_blend(&banks->poses, face.pose, target, 1.0f / face.play.blend_frames);
     face.pose = target;
     face.sampled = face.play;
     face.has_sample = true;
@@ -200,6 +200,11 @@ static const float TILT_LEAN_MAX = 0.4f;   // the lean that gives the most tilt
 static const float TILT_RISE = 0.01f;      // radians a tick
 static const float TILT_FALL = 0.005f;
 
+static T5Vec4 root_turn(const T5FacePose *pose, const T5FaceBanks *banks) {
+    int32_t track = t5_clip_track(&banks->poses, FACE_ROOT_JOINT, CLIP_ROTATION);
+    return track < 0 ? (T5Vec4){{0, 0, 0, 1}} : pose->track[track];
+}
+
 static float tilt_step(float tilt, T5Vec4 root_turn) {
     T5Mat4 root;
     t5_mat_identity(&root);
@@ -214,18 +219,18 @@ static float tilt_step(float tilt, T5Vec4 root_turn) {
 
 // --- the face of a fighter
 
-T5Face t5_face_start(T5FaceBanks banks) {
+T5Face t5_face_start(const T5FaceBanks *banks) {
     T5Face face = relax((T5Face){}, 0);
     return sample(face, banks);
 }
 
-T5Face t5_face_tick(T5Face face, T5FaceBanks banks, const T5ViewFighter *fighter, T5Phase phase) {
+T5Face t5_face_tick(T5Face face, const T5FaceBanks *banks, const T5ViewFighter *fighter, T5Phase phase) {
     if (fighter->face.move_started) face = move_face(face, &fighter->face);
     face = take_property(face, fighter->face.pose);
     face = step(face, banks, &fighter->face, phase);
     face = sample(face, banks);
     face.eyes = aim_eyes(face.eyes, fighter);
-    face.tilt = tilt_step(face.tilt, face.pose.channel[0]);  // channel 0: the face root's turn
+    face.tilt = tilt_step(face.tilt, root_turn(&face.pose, banks));
     return face;
 }
 
@@ -243,20 +248,22 @@ T5Face t5_face_voice(T5Face face, const T5ViewFighter *fighter, T5Phase phase, u
 }
 
 // (hole face-jaw-costumes :tags (tk5mod fighter-detail) :sev polish) costumes 0x53 and 0x54 reset the jaw bones A86, A87 to the model's bind after the face; which costumes these are is open, so every costume moves its jaw.
-// Turns replace the bind rotation, moves the bind translation, scales scale the turned rows.
-static void pose_face_bones(T5Rig *rig, const T5FacePose *pose) {
-    for (int channel = 0; channel < FACE_CHANNELS; channel++) {
-        T5Mat4 *local = &rig->bones_a[T5_FACE_CHANNELS[channel].bone].local;
-        const T5Vec4 *value = &pose->channel[channel];
-        switch (T5_FACE_CHANNELS[channel].kind) {
-        case FACE_TURN: t5_quat_to_mat(local, value); break;
-        case FACE_MOVE:
-            for (int axis = 0; axis < 3; axis++) local->m[3][axis] = value->v[axis] * MOVE_SCALE;
+// Rotations replace the bind rotation, translations the bind translation, scales scale the turned rows.
+static void pose_face_bones(T5Rig *rig, const T5FacePose *pose, const T5ClipBank *bank) {
+    for (uint32_t track = 0; track < bank->track_count; track++) {
+        int bone = bank->tracks[track].joint - JOINT_OFFSET;
+        if (bone < FIRST_FACE_BONE || bone >= FIRST_FACE_BONE + FACE_BONES) continue;
+        T5Mat4 *local = &rig->bones_a[bone].local;
+        const T5Vec4 *value = &pose->track[track];
+        switch (bank->tracks[track].path) {
+        case CLIP_ROTATION: t5_quat_to_mat(local, value); break;
+        case CLIP_TRANSLATION:
+            for (int axis = 0; axis < 3; axis++) local->m[3][axis] = value->v[axis];
             local->m[3][3] = 1.0f;
             break;
-        case FACE_SCALE:
+        case CLIP_SCALE:
             for (int row = 0; row < 3; row++)
-                for (int column = 0; column < 3; column++) local->m[row][column] *= value->v[row] * SIZE_SCALE;
+                for (int column = 0; column < 3; column++) local->m[row][column] *= value->v[row];
             break;
         }
     }
@@ -272,8 +279,8 @@ static void tilt_head(T5Rig *rig, const T5ViewFighter *fighter, float tilt) {
     t5_skel_bone_world_b(rig, fighter->parent_b, BONE_HEAD);
 }
 
-void t5_face_pose_rig(T5Rig *rig, const T5Face *face, const T5ViewFighter *fighter) {
-    pose_face_bones(rig, &face->pose);
+void t5_face_pose_rig(T5Rig *rig, const T5Face *face, const T5ViewFighter *fighter, const T5FaceBanks *banks) {
+    pose_face_bones(rig, &face->pose, &banks->poses);
     int32_t weight = fighter->look.weight;
     if (weight > 0) {
         rig->bones_a[RIGHT_EYE_BONE].local = eye_turn(rig->bones_a[RIGHT_EYE_BONE].local, face->eyes, weight);

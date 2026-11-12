@@ -78,28 +78,7 @@ static void load_parts(sqlite3 *db, int side, const T5Loadout *loadout) {
 }
 
 // What a side's move set loads (hands, face and camera shots); freed when a round brings another.
-static T5Arena hand_arenas[T5_FIGHTER_COUNT], face_arenas[T5_FIGHTER_COUNT];
 static T5FileSet moveset_files[T5_FIGHTER_COUNT];
-
-// No banks: the fighter keeps the sim's fingers.
-static void load_hands(sqlite3 *db, int side, const char *moveset) {
-    size_t bytes;
-    T5HandBanks banks = {0};
-    const char *failed = t5_load_hands_storage(db, moveset, &bytes);
-    if (!failed) failed = t5_new_arena(&hand_arenas[side], bytes);
-    if (!failed) failed = t5_load_hands(&banks, db, moveset, t5_read_set_file, &moveset_files[side], &hand_arenas[side]);
-    visual.fighter[side].banks = failed ? (T5HandBanks){0} : banks;
-}
-
-// No banks: the fighter keeps the sim's face.
-static void load_faces(sqlite3 *db, int side, const char *moveset) {
-    size_t bytes;
-    T5FaceBanks banks = {0};
-    const char *failed = t5_load_faces_storage(db, moveset, &bytes);
-    if (!failed) failed = t5_new_arena(&face_arenas[side], bytes);
-    if (!failed) failed = t5_load_faces(&banks, db, moveset, t5_read_set_file, &moveset_files[side], &face_arenas[side]);
-    visual.fighter[side].faces = failed ? (T5FaceBanks){0} : banks;
-}
 
 // The part meshes hidden by default that the move set does not show (Mokujin's sword unless he runs Yoshimitsu's moves).
 static void load_hidden_meshes(sqlite3 *db, int side, const char *moveset) {
@@ -131,13 +110,12 @@ static void load_movesets(sqlite3 *db, const T5View *view) {
         const char *moveset = view->fighters[side].moveset;
         if (strncmp(loaded_movesets[side], moveset, T5_NAME_BYTES) == 0) continue;
         memcpy(loaded_movesets[side], moveset, T5_NAME_BYTES);
-        free(hand_arenas[side].base);
-        hand_arenas[side] = (T5Arena){};
-        free(face_arenas[side].base);
-        face_arenas[side] = (T5Arena){};
+        t5_free_hands(&visual.fighter[side].banks);
+        t5_free_faces(&visual.fighter[side].faces);
         t5_file_set_free(&moveset_files[side]);
-        load_hands(db, side, moveset);
-        load_faces(db, side, moveset);
+        // No banks: the fighter keeps the sim's fingers and face.
+        t5_load_hands(&visual.fighter[side].banks, db, moveset, t5_read_set_file, &moveset_files[side]);
+        t5_load_faces(&visual.fighter[side].faces, db, moveset, t5_read_set_file, &moveset_files[side]);
         t5_camera_load(db, side, moveset, &moveset_files[side]);
         load_hidden_meshes(db, side, moveset);
     }

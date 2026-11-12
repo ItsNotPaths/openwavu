@@ -73,6 +73,11 @@ CREATE TABLE anim (  -- rows with the same file are one anim: the game compares 
 	PRIMARY KEY (character, idx)
 );
 
+CREATE TABLE clip_bank (  -- display-only bone clips (faces, fingers): a glTF file, animation i = clip i
+	owner TEXT PRIMARY KEY,  -- <character>/hand_poses, <character>/face_poses, <anim bank>/hand_gestures, <anim bank>/face_clips
+	file  TEXT NOT NULL
+);
+
 -- file: the visual glb; collision: floors, walls and start nodes (glb, file units under a metre scale); surfaces: JSON.
 CREATE TABLE stage (
 	id         TEXT PRIMARY KEY,

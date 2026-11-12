@@ -210,12 +210,12 @@ triangle_edges :: proc(p: formats.Poly, triangle: [3]u16) -> (edges: [3][2][3]f3
 	return
 }
 
-// Joint nodes in bind pose plus the skin. Returns the root nodes. Joints past the skeleton get an identity bind under bone 0.
+// Joint nodes in bind pose, node i = joint i. Returns the root nodes and the bind worlds. Joints past the skeleton get an
+// identity bind under bone 0.
 // (hole helper-joint-re :tags (port fighter-detail)) TK5 SPLJNT block (section 8) and kkhelperjoint (0x1e96c4) are not decoded: twist rules for the helper joints.
-@(private = "file")
-add_skin :: proc(g: ^gltf.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dynamic]int) {
+add_bones :: proc(g: ^gltf.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dynamic]int, world: []matrix[4, 4]f64) {
 	bones := len(s.bones)
-	world := make([]matrix[4, 4]f64, max(bones, joints))
+	world = make([]matrix[4, 4]f64, max(bones, joints))
 	copy(world, world_matrices(s))
 	parents := make([]int, len(world))
 	copy(parents, helper_parents(s, world[:bones]))
@@ -228,6 +228,14 @@ add_skin :: proc(g: ^gltf.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dy
 		append(&g.nodes, node)
 		if parents[i] < 0 do append(&roots, i)
 	}
+	return
+}
+
+// The bone nodes plus the skin. Returns the root nodes.
+@(private = "file")
+add_skin :: proc(g: ^gltf.Gltf, s: formats.Skeleton, joints: int) -> (roots: [dynamic]int) {
+	world: []matrix[4, 4]f64
+	roots, world = add_bones(g, s, joints)
 	inverse := make([][16]f32, len(world))
 	for w, i in world {
 		w := w

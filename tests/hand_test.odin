@@ -1,19 +1,15 @@
 package tests
 
 import "core:crypto/sha2"
-import "core:fmt"
 import "core:os"
+import "core:slice"
 import "core:testing"
-import convert "../src/convert/tk5"
-import "../src/db"
 import formats "../src/formats/tk5"
 import tk5 "../src/importer/tk5"
 
-HAND_DUMP :: "build/hand_dump"
-HAND_ROOT :: "build/hand_test"
-
-// sha256 of tests/ref/hand_dump.c's output, taken from tk5decomp's .t5h through the game's bit decoder (gamerender/hand_bank.c
-// before 2026-11-01).
+// sha256 of each character's decoded finger clips, taken from tk5decomp's .t5h through the game's bit decoder: for the pose
+// bank, then the gesture bank, per clip u32 frames, then per frame the 45 keys (axis x, axis y, angle per joint) as f32
+// radians, little endian.
 @(private = "file")
 HAND_HASHES := [?]struct {
 	name, hash: string,
@@ -56,48 +52,43 @@ HAND_HASHES := [?]struct {
 	{"jinpachi2", "7d2433cce1ce3caf95f788486a6d9aff96d128e06202766e45ba35d2c3d186ac"},
 }
 
-// The finger clips the visual loads from the db (modules/tk5/gamerender/hand_bank.c) are the frames the game decodes, bit for bit.
 @(test)
-hand_clips_load_like_the_game :: proc(t: ^testing.T) {
+hand_clips_decode_like_the_game :: proc(t: ^testing.T) {
 	table, ok := read_table()
 	if !ok do return
 	defer delete(table)
 	f, err := os.open(TK5 + "/game/USRDIR/T55DATA1.BIN")
 	if err != nil do return
 	defer os.close(f)
-	built := build_loader_tool(HAND_DUMP, "tests/ref/hand_dump.c", "modules/tk5/gamerender/hand_bank.c")
-	if !testing.expect(t, built, "tests/ref/hand_dump.c did not build") do return
-
-	os.remove_all(HAND_ROOT)
-	defer os.remove_all(HAND_ROOT)
-	im := tk5.Import{archive = {table, f}, root = HAND_ROOT}
-	create_err: string
-	im.w, create_err = db.create(HAND_ROOT + ".db", TK5_SCHEMA)
-	if !testing.expect_value(t, create_err, "") do return
-	defer os.remove(HAND_ROOT + ".db")
+	im := tk5.Import{archive = {table, f}}
 
 	characters := formats.CHARACTERS
-	for name, i in MOTBIN_NAMES {
+	names := MOTBIN_NAMES
+	for h in HAND_HASHES {
 		defer free_all(context.temp_allocator)
+		i, _ := slice.linear_search(names[:], h.name)
 		packed, _ := tk5.read_entry(&im, formats.MOTBIN_FIRST + 2 * i)
 		data, unpacked := formats.unlz(packed, context.temp_allocator)
 		m, read := formats.read_motbin(data, context.temp_allocator)
 		container, has := tk5.read_entry(&im, characters[i].container)
 		sections, split := formats.sections(container, context.temp_allocator)
-		if !testing.expect(t, unpacked && read && has && split && len(sections) > formats.BANK_HANDS, name) do continue
-		owner := formats.container_owner(characters[i].container)
-		testing.expect_value(t, convert.write_moveset_rows(&im.w, name, owner, i, m), "")  // the moves name the gesture owner
-		tk5.write_hand_bank(&im, fmt.tprintf("%s/hand_poses", name), data[m.bank_offsets[formats.BANK_HANDS]:])
-		if owner == name do tk5.write_hand_bank(&im, fmt.tprintf("%s/hand_gestures", owner), sections[formats.BANK_HANDS])
-	}
-	if !testing.expect_value(t, db.finish(&im.w), "") do return
-
-	for h in HAND_HASHES {
-		state, stdout, stderr, exec_err := os.process_exec({command = {HAND_DUMP, HAND_ROOT + ".db", HAND_ROOT, h.name}}, context.temp_allocator)
-		if !testing.expectf(t, exec_err == nil && state.exit_code == 0, "%s: %s", h.name, string(stderr)) do continue
+		if !testing.expect(t, unpacked && read && has && split && len(sections) > formats.BANK_HANDS, h.name) do continue
 		ctx: sha2.Context_256
 		sha2.init_256(&ctx)
-		sha2.update(&ctx, stdout)
+		for bank_data in ([][]byte{data[m.bank_offsets[formats.BANK_HANDS]:], sections[formats.BANK_HANDS]}) {
+			bank, read_bank := formats.read_hand_bank(bank_data)
+			if !testing.expect(t, read_bank, h.name) do continue
+			for clip in 0 ..< bank.count {
+				frames, decoded := formats.read_hand_clip(bank, clip, context.temp_allocator)
+				if !testing.expect(t, decoded, h.name) do continue
+				count := u32le(len(frames))
+				sha2.update(&ctx, slice.bytes_from_ptr(&count, 4))
+				for frame in frames do for joint in frame do for value in joint {
+					key := f32le(f32(value) * formats.ANGLE)
+					sha2.update(&ctx, slice.bytes_from_ptr(&key, 4))
+				}
+			}
+		}
 		testing.expectf(t, digest_hex(&ctx) == h.hash, "%s: hand clips differ from the game decode", h.name)
 	}
 }

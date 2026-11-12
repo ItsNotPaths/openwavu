@@ -27,14 +27,6 @@ enum : uint16_t { POSE_UNIT = 256, GESTURE_BANK_FLAG = 16384 };  // the unit of 
 static const struct { uint8_t first, last; } UNCLENCHED_CODES[] = {{0, 0}, {13, 21}, {23, 26}, {43, 50}};  // no clench
 enum { NOT_BONE_CODES = 107 };
 
-// Left-hand mirror by joint in its finger (root first): roots S_y M S_y, the other joints S_x M S_x, as quaternion signs.
-static const float MIRROR[3][4] = {{-1, 1, -1, 1}, {1, -1, -1, 1}, {1, -1, -1, 1}};  // left hand: sign of x, y, z, w
-
-T5Vec4 t5_left_finger_turn(T5Vec4 turn, int32_t joint) {  // a finger joint's turn for the left hand, mirrored
-    const float *sign = MIRROR[joint % 3];  // signs for this joint's position in its finger
-    return (T5Vec4){{turn.x * sign[0], turn.y * sign[1], turn.z * sign[2], turn.w * sign[3]}};
-}
-
 // --- the channel setters
 
 static T5HandChannel pose_channel(int32_t pose, T5Frames blend) { return (T5HandChannel){(float)pose, HAND_POSES, 0, (uint16_t)blend.ticks}; }
@@ -92,16 +84,15 @@ static T5Hands automatic_poses(T5Hands hands, const T5ViewHands *fighter) {
 
 // --- clock and sample
 
-static T5HandBank bank_of(T5HandBanks banks, T5HandChannel channel) {
-    if (channel.bank == HAND_GESTURES) return banks.gestures;
-    return banks.poses;
+static const T5ClipBank *bank_of(const T5HandBanks *banks, T5HandChannel channel) {
+    return channel.bank == HAND_GESTURES ? &banks->gestures : &banks->poses;
 }
 
 // A clip plays and loops; a pose of the library stays. The blend counts down.
-static T5HandChannel clock(T5HandChannel channel, T5HandBanks banks) {
+static T5HandChannel clock(T5HandChannel channel, const T5HandBanks *banks) {
     bool pose_library = channel.bank == HAND_POSES && channel.clip == 0;  // a pose of the library: pose bank, clip 0
     if (!pose_library) channel.time += PLAY_RATE;  // clips move on; library poses stay
-    if ((float)t5_hand_clip_frames(bank_of(banks, channel), channel.clip) < channel.time)  // clip ended
+    if ((float)t5_clip_frames(bank_of(banks, channel), channel.clip) < channel.time)  // clip ended
         channel.time = 0.0f;  // loop to the start
     if (channel.blend_frames > 0) channel.blend_frames--;
     return channel;
@@ -114,9 +105,9 @@ static bool same_channel(T5HandChannel first, T5HandChannel second) {  // true i
 
 // The channel's pose, a 1 / blend_frames step from the last sample. The game samples only when the channel changed, so a
 // setter called again each tick holds the hand one step from where it began until the calls stop.
-static T5Hand sample(T5Hand hand, T5HandBanks banks) {
+static T5Hand sample(T5Hand hand, const T5HandBanks *banks, T5HandSide side) {
     if (hand.has_sample && same_channel(hand.sampled, hand.channel)) return hand;  // same as last sample: keep pose
-    T5FingerPose target = t5_hand_clip_sample(bank_of(banks, hand.channel), hand.channel.clip, hand.channel.time);
+    T5FingerPose target = t5_hand_clip_sample(bank_of(banks, hand.channel), hand.channel.clip, hand.channel.time, side);
     if (hand.channel.blend_frames > 0)  // still blending: move toward the target
         for (int joint = 0; joint < FINGER_JOINTS; joint++)
             t5_quat_blend(&target.joint[joint], 1.0f / hand.channel.blend_frames, &hand.pose.joint[joint], &target.joint[joint]);
@@ -126,26 +117,26 @@ static T5Hand sample(T5Hand hand, T5HandBanks banks) {
     return hand;
 }
 
-T5Hands t5_hands_idle(T5Hands hands, T5HandBanks banks, const T5ViewHands *fighter) {
+T5Hands t5_hands_idle(T5Hands hands, const T5HandBanks *banks, const T5ViewHands *fighter) {
     hands = both_hands(hands, IDLE_RIGHT_POSE, IDLE_LEFT_POSE, IDLE_BLEND);
     hands.right.seen = fighter->right_pose;  // mark the right pose property as seen, so it is not new
     hands.left.seen = fighter->left_pose;
     hands.right.has_sample = false;
     hands.left.has_sample = false;
     hands.clean_hit = false;
-    hands.right = sample(hands.right, banks);
-    hands.left = sample(hands.left, banks);
+    hands.right = sample(hands.right, banks, RIGHT_HAND);
+    hands.left = sample(hands.left, banks, LEFT_HAND);
     return hands;
 }
 
-T5Hands t5_hands_tick(T5Hands hands, T5HandBanks banks, const T5ViewHands *fighter) {
+T5Hands t5_hands_tick(T5Hands hands, const T5HandBanks *banks, const T5ViewHands *fighter) {
     hands.right = take_property(hands.right, fighter->right_pose, IDLE_RIGHT_POSE);
     hands.left = take_property(hands.left, fighter->left_pose, IDLE_LEFT_POSE);
     hands = automatic_poses(hands, fighter);  // automatic poses, if no property posed the hands
     hands.clean_hit = fighter->clean_hit;  // save this tick's clean-hit flag for the next tick's poses
     hands.right.channel = clock(hands.right.channel, banks);
     hands.left.channel = clock(hands.left.channel, banks);
-    hands.right = sample(hands.right, banks);
-    hands.left = sample(hands.left, banks);
+    hands.right = sample(hands.right, banks, RIGHT_HAND);
+    hands.left = sample(hands.left, banks, LEFT_HAND);
     return hands;
 }
