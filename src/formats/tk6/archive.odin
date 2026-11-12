@@ -99,11 +99,12 @@ close_game_files :: proc(game: ^Game_Files) {
 	delete(psarc.name_list)
 }
 
-// The first `limit` bytes of file `index` (global index); not ok for an empty slot.
-read_file :: proc(game: Game_Files, index: int, limit := max(int), allocator := context.allocator) -> (data: []byte, ok: bool) {
+// `limit` bytes at most of file `index` (global index), from byte `from` on; not ok for an empty slot.
+read_file :: proc(game: Game_Files, index: int, limit := max(int), allocator := context.allocator, from := 0) -> (data: []byte, ok: bool) {
 	archive, entry := find_file(game, index) or_return
-	size := min(int(entry.size), limit)
-	offset := i64(entry.block) * INDEX_BLOCK
+	if from < 0 || from > int(entry.size) do return
+	size := min(int(entry.size) - from, limit)
+	offset := i64(entry.block) * INDEX_BLOCK + i64(from)
 	data = make([]byte, size, allocator)
 	switch source in archive.data {
 	case Psarc_Entry:

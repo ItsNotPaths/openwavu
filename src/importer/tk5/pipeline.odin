@@ -648,7 +648,7 @@ write_sound_bank :: proc(im: ^Import, bank: string, entry: int) {
 		file, sampled := files[record.data_offset]
 		if !sampled {
 			file = fmt.tprintf("sounds/%s/%d.flac", first, record.index)
-			written := shared ? os.exists(join(im.root, file)) : write_sound(im, file, record)
+			written := shared ? os.exists(join(im.root, file)) : write_sound(im.root, file, record)
 			if !written {
 				fail(im, "sound %s did not convert", file)
 				continue
@@ -683,7 +683,7 @@ import_music :: proc(im: ^Import) -> (stage_tracks: [formats.STAGE_COUNT]int) {
 		}
 		if !shared {
 			first = track
-			if !write_sound(im, fmt.tprintf("music/%d.flac", track), records[0]) {
+			if !write_sound(im.root, fmt.tprintf("music/%d.flac", track), records[0]) {
 				fail(im, "music %d did not convert", track)
 				continue
 			}
@@ -698,8 +698,8 @@ import_music :: proc(im: ^Import) -> (stage_tracks: [formats.STAGE_COUNT]int) {
 	return
 }
 
-// A record as a FLAC file: PS ADPCM mono at its rate, ATRAC3plus as its RIFF says, without the delay.
-write_sound :: proc(im: ^Import, file: string, record: formats.Sound_Record) -> bool {
+// A record as the FLAC file root/file: PS ADPCM mono at its rate, ATRAC3plus as its RIFF says, without the delay.
+write_sound :: proc(root, file: string, record: formats.Sound_Record) -> bool {
 	samples: []i16
 	channels, rate := 1, record.rate
 	switch record.codec {
@@ -714,7 +714,7 @@ write_sound :: proc(im: ^Import, file: string, record: formats.Sound_Record) -> 
 	case: return false
 	}
 	flac := audio.flac(samples, channels, rate, context.temp_allocator) or_return
-	return os.write_entire_file(join(im.root, file), flac) == nil
+	return os.write_entire_file(join(root, file), flac) == nil
 }
 
 // A record's loop in samples of its FLAC file; NULL for none.
