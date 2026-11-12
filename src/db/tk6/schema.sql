@@ -716,8 +716,7 @@ CREATE TABLE character_effect_row (
 	PRIMARY KEY (character, row)
 );
 
--- Sound ids of the sim's cues (tk5decomp data.md 8.4). A voice character is the game's own voice numbering, not the
--- character's: Kuma's second costume speaks as Panda.
+-- Sound ids of the sim's cues (tk6decomp data.md "Sound"). A voice character is the character's file number.
 CREATE TABLE costume_voice (
 	character TEXT NOT NULL,
 	costume   TEXT NOT NULL,
@@ -726,37 +725,25 @@ CREATE TABLE costume_voice (
 	FOREIGN KEY (character, costume) REFERENCES costume(character, id)
 );
 
--- The voice table. A move's voice "row n of kind k" is the n-th row of its voice character with bit k in kinds;
--- kinds 0..4 are random voices, 5..7 a move's.
+-- The voice table. A voice "row n of kind k" is the n-th row of its voice character with bit k in kinds (kind 8: any
+-- row); kinds 0..4 are random voices, 5..7 a move's.
 CREATE TABLE voice (
 	voice  INTEGER NOT NULL,
 	idx    INTEGER NOT NULL,
-	record INTEGER NOT NULL,  -- in the costume's voices bank
+	number INTEGER NOT NULL,  -- sound_name.number
 	face   INTEGER NOT NULL,  -- 0x4000 + clip: a face clip; else a face value; 0xffff: none
 	kinds  INTEGER NOT NULL,  -- bit k: in kind k
 	PRIMARY KEY (voice, idx)
 );
 
--- The announcer's winner name and "wins", per voice character.
-CREATE TABLE voice_name (
-	voice        INTEGER PRIMARY KEY,
-	own_record   INTEGER NOT NULL,  -- the name in the costume's voices bank
-	names_record INTEGER NOT NULL,  -- the name in the names bank
-	wins_delay   INTEGER NOT NULL   -- frames from the name to "wins" (common 47)
-);
-
--- Special sound n: a record of the fighter's voices bank, when its voice character has one.
-CREATE TABLE special_sound (
-	id     INTEGER NOT NULL,
-	voice  INTEGER NOT NULL,
-	record INTEGER NOT NULL,
-	PRIMARY KEY (id, voice)
-);
-
--- Stage sound number n (from 1): a record of the stage's bank.
-CREATE TABLE stage_sound (
-	stage  TEXT NOT NULL REFERENCES stage(id),
-	number INTEGER NOT NULL,
-	record INTEGER NOT NULL,
-	PRIMARY KEY (stage, number)
+-- The game's name of every sound record (syvo_round01, _s_kaz_atk01); number: the sound number moves, voices and the
+-- sim's cues play it by, NULL for none. Banks: shared/<game bank>, <character>/voices, intro_lines, win_lines,
+-- <stage>/sounds, effects.
+CREATE TABLE sound_name (
+	bank   TEXT NOT NULL,
+	idx    INTEGER NOT NULL,
+	name   TEXT NOT NULL,
+	number INTEGER UNIQUE,
+	PRIMARY KEY (bank, idx),
+	FOREIGN KEY (bank, idx) REFERENCES sound(bank, idx)
 );

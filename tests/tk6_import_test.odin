@@ -8,6 +8,7 @@ import "core:strings"
 import "core:sync"
 import "core:testing"
 import "../src/content"
+import "../src/db"
 import "../src/imports"
 import "../src/render"
 import "../src/sim"
@@ -184,5 +185,38 @@ tk6_import_models_load :: proc(t: ^testing.T) {
 		textured := false
 		for mesh in loaded.meshes do for primitive in mesh do textured ||= primitive.texture != nil
 		testing.expectf(t, textured, "%s draws no texture", model)
+	}
+}
+
+// Every voice a fighter can shout, the announcer lines the presenter plays by name and each stage's music resolve to a
+// sound file of the pack.
+@(test)
+tk6_sounds_resolve :: proc(t: ^testing.T) {
+	pack_dir, imported := tk6_pack(t)
+	if !imported do return
+	handle: ^db.Sqlite
+	defer db.close_v2(handle)
+	database := strings.clone_to_cstring(strings.concatenate({pack_dir, "/tk6.db"}, context.temp_allocator), context.temp_allocator)
+	if !testing.expect_value(t, db.open_v2(database, &handle, db.OPEN_READWRITE, nil), db.OK) do return
+	count :: proc(handle: ^db.Sqlite, sql: cstring) -> i64 {
+		stmt: ^db.Stmt
+		defer db.finalize(stmt)
+		if db.prepare_v2(handle, sql, -1, &stmt, nil) != db.OK || db.step(stmt) != db.ROW do return -1
+		return db.column_int64(stmt, 0)
+	}
+	// Armor King's _s_amk_dmg07 and dmg08 (711, 712) are in the game's voice table, not in his bank: silent in the game too.
+	testing.expect_value(t, count(handle, "SELECT count(*) FROM voice WHERE voice IN (SELECT voice FROM costume_voice) AND number NOT IN (711, 712) AND number NOT IN (SELECT number FROM sound_name WHERE number IS NOT NULL)"), 0)
+	testing.expect(t, count(handle, "SELECT count(*) FROM voice JOIN costume_voice USING (voice)") > 0, "no fighter has voices")
+	for line in ([]string{"syvo_round01", "syvo_fnl_round", "syvo_fight", "syvo_ko", "syvo_timeup", "syvo_wko", "syvo_prfct", "syvo_great", "syvo_draw", "syvo_wins"}) {
+		sql := strings.clone_to_cstring(strings.concatenate({"SELECT count(*) FROM sound_name WHERE bank GLOB 'shared/*' AND name = '", line, "'"}, context.temp_allocator), context.temp_allocator)
+		testing.expectf(t, count(handle, sql) == 1, "no announcer line %s", line)
+	}
+	testing.expect(t, count(handle, "SELECT count(*) FROM stage JOIN music ON music.id = stage.music") > 0, "no stage has music")
+	stmt: ^db.Stmt
+	defer db.finalize(stmt)
+	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT file FROM sound UNION SELECT file FROM music", -1, &stmt, nil), db.OK) do return
+	for db.step(stmt) == db.ROW {
+		file := string(db.column_text(stmt, 0))
+		testing.expectf(t, os.exists(strings.concatenate({pack_dir, "/", file}, context.temp_allocator)), "%s is missing", file)
 	}
 }

@@ -15,14 +15,14 @@ import "../../release"
 import tk5_importer "../tk5"
 
 TK6_SCHEMA :: #load("../../db/tk6/schema.sql", string)
-SCHEMA_VERSION :: "1"
+SCHEMA_VERSION :: "2"
 DATABASE :: "tk6.db"
 COSTUMES :: [?]int{tk6.PLAYER_ONE}  // costume n + 1 is the game's costume n
 
 Progress :: tk5_importer.Progress
 
-// One step per character and stage, one for the shared anims and the rest.
-PROGRESS_STEPS :: len(tk6.CHARACTERS) + len(tk6.STAGES) + 2
+// One step per character and stage, one for the shared anims, one for the sounds and the rest.
+PROGRESS_STEPS :: len(tk6.CHARACTERS) + len(tk6.STAGES) + 3
 
 Import :: struct {
 	game:     tk6.Game_Files,
@@ -34,7 +34,6 @@ Import :: struct {
 }
 
 // The game's files under usrdir -> the stock pack's files under root.
-// (hole tk6-sound :tags (tk6 importer audio) :sev gap) no sound or music import; the converter already keeps full voice words.
 run :: proc(usrdir, root: string, progress: ^Progress = nil) -> (err: string) {
 	game, opened := tk6.open_game_files(usrdir)
 	if !opened do return fmt.tprintf("cannot open the game files in %s", usrdir)
@@ -44,7 +43,7 @@ run :: proc(usrdir, root: string, progress: ^Progress = nil) -> (err: string) {
 		for key in im.textures do delete(key)
 		delete(im.textures)
 	}
-	for dir in ([]string{"anims", "parts", "stages", "textures"}) {
+	for dir in ([]string{"anims", "music", "parts", "sounds", "stages", "textures"}) {
 		if !make_dir(join(root, dir)) do return fmt.tprintf("cannot create %s", join(root, dir))
 	}
 	im.w, err = db.create(join(root, DATABASE), TK6_SCHEMA)
@@ -68,8 +67,12 @@ run :: proc(usrdir, root: string, progress: ^Progress = nil) -> (err: string) {
 		free_all(context.temp_allocator)
 		step(&im)
 	}
-	for stage in tk6.STAGES {
-		import_stage(&im, stage)
+	stage_music := import_sounds(&im, usrdir)
+	defer delete_stage_music(stage_music)
+	for stage, number in tk6.STAGES {
+		music: db.Value = db.Null{}
+		if track, has := stage_music[number]; has do music = track
+		import_stage(&im, stage, music)
 		free_all(context.temp_allocator)
 		step(&im)
 	}
@@ -163,6 +166,7 @@ import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone
 		return
 	}
 	db.insert(w, "costume", id, name)
+	db.insert(w, "costume_voice", id, name, i64(character.number))
 	body_part := fmt.tprintf("%s_%s_body", id, name)
 	first_mesh_node, written := write_part(im, id, body_part, "body", body_part, tk6.body_file(character), texture_set = worn.body_texture_set)
 	if !written {
@@ -235,7 +239,7 @@ write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: 
 // (hole tk6-stage-look :tags (tk6 importer) :sev polish) stage blend modes, node anims (gyas) and the effect list are not read.
 // (hole tk6-stage-start :tags (tk6 importer) :sev gap) the start points are not read (posf holds none found), so the sim's fallback line places the fighters.
 // (hole tk6-floor-breaks :tags (tk6 importer) :sev gap) floor and wall breaks are not imported; they look like stage objects (properties touch them), not fighter code [guess].
-import_stage :: proc(im: ^Import, stage: tk6.Stage) {
+import_stage :: proc(im: ^Import, stage: tk6.Stage, music: db.Value) {
 	collision, has_collision := tk6.read_stage_collision(im.game, stage, context.temp_allocator)
 	if !has_collision {
 		fail(im, "stage %s: collision did not read", stage.id)
@@ -274,7 +278,7 @@ import_stage :: proc(im: ^Import, stage: tk6.Stage) {
 		fail(im, "stage %s: collision did not write", stage.id)
 		return
 	}
-	db.insert(&im.w, "stage", stage.id, stage.id, db.Null{}, file, collision_file, surfaces_file, db.Null{}, f64(0), f64(0))
+	db.insert(&im.w, "stage", stage.id, stage.id, db.Null{}, file, collision_file, surfaces_file, music, f64(0), f64(0))
 }
 
 // The sim keeps the fighters' floor at y 0 (gravity and landings), so a stage that starts on a raised level moves
