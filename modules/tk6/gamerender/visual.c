@@ -7,18 +7,18 @@ static const float TICK_SECONDS = 1.0f / 60.0f;
 enum { MAX_CATCH_UP = 10 };  // a longer jump of the sim frame is a seek
 
 static bool has_hands(const T6VisualFighter *visual, const T6ViewFighter *fighter) {  // fighters with hand pose data loaded
-    return fighter->hands.posable && visual->banks.poses.clips != NULL;
+    return fighter->hands.posable && visual->banks.poses.clip_count > 0;
 }
 
 static bool has_face(const T6VisualFighter *visual, const T6ViewFighter *fighter) {  // fighters with face data loaded
-    return fighter->face.posable && visual->faces.poses.clips != NULL;
+    return fighter->face.posable && visual->faces.poses.clip_count > 0;
 }
 
 static T6FingerBones finger_bones(T6Hands hands) {
     T6FingerBones bones;
-    for (int joint = 0; joint < FINGER_JOINTS; joint++) {  // per joint: right turn, then left turn mirrored
+    for (int joint = 0; joint < FINGER_JOINTS; joint++) {  // per joint: right turn, then left turn
         bones.turn[joint] = hands.right.pose.joint[joint];
-        bones.turn[FINGER_JOINTS + joint] = t6_left_finger_turn(hands.left.pose.joint[joint], joint);
+        bones.turn[FINGER_JOINTS + joint] = hands.left.pose.joint[joint];
     }
     return bones;
 }
@@ -46,16 +46,17 @@ static void pose_fingers(T6VisualFighter *visual, const T6ViewFighter *fighter) 
 static void pose_rig(T6VisualFighter *visual, const T6ViewFighter *fighter) {
     visual->rig = fighter->rig;  // no hand or face data: the sim's bones stay
     if (has_hands(visual, fighter)) pose_fingers(visual, fighter);
-    if (has_face(visual, fighter)) t6_face_pose_rig(&visual->rig, &visual->face, fighter);
+    visual->face_posed = has_face(visual, fighter);
+    if (visual->face_posed) t6_face_locals(visual->face_locals, &visual->face, &visual->faces);
 }
 
 static void start(T6Visual *visual, const T6View *view) {
     for (int slot = 0; slot < T6_FIGHTER_COUNT; slot++) {
         T6VisualFighter *fighter = &visual->fighter[slot];
         const T6ViewFighter *shown = &view->fighters[slot];
-        if (has_hands(fighter, shown)) fighter->hands = t6_hands_idle(fighter->hands, fighter->banks, &shown->hands);  // idle at once
+        if (has_hands(fighter, shown)) fighter->hands = t6_hands_idle(fighter->hands, &fighter->banks, &shown->hands);  // idle at once
         fighter->from = finger_bones(fighter->hands);  // no old pose to blend from: start at the hands
-        if (has_face(fighter, shown)) fighter->face = t6_face_start(fighter->faces);
+        if (has_face(fighter, shown)) fighter->face = t6_face_start(&fighter->faces);
     }
     visual->started = true;
     visual->frame = view->frame;
@@ -67,8 +68,8 @@ static void tick(T6Visual *visual, const T6View *view) {
         T6VisualFighter *fighter = &visual->fighter[slot];
         const T6ViewFighter *shown = &view->fighters[slot];
         fighter->from = fighter->shown;  // the pose on screen is the next blend's start
-        if (has_hands(fighter, shown)) fighter->hands = t6_hands_tick(fighter->hands, fighter->banks, &shown->hands);  // one sim tick of hands
-        if (has_face(fighter, shown)) fighter->face = t6_face_tick(fighter->face, fighter->faces, shown, view->phase);
+        if (has_hands(fighter, shown)) fighter->hands = t6_hands_tick(fighter->hands, &fighter->banks, &shown->hands);  // one sim tick of hands
+        if (has_face(fighter, shown)) fighter->face = t6_face_tick(fighter->face, &fighter->faces, shown, view->phase);
     }
 }
 

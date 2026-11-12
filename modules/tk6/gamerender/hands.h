@@ -33,11 +33,8 @@ typedef struct {
 } T6Hands;
 
 // The idle hands at once (a reset, a round start).
-T6Hands t6_hands_idle(T6Hands hands, T6HandBanks banks, const T6ViewHands *fighter);
+T6Hands t6_hands_idle(T6Hands hands, const T6HandBanks *banks, const T6ViewHands *fighter);
 // One sim tick, after the sim step: the pose properties, the hit and wind-up poses, the channel clocks, the sample.
-T6Hands t6_hands_tick(T6Hands hands, T6HandBanks banks, const T6ViewHands *fighter);
-
-// The left hand plays the right hand's channel data mirrored; the mirror is its own inverse.
-T6Vec4 t6_left_finger_turn(T6Vec4 turn, int32_t joint);
+T6Hands t6_hands_tick(T6Hands hands, const T6HandBanks *banks, const T6ViewHands *fighter);
 
 #endif

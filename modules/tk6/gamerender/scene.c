@@ -17,8 +17,7 @@ enum {
     HIDDEN_MESHES_MAX = 32,  // per fighter: part meshes its move set does not show
     BODY_JOINTS = 23,   // glb joints 0..22: the root, then the body bones the sim's skeleton B moves
     FIRST_FINGER_JOINT = FIRST_FINGER_BONE + 25,  // glb joints 76..105 (BONE records 75..104) are A bones 51..80
-    // (hole tk6-face-joints :tags (tk6 importer) :sev polish) the TK6 face bones (BONE records 107..146) are not mapped to the sim's face bones, so they keep their rest pose.
-    POSED_BONES = FIRST_FINGER_JOINT + FINGER_BONES,  // joints 23..75 are left zero: they keep their rest pose
+    POSED_BONES = FIRST_FACE_JOINT + FACE_JOINTS,  // joints 23..75 and 106, 107 are left zero: they keep their rest pose
     STAGE_NODES_MAX = 256,  // layers and floor tiles
     NODES_MAX = T6_FIGHTER_COUNT * (PARTS_MAX + HIDDEN_MESHES_MAX) + STAGE_NODES_MAX,
     FX_MAX = 128,
@@ -78,28 +77,7 @@ static void load_parts(sqlite3 *db, int side, const T6Loadout *loadout) {
 }
 
 // What a side's move set loads (hands, face and camera shots); freed when a round brings another.
-static T6Arena hand_arenas[T6_FIGHTER_COUNT], face_arenas[T6_FIGHTER_COUNT];
 static T6FileSet moveset_files[T6_FIGHTER_COUNT];
-
-// No banks: the fighter keeps the sim's fingers.
-static void load_hands(sqlite3 *db, int side, const char *moveset) {
-    size_t bytes;
-    T6HandBanks banks = {0};
-    const char *failed = t6_load_hands_storage(db, moveset, &bytes);
-    if (!failed) failed = t6_new_arena(&hand_arenas[side], bytes);
-    if (!failed) failed = t6_load_hands(&banks, db, moveset, t6_read_set_file, &moveset_files[side], &hand_arenas[side]);
-    visual.fighter[side].banks = failed ? (T6HandBanks){0} : banks;
-}
-
-// No banks: the fighter keeps the sim's face.
-static void load_faces(sqlite3 *db, int side, const char *moveset) {
-    size_t bytes;
-    T6FaceBanks banks = {0};
-    const char *failed = t6_load_faces_storage(db, moveset, &bytes);
-    if (!failed) failed = t6_new_arena(&face_arenas[side], bytes);
-    if (!failed) failed = t6_load_faces(&banks, db, moveset, t6_read_set_file, &moveset_files[side], &face_arenas[side]);
-    visual.fighter[side].faces = failed ? (T6FaceBanks){0} : banks;
-}
 
 // The part meshes hidden by default that the move set does not show (Mokujin's sword unless he runs Yoshimitsu's moves).
 static void load_hidden_meshes(sqlite3 *db, int side, const char *moveset) {
@@ -131,13 +109,12 @@ static void load_movesets(sqlite3 *db, const T6View *view) {
         const char *moveset = view->fighters[side].moveset;
         if (strncmp(loaded_movesets[side], moveset, T6_NAME_BYTES) == 0) continue;
         memcpy(loaded_movesets[side], moveset, T6_NAME_BYTES);
-        free(hand_arenas[side].base);
-        hand_arenas[side] = (T6Arena){};
-        free(face_arenas[side].base);
-        face_arenas[side] = (T6Arena){};
+        t6_free_hands(&visual.fighter[side].banks);
+        t6_free_faces(&visual.fighter[side].faces);
         t6_file_set_free(&moveset_files[side]);
-        load_hands(db, side, moveset);
-        load_faces(db, side, moveset);
+        // No banks: the fighter keeps the sim's fingers and the face its rest pose.
+        t6_load_hands(&visual.fighter[side].banks, db, moveset, t6_read_set_file, &moveset_files[side]);
+        t6_load_faces(&visual.fighter[side].faces, db, moveset, t6_read_set_file, &moveset_files[side]);
         t6_camera_load(db, side, moveset, &moveset_files[side]);
         load_hidden_meshes(db, side, moveset);
     }
@@ -180,11 +157,33 @@ static OwTransform transform_of(const T6Mat4 *matrix) {
     };
 }
 
-static void pose_fighter(OwTransform bones[POSED_BONES], const T6Rig *rig) {
+// The root and body joints from the skeleton; the others their local under the parent: a face joint the face pose, a
+// helper joint (the neck and head joints the face hangs under) its bind.
+// (hole tk6-head-chain :tags (tk6 fighter-detail) :sev gap) the head mesh and face hang on KUBI_jnt and ATAMA_jnt (joints 74, 75), which keep their bind under the neck: the sim's head turns (joint 6, no vertex weight) never reach the head; how the game drives them is not traced.
+static T6Mat4 joint_world(const T6VisualFighter *fighter, int joint) {
+    if (joint < BODY_JOINTS) return joint > 0 ? fighter->rig.bones_b[BODY_SLOT[joint]].world : fighter->rig.root.world;
+    const T6ClipBank *tree = &fighter->faces.poses;
+    int parent = joint < (int)tree->joint_count ? tree->joints[joint].parent : -1;
+    T6Mat4 world = joint_world(fighter, parent < 0 || parent >= joint ? 0 : parent);
+    bool face = joint >= FIRST_FACE_JOINT && joint < FIRST_FACE_JOINT + FACE_JOINTS;
+    t6_mat_multiply(&world, face ? &fighter->face_locals[joint - FIRST_FACE_JOINT] : &tree->joints[joint].bind);
+    return world;
+}
+
+static void pose_fighter(OwTransform bones[POSED_BONES], const T6VisualFighter *fighter) {
+    const T6Rig *rig = &fighter->rig;
     bones[0] = transform_of(&rig->root.world);
     for (int joint = 1; joint < BODY_JOINTS; joint++) bones[joint] = transform_of(&rig->bones_b[BODY_SLOT[joint]].world);
     for (int bone = 0; bone < FINGER_BONES; bone++)
         bones[FIRST_FINGER_JOINT + bone] = transform_of(&rig->bones_a[FIRST_FINGER_BONE + bone].world);
+    for (int joint = FIRST_FACE_JOINT; joint < FIRST_FACE_JOINT + FACE_JOINTS; joint++) {
+        if (!fighter->face_posed) {
+            bones[joint] = (OwTransform){0};  // zero: the rest pose
+            continue;
+        }
+        T6Mat4 world = joint_world(fighter, joint);
+        bones[joint] = transform_of(&world);
+    }
 }
 
 static const OwTransform PLACE_AT_ORIGIN = {.rotation = {0, 0, 0, 1}, .scale = {1, 1, 1}};
@@ -208,7 +207,7 @@ void t6_scene_send(const T6View *view, float seconds) {
     }
     uint32_t count = t6_stage_nodes(view, scene->camera, midpoint_x, midpoint_z, block.nodes, STAGE_NODES_MAX);
     for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
-        pose_fighter(block.bones[side], &visual.fighter[side].rig);
+        pose_fighter(block.bones[side], &visual.fighter[side]);
         uint32_t fighter_bones = (uint32_t)(offsetof(typeof(block), bones) + side * sizeof block.bones[side]);
         for (int at = 0; at < part_count[side]; at++) {
             OwNode *node = &block.nodes[count++];

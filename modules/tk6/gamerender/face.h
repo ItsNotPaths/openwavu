@@ -1,6 +1,7 @@
-// The face of a fighter: the face values and clips that moves, properties and voices set, the blinks,
-// the low pass toward each new pose, the eyes' aim and the head tilt of a wide face. Display only: reads the sim view, the
-// sim never reads this.
+// The face of a fighter: the face values and clips that moves, properties and voices set, the blinks and
+// the low pass toward each new pose. Display only: reads the sim view, the sim never reads this.
+// (hole tk6-face-eyes :tags (tk6 fighter-detail) :sev polish) the eyes do not turn toward the opponent: TK6's eye look-at is not traced, and the eyes are face joints the sim does not hold.
+// (hole tk6-head-tilt :tags (tk6 fighter-detail) :sev polish) a wide face does not tip the head: TK6 faces have no face-root channel, where its tilt comes from is open.
 #ifndef T6_VISUAL_FACE_H
 #define T6_VISUAL_FACE_H
 
@@ -27,18 +28,16 @@ typedef struct {
     int16_t blink;       // ticks to the next blink, or to the end of a blink or a face
     T6FacePose pose;     // the pose of the last tick, where the next low pass starts
     T6PoseProp seen;     // the face property of the last tick: a new one sets the face
-    T6AimState eyes;     // the eyes' turn toward the opponent
-    float tilt;          // radians the head tips by a wide face
 } T6Face;
 
 // The neutral face at once (a reset, a round start).
-T6Face t6_face_start(T6FaceBanks banks);
-// One sim tick, after the sim step: the move start, the face property, the clock, the blinks, the sample, the eyes, the tilt.
-T6Face t6_face_tick(T6Face face, T6FaceBanks banks, const T6ViewFighter *fighter, T6Phase phase);
+T6Face t6_face_start(const T6FaceBanks *banks);
+// One sim tick, after the sim step: the move start, the face property, the clock, the blinks, the sample.
+T6Face t6_face_tick(T6Face face, const T6FaceBanks *banks, const T6ViewFighter *fighter, T6Phase phase);
 // The face of a voice row that starts: a face clip of the poses with VOICE_FACE_CLIP, else a face value. The newest
 // voice wins.
 T6Face t6_face_voice(T6Face face, const T6ViewFighter *fighter, T6Phase phase, uint16_t voice_face);
-// Writes the face bones, the eyes and the head tilt into the rig, and rebuilds the worlds they move.
-void t6_face_pose_rig(T6Rig *rig, const T6Face *face, const T6ViewFighter *fighter);
+// The face joints' local matrices (glb joints FIRST_FACE_JOINT on), as the sim keeps a local.
+void t6_face_locals(T6Mat4 locals[FACE_JOINTS], const T6Face *face, const T6FaceBanks *banks);
 
 #endif

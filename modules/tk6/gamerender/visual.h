@@ -19,10 +19,12 @@ typedef struct { T6Vec4 turn[FINGER_BONES]; } T6FingerBones;  // one rotation pe
 typedef struct {  // one fighter's visual state
     T6HandBanks banks;       // caller-owned; no banks (zero): the fingers keep the sim's pose
     T6Hands hands;
-    T6FaceBanks faces;       // caller-owned; no banks (zero): the face keeps the sim's pose
+    T6FaceBanks faces;       // caller-owned; no banks (zero): the face keeps its rest pose
     T6Face face;
     T6FingerBones from, shown;  // the display blend: from the pose shown at the newest tick to the tick's pose
-    T6Rig rig;               // the sim's skeleton with the fingers and face posed: what the renderer draws
+    T6Rig rig;               // the sim's skeleton with the fingers posed: what the renderer draws
+    bool face_posed;         // face_locals hold this frame's face
+    T6Mat4 face_locals[FACE_JOINTS];  // the face joints under the head, which the sim's skeleton does not hold
 } T6VisualFighter;
 
 typedef struct {  // all fighters' visual state

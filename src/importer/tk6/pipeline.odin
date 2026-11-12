@@ -111,11 +111,6 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	if !unpacked || len(banks) == 0 do return fmt.tprintf("%s: anim container did not read", id)
 	if !bank_fits(motbin, banks[0]) do return fmt.tprintf("%s: anim container %d does not fit the move set", id, container_index)
 	write_bank(im, id, banks[0])
-	hand_poses, has_hand_poses := tk6.embedded_bank(motbin, data, tk5.BANK_HANDS)
-	if !has_hand_poses || len(banks) <= tk5.BANK_HANDS do return fmt.tprintf("%s: no hand banks", id)
-	write_hand_bank(im, fmt.tprintf("%s/hand_poses", id), hand_poses)
-	if !tk5.empty_bank(banks[tk5.BANK_HANDS]) do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", id), banks[tk5.BANK_HANDS])  // Mokujin's is empty
-	// (hole tk6-face-camera-banks :tags (tk6 importer) :sev polish) the face banks (embedded slot and container section 2) and the move cameras (section 5) are not imported.
 
 	body_data, has_body := read_file(im, tk6.body_file(character))
 	if !has_body do return fmt.tprintf("%s: no body model", id)
@@ -124,6 +119,16 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	bone, has_bone := tk6.read_bone(body[tk6.MODEL_BONES], context.temp_allocator)
 	skeleton, mapped := tk6_convert.sim_skeleton(bone)
 	if !has_bone || !mapped do return fmt.tprintf("%s: skeleton did not read", id)
+	bones := tk6_convert.glb_skeleton(bone, nil, context.temp_allocator)
+
+	hand_poses, has_hand_poses := tk6.embedded_bank(motbin, data, tk5.BANK_HANDS)
+	face_poses, has_face_poses := tk6.embedded_bank(motbin, data, tk5.BANK_FACE)
+	if !has_hand_poses || !has_face_poses || len(banks) <= tk5.BANK_FACE do return fmt.tprintf("%s: no hand or face banks", id)
+	write_hand_bank(im, fmt.tprintf("%s/hand_poses", id), hand_poses, bones)
+	if !tk5.empty_bank(banks[tk5.BANK_HANDS]) do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", id), banks[tk5.BANK_HANDS], bones)  // Mokujin's is empty
+	write_face_bank(im, fmt.tprintf("%s/face_poses", id), face_poses, bones)
+	if !tk5.empty_bank(banks[tk5.BANK_FACE]) do write_face_bank(im, fmt.tprintf("%s/face_clips", id), banks[tk5.BANK_FACE], bones)
+	// (hole tk6-move-camera-banks :tags (tk6 importer) :sev polish) the move cameras (container section 5) are not imported.
 	tk5_convert.write_skeleton_rows(w, id, skeleton)
 	idle, has_idle := idle_anim(im, motbin, banks[0])
 	if !has_idle do return fmt.tprintf("%s: standing idle did not read", id)
@@ -358,26 +363,35 @@ write_bank :: proc(im: ^Import, owner: string, data: []byte) {
 	}
 }
 
-// Every clip of a hand bank (TK5's layout) as anims/<owner>/<idx>.anim. The pose bank's clip 0 is the pose library: frame i = pose i.
-write_hand_bank :: proc(im: ^Import, owner: string, data: []byte) {
-	bank, ok := tk5.read_hand_bank(data)
-	if !ok {
-		fail(im, "%s: hand bank did not read", owner)
+// A finger bank (TK5's layout) as anims/<owner>.glb on the character's bones. The pose bank's clip 0 is the pose library:
+// frame i = pose i.
+write_hand_bank :: proc(im: ^Import, owner: string, data: []byte, bones: tk5.Skeleton) {
+	write_clip_bank(im, owner, bones, proc(path: string, bones: tk5.Skeleton, data: []byte) -> bool {
+		bank := tk5.read_hand_bank(data) or_return
+		return tk6_convert.write_hand_clips(path, bones, bank)
+	}, data)
+}
+
+// A face bank as anims/<owner>.glb on the character's bones. The pose bank's record 0 is the face values: frame i = face
+// value i; its other records are the voice faces. The clip bank holds the Start/Win faces.
+write_face_bank :: proc(im: ^Import, owner: string, data: []byte, bones: tk5.Skeleton) {
+	write_clip_bank(im, owner, bones, proc(path: string, bones: tk5.Skeleton, data: []byte) -> bool {
+		bank := tk6.read_mota(data, context.temp_allocator) or_return
+		return tk6_convert.write_face_clips(path, bones, bank)
+	}, data)
+}
+
+write_clip_bank :: proc(im: ^Import, owner: string, bones: tk5.Skeleton, write: proc(path: string, bones: tk5.Skeleton, data: []byte) -> bool, data: []byte) {
+	file := fmt.tprintf("anims/%s.glb", owner)
+	if !make_dir(join(im.root, "anims", owner[:strings.last_index_byte(owner, '/')])) {
+		fail(im, "cannot create the folder of %s", file)
 		return
 	}
-	if !make_dir(join(im.root, "anims", owner)) {
-		fail(im, "cannot create anims/%s", owner)
+	if !write(join(im.root, file), bones, data) {
+		fail(im, "%s: clips did not convert", owner)
 		return
 	}
-	for index in 0 ..< bank.count {
-		frames, decoded := tk5.read_hand_clip(bank, index, context.temp_allocator)
-		file := fmt.tprintf("anims/%s/%d.anim", owner, index)
-		if !decoded || !tk5_convert.write_hand_anim(join(im.root, file), frames) {
-			fail(im, "%s: hand clip %d did not convert", owner, index)
-			continue
-		}
-		db.insert(&im.w, "anim", owner, i64(index), i64(len(frames)), file)
-	}
+	db.insert(&im.w, "clip_bank", owner, file)
 }
 
 // A file in temp memory; not ok for an empty slot.

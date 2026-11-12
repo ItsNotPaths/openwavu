@@ -36,8 +36,6 @@ enum { KUMA = 11, PANDA = 32 };  // their voices start face clips in any phase
 
 static const float SAME_TIME = 1e-5f;  // times closer than this count as equal
 static const float PLAY_RATE = (float)PLAY_SPEED / CLOCK_PER_FRAME;  // clip frames a tick
-static const float MOVE_SCALE = 0.2f;   // a move channel's bon units per step
-static const float SIZE_SCALE = 0.01f;  // a scale channel: 100 = as is
 
 // --- what the face plays
 
@@ -45,10 +43,12 @@ static T6FacePlay value_play(float value, uint16_t blend_frames) { return (T6Fac
 
 static bool plays_clip(T6FacePlay play) { return play.clip != 0; }
 
-static T6FaceBank bank_of(T6FaceBanks banks, T6FacePlay play) { return (play.clip & FACE_CLIP_BANK) ? banks.clips : banks.poses; }
+static const T6ClipBank *bank_of(const T6FaceBanks *banks, T6FacePlay play) {
+    return (play.clip & FACE_CLIP_BANK) ? &banks->clips : &banks->poses;
+}
 
-static float clip_length(T6FaceBanks banks, T6FacePlay play) {
-    return (float)t6_face_clip_frames(bank_of(banks, play), play.clip & FACE_CLIP_INDEX);
+static float clip_length(const T6FaceBanks *banks, T6FacePlay play) {
+    return (float)t6_clip_frames(bank_of(banks, play), play.clip & FACE_CLIP_INDEX);
 }
 
 // After the match a clip stops on its last frame: the win pose keeps its face.
@@ -87,7 +87,7 @@ static T6Face take_property(T6Face face, T6PoseProp property) {
 }
 
 // The clip clock, then, while no clip plays and no property posed the face, the effort face and the blinks.
-static T6Face step(T6Face face, T6FaceBanks banks, const T6ViewFace *fighter, T6Phase phase) {
+static T6Face step(T6Face face, const T6FaceBanks *banks, const T6ViewFace *fighter, T6Phase phase) {
     float length = clip_length(banks, face.play);
     if (plays_clip(face.play) && (!holds_clip(phase) || face.play.time < length)) face.play.time += PLAY_RATE;
     if (face.play.time > length) face = relax(face, CLIP_END_BLEND);  // the clip is over, or a face value past the poses
@@ -116,116 +116,28 @@ static bool same_play(T6FacePlay first, T6FacePlay second) {
 }
 
 // The target a 1 / blend_frames step from the last pose. The game samples only when the play changed.
-static T6Face sample(T6Face face, T6FaceBanks banks) {
+static T6Face sample(T6Face face, const T6FaceBanks *banks) {
     if (face.has_sample && same_play(face.sampled, face.play)) return face;
     T6FacePose target = t6_face_clip_sample(bank_of(banks, face.play), face.play.clip & FACE_CLIP_INDEX, face.play.time);
-    if (face.has_sample && face.play.blend_frames > 0) target = t6_face_pose_blend(face.pose, target, 1.0f / face.play.blend_frames);
+    if (face.has_sample && face.play.blend_frames > 0) target = t6_face_pose_blend(&banks->poses, face.pose, target, 1.0f / face.play.blend_frames);
     face.pose = target;
     face.sampled = face.play;
     face.has_sample = true;
     return face;
 }
 
-// --- eyes: two face bones that turn toward the opponent's head over the face pose
-
-enum { RIGHT_EYE_BONE = 96, LEFT_EYE_BONE = 105 };
-
-static const float EYE_YAW_LIMIT = 0.453785598f;  // 26 degrees
-static const float EYE_PITCH_DOWN = -0.0349065848f;
-static const float EYE_PITCH_UP = 0.261799395f;
-static const float EYE_PITCH_UP_LOW = 0.104719758f;  // the models whose eyes look up less
-static const int16_t LOW_EYE_MODELS[] = {5, 7, 8, 21, 24};
-
-static T6AimJoint eye_joint(int16_t model_id) {
-    T6AimJoint eyes = {
-        .limits = {-EYE_YAW_LIMIT, EYE_YAW_LIMIT, EYE_PITCH_DOWN, EYE_PITCH_UP, AIM_PITCH_HOLD},
-        .rate = AIM_RATE, .fast_rate = AIM_RATE_SNAP,
-        .pitches = true, .stops_behind = true, .chest_speeds_up = true, .leads_hips = true,
-    };
-    for (size_t model = 0; model < sizeof LOW_EYE_MODELS / sizeof *LOW_EYE_MODELS; model++)
-        if (LOW_EYE_MODELS[model] == model_id) eyes.limits.pitch_up = EYE_PITCH_UP_LOW;
-    return eyes;
-}
-
-// In the head frame x looks ahead: the yaw turns toward -y, the pitch toward -z.
-static T6AimState eye_seen(const T6ViewFighter *fighter) {
-    const T6LookAim *aim = &fighter->look.aim;
-    T6Vec4 direction = t6_look_seen_from(&fighter->rig.bones_a[BONE_HEAD].world, aim->eyes, aim->target);
-    float yaw = -t6_fast_atan2(direction.y, direction.x);
-    float pitch = -t6_fast_atan2(direction.z, sqrtf(fmaf(direction.x, direction.x, direction.y * direction.y)));
-    return (T6AimState){yaw, pitch, t6_aim_zone(yaw)};
-}
-
-static T6AimState aim_eyes(T6AimState last, const T6ViewFighter *fighter) {
-    const T6ViewLook *look = &fighter->look;
-    T6AimState seen = eye_seen(fighter);
-    if (look->weight <= 0) {  // not looking: follow the target unsmoothed, the bones keep the face pose
-        seen.zone = t6_aim_zone_kept(last.zone, seen.zone);
-        return seen;
-    }
-    T6AimFrame aim_frame = {.lock = look->aim.lock, .look_on = look->aim.look_on, .hips = look->hips,
-                            .chest_yaw_change = look->chest_yaw_change, .chest_pitch_change = look->chest_pitch_change};
-    return t6_aim_step(eye_joint(fighter->face.model_id), last, seen, aim_frame).aim;
-}
-
-static T6Mat4 then_turn(T6Mat4 matrix, void (*rotate)(T6Mat4 *, int32_t), int32_t steps) {
-    T6Mat4 turned;
-    t6_mat_identity(&turned);
-    rotate(&turned, steps);
-    t6_mat_multiply(&turned, &matrix);
-    return turned;
-}
-
-// Rz(-90), the pitch about y, the yaw about x, Ry(+90); mixed over the face pose by weight / LOOK_WEIGHT_FULL.
-static T6Mat4 eye_turn(T6Mat4 pose, T6AimState eyes, int32_t weight) {
-    T6Mat4 aim;
-    t6_mat_identity(&aim);
-    aim = then_turn(aim, t6_mat_rotate_z, -QUARTER_TURN.bits);
-    aim = then_turn(aim, t6_mat_rotate_y, t6_rad_to_angle_round(eyes.pitch));
-    aim = then_turn(aim, t6_mat_rotate_x, t6_rad_to_angle_round(eyes.yaw));
-    aim = then_turn(aim, t6_mat_rotate_y, QUARTER_TURN.bits);
-    T6Vec4 aim_turn, pose_turn;
-    t6_mat_to_quat(&aim_turn, &aim);
-    t6_mat_to_quat(&pose_turn, &pose);
-    t6_quat_blend(&aim_turn, (float)weight * (1.0f / (float)LOOK_WEIGHT_FULL), &pose_turn, &aim_turn);
-    t6_quat_to_mat(&pose, &aim_turn);
-    return pose;
-}
-
-// --- head tilt: a face whose root turns sideways tips the head about its z
-
-static const float TILT_LEAN_MIN = 0.1f;   // a root lean below this lets the tilt go
-static const float TILT_LEAN_MAX = 0.4f;   // the lean that gives the most tilt
-static const float TILT_RISE = 0.01f;      // radians a tick
-static const float TILT_FALL = 0.005f;
-
-static float tilt_step(float tilt, T6Vec4 root_turn) {
-    T6Mat4 root;
-    t6_mat_identity(&root);
-    t6_quat_to_mat(&root, &root_turn);
-    float lean = root.m[1][0];
-    if (lean > TILT_LEAN_MAX) lean = TILT_LEAN_MAX;
-    if (!(lean > TILT_LEAN_MIN)) return tilt - TILT_FALL < 0.0f ? 0.0f : tilt - TILT_FALL;
-    float goal = lean - TILT_LEAN_MIN;
-    if (goal >= tilt) return tilt + TILT_RISE > goal ? goal : tilt + TILT_RISE;
-    return tilt - TILT_FALL < goal ? goal : tilt - TILT_FALL;
-}
-
 // --- the face of a fighter
 
-T6Face t6_face_start(T6FaceBanks banks) {
+T6Face t6_face_start(const T6FaceBanks *banks) {
     T6Face face = relax((T6Face){}, 0);
     return sample(face, banks);
 }
 
-T6Face t6_face_tick(T6Face face, T6FaceBanks banks, const T6ViewFighter *fighter, T6Phase phase) {
+T6Face t6_face_tick(T6Face face, const T6FaceBanks *banks, const T6ViewFighter *fighter, T6Phase phase) {
     if (fighter->face.move_started) face = move_face(face, &fighter->face);
     face = take_property(face, fighter->face.pose);
     face = step(face, banks, &fighter->face, phase);
-    face = sample(face, banks);
-    face.eyes = aim_eyes(face.eyes, fighter);
-    face.tilt = tilt_step(face.tilt, face.pose.channel[0]);  // channel 0: the face root's turn
-    return face;
+    return sample(face, banks);
 }
 
 T6Face t6_face_voice(T6Face face, const T6ViewFighter *fighter, T6Phase phase, uint16_t voice_face) {
@@ -241,43 +153,19 @@ T6Face t6_face_voice(T6Face face, const T6ViewFighter *fighter, T6Phase phase, u
     return face;
 }
 
-// Turns replace the bind rotation, moves the bind translation, scales scale the turned rows.
-static void pose_face_bones(T6Rig *rig, const T6FacePose *pose) {
-    for (int channel = 0; channel < FACE_CHANNELS; channel++) {
-        T6Mat4 *local = &rig->bones_a[T6_FACE_CHANNELS[channel].bone].local;
-        const T6Vec4 *value = &pose->channel[channel];
-        switch (T6_FACE_CHANNELS[channel].kind) {
-        case FACE_TURN: t6_quat_to_mat(local, value); break;
-        case FACE_MOVE:
-            for (int axis = 0; axis < 3; axis++) local->m[3][axis] = value->v[axis] * MOVE_SCALE;
-            local->m[3][3] = 1.0f;
-            break;
-        case FACE_SCALE:
-            for (int row = 0; row < 3; row++)
-                for (int column = 0; column < 3; column++) local->m[row][column] *= value->v[row] * SIZE_SCALE;
-            break;
-        }
+// Rotations replace the bind rotation, translations the bind translation.
+void t6_face_locals(T6Mat4 locals[FACE_JOINTS], const T6Face *face, const T6FaceBanks *banks) {
+    const T6ClipBank *bank = &banks->poses;
+    for (int joint = 0; joint < FACE_JOINTS; joint++) {
+        if ((uint32_t)(FIRST_FACE_JOINT + joint) < bank->joint_count) locals[joint] = bank->joints[FIRST_FACE_JOINT + joint].bind;
+        else t6_mat_identity(&locals[joint]);
     }
-}
-
-// The head turns about its own z; B's head takes the turn rows.
-static void tilt_head(T6Rig *rig, const T6ViewFighter *fighter, float tilt) {
-    T6Mat4 turn;
-    t6_mat_z_turn(&turn, -tilt);
-    t6_mat_rotation_product(&rig->bones_a[BONE_HEAD].local, &rig->bones_a[BONE_HEAD].local, &turn);
-    memcpy(rig->bones_b[BONE_HEAD].local.m, rig->bones_a[BONE_HEAD].local.m, sizeof rig->bones_a[BONE_HEAD].local.m[0] * 3);
-    t6_skel_bone_world(rig, fighter->parent_a, BONE_HEAD);
-    t6_skel_bone_world_b(rig, fighter->parent_b, BONE_HEAD);
-}
-
-void t6_face_pose_rig(T6Rig *rig, const T6Face *face, const T6ViewFighter *fighter) {
-    pose_face_bones(rig, &face->pose);
-    int32_t weight = fighter->look.weight;
-    if (weight > 0) {
-        rig->bones_a[RIGHT_EYE_BONE].local = eye_turn(rig->bones_a[RIGHT_EYE_BONE].local, face->eyes, weight);
-        rig->bones_a[LEFT_EYE_BONE].local = eye_turn(rig->bones_a[LEFT_EYE_BONE].local, face->eyes, weight);
+    for (uint32_t track = 0; track < bank->track_count; track++) {
+        int joint = bank->tracks[track].joint - FIRST_FACE_JOINT;
+        if (joint < 0 || joint >= FACE_JOINTS) continue;
+        const T6Vec4 *value = &face->pose.track[track];
+        if (bank->tracks[track].path == CLIP_ROTATION) t6_quat_to_mat(&locals[joint], value);
+        if (bank->tracks[track].path == CLIP_TRANSLATION)
+            for (int axis = 0; axis < 3; axis++) locals[joint].m[3][axis] = value->v[axis];
     }
-    tilt_head(rig, fighter, face->tilt);
-    for (int bone = FIRST_FACE_BONE; bone < FIRST_FACE_BONE + FACE_BONES; bone++)  // parents come first
-        t6_skel_bone_world(rig, fighter->parent_a, bone);
 }
