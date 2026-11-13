@@ -137,7 +137,7 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	if !has_idle do return fmt.tprintf("%s: standing idle did not read", id)
 	tk6_convert.write_body(w, id, character.model, tk5_convert.head_top(&skeleton, idle))
 	tk6_convert.write_body_points(w, id, character.chara)
-	tk5_convert.write_gaze(w, id, -1)
+	tk6_convert.write_gaze(w, id, character.chara)
 	tk6_convert.write_body_rules(w, id, character.model)
 
 	for costume in COSTUMES do import_costume(im, character, costume, bone)

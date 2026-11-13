@@ -39,8 +39,7 @@ RADII_NANCY := Body_Radii{
 	{720, 2 * tk5_convert.PUSH_ARM, 2 * tk5_convert.PUSH_ARM, 1200, 288, 288, 576, 576},
 }
 
-// The throw range cut and the head probe are TK5's.
-// (hole tk6-head-probe-gaze :tags (tk6 importer) :sev polish) the head probe and gaze are TK5's by model and move set; TK6's limb init and look init are not found.
+// The throw range cut is TK5's. The head probe by model is the limb init's (FUN_0004347c), the same as TK5's.
 write_body :: proc(w: ^db.Writer, character: string, model: int, head_top: f32) {
 	radii := RADII_DEFAULT
 	switch model {
@@ -66,4 +65,13 @@ write_body :: proc(w: ^db.Writer, character: string, model: int, head_top: f32) 
 	for i in 0 ..< len(radii.push) do append(&row, f64(radii.push[i]), i64(tk5_convert.PUSH_BONE[i]))
 	append(&row, f64(cut), f64(probe.x), f64(probe.z), f64(probe.radius), f64(head_top))
 	db.insert(w, "body", ..row[:])
+}
+
+// Look init FUN_001dda1c: Nina, Xiaoyu and Steve (move sets 5, 7, 16: mask 0x100a0) tilt 15 degrees, others 10.
+// (hole tk6-head-turn :tags (tk6 importer) :sev polish) no head turn: TK5 turns Lili's head 10 degrees (head aim 0xe94c0); TK6's head aim is not found.
+write_gaze :: proc(w: ^db.Writer, character: string, chara: int) {
+	TILT_HIGH :: f32(0h3e860a92)  // 15 degrees, TOC -0x3244
+	TILT :: f32(0h3e32b8c2)       // 10 degrees, TOC -0x3240
+	tilt := chara == 5 || chara == 7 || chara == 16 ? TILT_HIGH : TILT
+	db.insert(w, "gaze", character, f64(tilt), i64(0))
 }
