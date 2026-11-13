@@ -28,8 +28,8 @@ tk6_import: struct {
 	error: string,
 }
 
-// One import for every test of this file; "" when the game is not here.
-@(private = "file")
+// One import for every TK6 test; "" when the game is not here.
+@(private)
 tk6_pack :: proc(t: ^testing.T) -> (pack: string, ok: bool) {
 	if !os.exists(TK6_GAME) do return
 	sync.once_do(&tk6_import.once, proc() {tk6_import.error = tk6_importer.build_pack({TK6_GAME}, TK6_TEST_PACKS)})
@@ -66,7 +66,6 @@ build_pose_tool :: proc() -> bool {
 
 // Kazuya's standing idle stands: head over chest over hips over feet, feet on the floor, and within a few mm of TK5's
 // idle through the same pose code (the two games share this clip).
-// (hole tk6-scenario-tests :tags (tk6 sim) :sev gap) no scripted-input harness; must cover Kazuya counter hit d/f+2 into the just-frame electric, and d/f+1,2 bounding on hit two while d/f+1 alone gives no airborne status, one bound per combo.
 @(test)
 tk6_idle_stands :: proc(t: ^testing.T) {
 	pack_dir, imported := tk6_pack(t)
