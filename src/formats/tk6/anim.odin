@@ -32,18 +32,42 @@ read_mota :: proc(data: []byte, allocator := context.allocator) -> (bank: Mota_B
 // Ids with the same start are one record.
 mota_anim_start :: proc(bank: Mota_Bank, index: int) -> int {return int(tk5.be_u32(bank.data, MOTA_TABLE + 4 * index))}
 
-read_mota_anim :: proc(bank: Mota_Bank, index: int, allocator := context.allocator) -> (anim: tk5.Anim, ok: bool) {
+// The record of an id: from its start to the next record's.
+@(private = "file")
+mota_record :: proc(bank: Mota_Bank, index: int) -> (record: []byte, ok: bool) {
 	if index < 0 || index >= bank.count do return
 	start := mota_anim_start(bank, index)
 	end := len(bank.data)
 	if at, found := slice.binary_search(bank.starts, start); found && at + 1 < len(bank.starts) do end = bank.starts[at + 1]
 	if start + 4 > end || end > len(bank.data) do return
-	record := bank.data[start:end]
+	return bank.data[start:end], true
+}
+
+read_mota_anim :: proc(bank: Mota_Bank, index: int, allocator := context.allocator) -> (anim: tk5.Anim, ok: bool) {
+	record := mota_record(bank, index) or_return
 	if tk5.be_u16(record, 0) == ANIM_TYPE_PLAIN do return read_plain_anim(record, allocator)
 	if tk5.be_u16(record, 0) != ANIM_TYPE_BODY do return
 	little := little_endian_bank(record, context.temp_allocator) or_return
 	tk5_bank := tk5.read_bank(little) or_return
 	return tk5.read_anim(tk5_bank, 0, allocator)
+}
+
+CAMERA_CHANNELS :: 4  // eye (mm, fighter space), turn (euler x, y, z), field of view (radians), unused
+
+// A camera clip of container section 5 (tk5.BANK_CAMERAS): a plain record of the 4 camera channels. 11 of 263 banks
+// also hold type 0x64 records; no roster move points at them.
+read_camera_clip :: proc(bank: Mota_Bank, index: int, allocator := context.allocator) -> (keys: [][CAMERA_CHANNELS][3]f32, ok: bool) {
+	record := mota_record(bank, index) or_return
+	if tk5.be_u16(record, 0) != ANIM_TYPE_PLAIN || tk5.be_u16(record, 2) != CAMERA_CHANNELS do return
+	values := 8 + 4 * CAMERA_CHANNELS
+	frames := int(tk5.be_u32(record, 4))
+	if values + frames * CAMERA_CHANNELS * 12 > len(record) do return
+	keys = make([][CAMERA_CHANNELS][3]f32, frames, allocator)
+	for &key, frame in keys do for &channel, channel_index in key {
+		at := values + 12 * (frame * CAMERA_CHANNELS + channel_index)
+		channel = {tk5.be_f32(record, at), tk5.be_f32(record, at + 4), tk5.be_f32(record, at + 8)}
+	}
+	return keys, true
 }
 
 // The 23 body channels; channels past them (props) are dropped.

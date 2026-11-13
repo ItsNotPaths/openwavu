@@ -166,7 +166,8 @@ tk6_roster_plays :: proc(t: ^testing.T) {
 	}
 }
 
-// The fighter's parts and the stage load in the host's model loader, with their textures.
+// Every fighter's costume parts and the stage load in the host's model loader; the bodies and the stage with textures
+// (some parts of Nancy and Azazel draw none).
 @(test)
 tk6_import_models_load :: proc(t: ^testing.T) {
 	pack_dir, imported := tk6_pack(t)
@@ -179,12 +180,30 @@ tk6_import_models_load :: proc(t: ^testing.T) {
 	defer titlepack.close_files(&files)
 	assets := render.assets_create(files)
 	defer render.assets_destroy(&assets, &g)
-	for model in ([]string{"parts/kazuya/kazuya_1_body.glb", "parts/kazuya/kazuya_part_59.glb", "stages/" + TK6_STAGE + ".glb"}) {
-		loaded := render.asset_model(&assets, &g, render.asset_id(&assets, model))
-		if !testing.expectf(t, loaded != nil, "%s does not load", model) do continue
+	handle: ^db.Sqlite
+	defer db.close_v2(handle)
+	database := strings.clone_to_cstring(strings.concatenate({pack_dir, "/tk6.db"}, context.temp_allocator), context.temp_allocator)
+	if !testing.expect_value(t, db.open_v2(database, &handle, db.OPEN_READWRITE, nil), db.OK) do return
+	stmt: ^db.Stmt
+	defer db.finalize(stmt)
+	PARTS :: "SELECT DISTINCT part.file, part.slot = 'body' FROM costume_part JOIN part ON part.id = costume_part.part WHERE part.slot != 'lod'"
+	if !testing.expect_value(t, db.prepare_v2(handle, PARTS, -1, &stmt, nil), db.OK) do return
+	Model :: struct {
+		file:          string,
+		needs_texture: bool,
+	}
+	models := make([dynamic]Model, context.temp_allocator)
+	append(&models, Model{"stages/" + TK6_STAGE + ".glb", true})
+	for db.step(stmt) == db.ROW {
+		append(&models, Model{strings.clone(string(db.column_text(stmt, 0)), context.temp_allocator), db.column_int64(stmt, 1) != 0})
+	}
+	for model in models {
+		loaded := render.asset_model(&assets, &g, render.asset_id(&assets, model.file))
+		if !testing.expectf(t, loaded != nil, "%s does not load", model.file) do continue
+		if !model.needs_texture do continue
 		textured := false
 		for mesh in loaded.meshes do for primitive in mesh do textured ||= primitive.texture != nil
-		testing.expectf(t, textured, "%s draws no texture", model)
+		testing.expectf(t, textured, "%s draws no texture", model.file)
 	}
 }
 
@@ -198,12 +217,6 @@ tk6_sounds_resolve :: proc(t: ^testing.T) {
 	defer db.close_v2(handle)
 	database := strings.clone_to_cstring(strings.concatenate({pack_dir, "/tk6.db"}, context.temp_allocator), context.temp_allocator)
 	if !testing.expect_value(t, db.open_v2(database, &handle, db.OPEN_READWRITE, nil), db.OK) do return
-	count :: proc(handle: ^db.Sqlite, sql: cstring) -> i64 {
-		stmt: ^db.Stmt
-		defer db.finalize(stmt)
-		if db.prepare_v2(handle, sql, -1, &stmt, nil) != db.OK || db.step(stmt) != db.ROW do return -1
-		return db.column_int64(stmt, 0)
-	}
 	// Armor King's _s_amk_dmg07 and dmg08 (711, 712) are in the game's voice table, not in his bank: silent in the game too.
 	testing.expect_value(t, count(handle, "SELECT count(*) FROM voice WHERE voice IN (SELECT voice FROM costume_voice) AND number NOT IN (711, 712) AND number NOT IN (SELECT number FROM sound_name WHERE number IS NOT NULL)"), 0)
 	testing.expect(t, count(handle, "SELECT count(*) FROM voice JOIN costume_voice USING (voice)") > 0, "no fighter has voices")
@@ -219,4 +232,39 @@ tk6_sounds_resolve :: proc(t: ^testing.T) {
 		file := string(db.column_text(stmt, 0))
 		testing.expectf(t, os.exists(strings.concatenate({pack_dir, "/", file}, context.temp_allocator)), "%s is missing", file)
 	}
+}
+
+// Every intro and win pose flies its own shot: its camera clip is in the pack, and clip k goes with the k-th pose, so
+// nearly every shot lasts as long as its pose (a few poses hold past their shot).
+@(test)
+tk6_pose_cameras_resolve :: proc(t: ^testing.T) {
+	pack_dir, imported := tk6_pack(t)
+	if !imported do return
+	handle: ^db.Sqlite
+	defer db.close_v2(handle)
+	database := strings.clone_to_cstring(strings.concatenate({pack_dir, "/tk6.db"}, context.temp_allocator), context.temp_allocator)
+	if !testing.expect_value(t, db.open_v2(database, &handle, db.OPEN_READWRITE, nil), db.OK) do return
+	SHOTS :: "FROM move_camera JOIN anim AS shot ON shot.character = move_camera.tracks AND shot.idx = move_camera.track "
+	POSES :: "JOIN move ON move.key = move_camera.move JOIN anim AS pose ON pose.character = move.anim_owner AND pose.idx = move.anim_idx"
+	poses := count(handle, "SELECT count(*) FROM move_camera")
+	testing.expect(t, poses > 400, "too few intro and win poses")
+	testing.expect_value(t, count(handle, "SELECT count(*) " + SHOTS), poses)
+	same_length := count(handle, "SELECT count(*) " + SHOTS + POSES + " WHERE abs(pose.frames - shot.frames) <= 5")
+	testing.expectf(t, same_length * 10 >= poses * 8, "%d of %d shots as long as their pose", same_length, poses)
+	stmt: ^db.Stmt
+	defer db.finalize(stmt)
+	if !testing.expect_value(t, db.prepare_v2(handle, "SELECT shot.file " + SHOTS, -1, &stmt, nil), db.OK) do return
+	for db.step(stmt) == db.ROW {
+		file := string(db.column_text(stmt, 0))
+		testing.expectf(t, os.exists(strings.concatenate({pack_dir, "/", file}, context.temp_allocator)), "%s is missing", file)
+	}
+}
+
+// The first column of the first row; -1 when the query fails.
+@(private = "file")
+count :: proc(handle: ^db.Sqlite, sql: cstring) -> i64 {
+	stmt: ^db.Stmt
+	defer db.finalize(stmt)
+	if db.prepare_v2(handle, sql, -1, &stmt, nil) != db.OK || db.step(stmt) != db.ROW do return -1
+	return db.column_int64(stmt, 0)
 }

@@ -58,6 +58,7 @@ run :: proc(usrdir, root: string, progress: ^Progress = nil) -> (err: string) {
 	db.insert(w, "source", "importer_version", release.current())
 
 	write_bank(&im, "common", read_file(&im, tk6.COMMON_ANIMS) or_else nil)
+	// (hole tk6-throw-cameras :tags (tk6 importer) :sev gap) no throw_camera rows or global camera bank: TK6's throw camera table and bank are not found (tk6decomp docs/data.md "Cameras: other kinds"), so throws keep the fight camera.
 	step(&im)
 	roster, listed := tk6.read_roster(game)
 	if !listed do return "the move sets did not read"
@@ -128,7 +129,7 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	if !tk5.empty_bank(banks[tk5.BANK_HANDS]) do write_hand_bank(im, fmt.tprintf("%s/hand_gestures", id), banks[tk5.BANK_HANDS], bones)  // Mokujin's is empty
 	write_face_bank(im, fmt.tprintf("%s/face_poses", id), face_poses, bones)
 	if !tk5.empty_bank(banks[tk5.BANK_FACE]) do write_face_bank(im, fmt.tprintf("%s/face_clips", id), banks[tk5.BANK_FACE], bones)
-	// (hole tk6-move-camera-banks :tags (tk6 importer) :sev polish) the move cameras (container section 5) are not imported.
+	if len(banks) > tk5.BANK_CAMERAS do write_camera_bank(im, fmt.tprintf("%s/cameras", id), banks[tk5.BANK_CAMERAS])
 	tk5_convert.write_skeleton_rows(w, id, skeleton)
 	idle, has_idle := idle_anim(im, motbin, banks[0])
 	if !has_idle do return fmt.tprintf("%s: standing idle did not read", id)
@@ -379,6 +380,28 @@ write_face_bank :: proc(im: ^Import, owner: string, data: []byte, bones: tk5.Ske
 		bank := tk6.read_mota(data, context.temp_allocator) or_return
 		return tk6_convert.write_face_clips(path, bones, bank)
 	}, data)
+}
+
+// Every plain clip of a camera bank as anims/<owner>/<idx>.anim; clip i is the Start/Win move's camera property value.
+write_camera_bank :: proc(im: ^Import, owner: string, data: []byte) {
+	bank, read := tk6.read_mota(data, context.temp_allocator)
+	if !read {
+		fail(im, "%s: camera bank did not read", owner)
+		return
+	}
+	if !make_dir(join(im.root, "anims", owner)) {
+		fail(im, "cannot create anims/%s", owner)
+		return
+	}
+	for index in 0 ..< bank.count {
+		keys := tk6.read_camera_clip(bank, index, context.temp_allocator) or_continue
+		file := fmt.tprintf("anims/%s/%d.anim", owner, index)
+		if !tk6_convert.write_camera_anim(join(im.root, file), keys) {
+			fail(im, "%s: camera clip %d did not convert", owner, index)
+			continue
+		}
+		db.insert(&im.w, "anim", owner, i64(index), i64(len(keys)), file)
+	}
 }
 
 write_clip_bank :: proc(im: ^Import, owner: string, bones: tk5.Skeleton, write: proc(path: string, bones: tk5.Skeleton, data: []byte) -> bool, data: []byte) {
