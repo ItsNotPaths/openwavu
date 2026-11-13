@@ -54,7 +54,7 @@ static int fighter_count, stage_count;
 static enum Screen screen;
 static enum Mode mode;
 static int cursors[SCREENS];
-static int side, costume;  // the side picking a fighter; the costume of the fighter under the cursor, 1..
+static int side, costume = 1;  // the side picking a fighter; the costume of the fighter under the cursor, 1..
 static T6Loadout picks[OW_SIDES];
 static uint32_t held[OW_SIDES], frames;
 static bool match_ran, was_joined, banning;
