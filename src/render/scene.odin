@@ -121,8 +121,10 @@ read_scene :: proc(scene: ^Scene, block: []byte) -> (err: string) {
 
 	// Sized once, so the nodes' slices into it stay put.
 	bone_total: u64
-	for wire_node in wire_nodes do bone_total += u64(wire_node.bone_count)
-	if bone_total * size_of(Transform) > u64(len(block)) do return "the nodes' bones do not fit in the scene"
+	for wire_node in wire_nodes {  // nodes may share bones, so each fits on its own, not the sum
+		if u64(wire_node.bone_count) * size_of(Transform) > u64(len(block)) do return "a node's bones do not fit in the scene"
+		bone_total += u64(wire_node.bone_count)
+	}
 	resize(&scene.bones, int(bone_total))
 	bone_at := 0
 	for wire_node in wire_nodes {
