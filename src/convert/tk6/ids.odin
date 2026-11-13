@@ -6,28 +6,24 @@ import tk5_convert "../tk5"
 
 // What a converter did with a TK6 number the sim has no exact match for. Counts are by the TK6 number.
 Fallback :: enum {
-	// (hole tk6-open-requirements :tags (tk6 sim) :sev gap) 1112 uses of requirements whose state the sim lacks are written as never true (sim_contract 'open'); 0x181..0x18c lose their extra pass bit.
+	// (hole tk6-open-requirements :tags (tk6 sim) :sev gap) never true still: 0x13b..0x13d, 0x142 (218 versus uses: worn customize item kinds, the item moves; the sim has only default costumes and no item kinds), 0x97 (42: a wall break fired, needs breaks); the rest sit behind scenario tests or only in campaign sets (tk6decomp requirements.md "Open ids in versus").
 	Requirement_Open,      // the state it reads has no sim field: never true
 	Requirement_Unknown,   // in no table: never true
 	Requirement_Campaign,  // a Scenario Campaign or object test: never true in versus
-	// (hole tk6-dropped-properties :tags (tk6 sim) :sev gap) 36128 uses dropped over about 130 ids; 181 property map rows are guesses, some may matter to the sim.
+	// (hole tk6-dropped-properties :tags (tk6 sim) :sev gap) dropped but read by sim code: 0x8096 (9 uses: P+0x210 picks how 8 body points of FUN_001d62fc are built; their readers are not found), 0x808e (27: P+0x250 bit 49, readers not found), Raven's 0x81ba..0x81c0 (his clone, an extra object the sim does not have); 0x80c8/0x80c9 only reach the floor break fall (FUN_001ac074); the rest are effects, model layers, camera, HUD or stats (tk6decomp properties.md "Dropped ids by use").
 	Property_Dropped,      // no sim meaning (effects, model layers, HUD, guesses)
 	Property_Dead,         // read by nothing in the game
 	Facing_Property_Dropped, // a facing mode in a start, end or requirement list, or the opponent's mode
-	// (hole tk6-facing-rows :tags (tk6 sim) :sev gap) facing mode 2 uses the nearest TK5 mode (18 uses); the contract's rows for modes 2 and 13 are not built, and which of 3..6 are new is open.
-	Facing_Nearest,        // a facing mode new in TK6: the nearest TK5 mode
-	// (hole tk6-motion-codes :tags (tk6 sim) :sev gap) motion codes 4 and 21 (86 uses) use the nearest TK5 code.
-	Motion_Nearest,        // a motion code new in TK6: the nearest TK5 code
 	Motion_None,           // a motion code past the game's table: none
 	Transition_Class_Start,  // a transition class with no sim class: start
-	// (hole tk6-state-classes :tags (tk6 sim) :sev gap) state classes 0x15, 0x16, 0x1d..0x1f (326 uses) become invulnerable; the sim has no class for them.
-	State_Class_Nearest,   // a state class with no sim class: invulnerable
 	Command_Never,         // an input the command syntax can not hold: the cancel never matches
-	// (hole tk6-special-hit-points :tags (tk6 sim) :sev gap) special point codes 0x16..0x1d and 0x28..0x3c (model nodes, Yoshimitsu's sword, Alisa, Azazel, Nancy, Roger, Kuma; tk6decomp docs/sim_contract.md 7) are not built: the point stays.
+	// (hole tk6-special-hit-points :tags (tk6 sim) :sev gap) codes 0x16..0x1a (100 versus uses) are model locators the sim has no model for, 0x1b/0x1c skeleton bones 0x4a/0x49 (Alisa), 0x31 (101: the shot point, block +0xc8, built by the shot mode +0xc4 like TK5's hitscan and projectile; the importer writes no shot rows), and the per-character blocks 0x2c..0x2e (Yoshimitsu's sword nodes), 0x2f, 0x30, 0x33, 0x36..0x3c (Kuma, Roger, NANCY, Azazel, Alisa) are not built: the point stays (tk6decomp sim_contract.md 9.7).
 	Hitbox_Keep,           // a hitbox point code that is not a bone: the point stays
 	// (hole tk6-flow-states :tags (tk6 sim) :sev polish) game modes 9, 13, 14, 16, 17 hold in no phase; 14 and 16 send the round-start stand into a move that holds itself, when is open.
 	Flow_State_Guessed,    // a game flow state test (by state)
 	Frame_Truncated,       // a frame number wider than the sim's 16 bits, cut (by move record offset, property id, or 0 for cancels)
+	// (hole tk6-throw-clip-shots :tags (tk6 importer look) :sev polish) 12 roster throw picks play a clip of the thrower's camera bank (Steve, Roger, Zafina, Azazel, Alisa) and 8 use shot ids 7..10 (yaw from the thrower's facing); both keep the fight camera.
+	Throw_Shot_Unbuilt,    // a throw camera pick the presenter has no code for, by kind << 16 | shot id: the fight camera stays
 }
 
 Fallbacks :: [Fallback]map[u32]int
@@ -75,9 +71,11 @@ REQUIREMENT_NEW := [?]Pair{
 	{0x144, 327}, {0x78, 328}, {0x79, 329}, {0x7a, 330}, {0x7b, 331}, {0x7c, 332}, {0x7d, 333}, {0x7e, 334}, {0x7f, 335},
 	{0xbc, 336}, {0xbd, 337}, {0xbe, 338}, {0xc7, 339}, {0xc8, 340}, {0xc9, 341}, {0xd2, 342}, {0xd3, 343}, {0xd4, 344},
 	{0x13a, 345}, {0xa5, 346}, {0xa6, 347}, {0xa7, 348}, {0xa8, 349},
-	// the third facing hit copy: its twins
-	{0x181, 292}, {0x182, 293}, {0x183, 294}, {0x184, 295}, {0x185, 298}, {0x186, 299}, {0x187, 300}, {0x188, 301},
-	{0x189, 304}, {0x18a, 305}, {0x18b, 306}, {0x18c, 307},
+	{0x2f, 352},  // hit since the move started
+	{0x13e, 353}, {0x13f, 354}, {0x140, 355}, {0x141, 356},  // Yoshimitsu's two part swaps (properties 0x8144, 0x8145)
+	// the third facing hit copy: as its twin, but an attack the opponent hides counts unless its hit is harmless
+	{0x181, 357}, {0x182, 358}, {0x183, 359}, {0x184, 360}, {0x185, 361}, {0x186, 362}, {0x187, 363}, {0x188, 364},
+	{0x189, 365}, {0x18a, 366}, {0x18b, 367}, {0x18c, 368},
 	{0x1, REQUIREMENT_NEVER}, {0x28, REQUIREMENT_NEVER}, {0x11f, REQUIREMENT_NEVER}, {0x145, REQUIREMENT_ALWAYS},
 }
 
@@ -90,11 +88,11 @@ REQUIREMENT_COSTUME_PAIRS := [?]struct {tk6, sim, costume: u32}{
 @(private, rodata)
 REQUIREMENT_CAMPAIGN := [?]u32{0x146, 0x147, 0x148, 0x149, 0x14a, 0x14b, 0x157, 0x158, 0x15b, 0x15c}
 
-// The state they read has no sim field.
+// The state they read has no sim field (tk6decomp docs/requirements.md "Open ids in versus").
 @(private, rodata)
 REQUIREMENT_OPEN := [?]Run{
-	{0x2f, 0x30, 0}, {0x65, 0x67, 0}, {0x96, 0x97, 0}, {0x120, 0x121, 0}, {0x13b, 0x142, 0}, {0x14d, 0x156, 0},
-	{0x159, 0x15a, 0},
+	{0x30, 0x30, 0}, {0x65, 0x67, 0}, {0x96, 0x97, 0}, {0x120, 0x121, 0}, {0x13b, 0x13d, 0}, {0x142, 0x142, 0},
+	{0x14d, 0x156, 0}, {0x159, 0x15a, 0},
 }
 
 // The phases a TK6 game mode stands for, as the sim's phase test (tk5_convert.requirement_param). The round end
@@ -156,13 +154,18 @@ PROPERTY_RUNS := [?]Run{
 	{0x8174, 0x81b5, 0x8107},  // set alias k (0x8174 + k, k < 33), restore alias k: the sim's slots are TK6's
 	{0x81c1, 0x81ce, 0x8149},
 	{0x81df, 0x81e0, 0x8157}, {0x81e3, 0x81e6, 0x8159}, {0x81e7, 0x81e8, 0x815e},
-	// new sim ids: bound counter, juggle count clear, move variables H, I, J. Force rage (0x814e) drops: rage is health only.
-	{0x8120, 0x8120, 0x8163}, {0x8121, 0x8121, 0x8164}, {0x805f, 0x8067, 0x8165},
+	// new sim ids: bound counter, juggle count clear, move variables H, I, J, Yoshimitsu's part swaps. Force rage (0x814e)
+	// drops: rage is health only.
+	{0x8120, 0x8120, 0x8163}, {0x8121, 0x8121, 0x8164}, {0x805f, 0x8067, 0x8165}, {0x8144, 0x8145, 0x816e},
+	{0x8124, 0x8124, 0x8170},  // the facing turns aim at the held near side
+	{0x816f, 0x816f, 0x8171},  // four push spheres off
+	{0x8123, 0x8123, 0x8172},  // two hurtboxes higher
 	{PROPERTY_TRACK, PROPERTY_TRACK, SIM_PROPERTY_TRACK},
 }
 
+// Past every range of the dispatcher (FUN_001b4ba0 handles 0x8001..0x81c0, 0x81c1..0x81e2, 0x81e3..0x81e8).
 @(private, rodata)
-PROPERTY_DEAD := [?]u32{0x8202, 0x8216}
+PROPERTY_DEAD := [?]u32{0x81f0, 0x8202, 0x8203, 0x8216}
 
 // The sim property id; ok false: drop the row. `conditional`: in a start, end or requirement list.
 @(private)
@@ -190,16 +193,15 @@ MOTION_TABLE_SIZE :: 58  // codes past it are no motion (TK5 56)
 MOTION_NO_MOVE :: 63
 
 // TK6 motion code -> TK5 code, read from the motion code switch of both games (the facing mode each code sets).
-// The six new codes (4, 6, 12, 14, 16, 21) take the TK5 code of the nearest mode; TK5 codes 39..42 have no TK6 code.
+// The six new codes (4, 6, 12, 14, 16, 21) only set a new facing mode (tracking.odin code_modes), so they take a TK5 code
+// the sim treats the same: 4 and 6 are no homing codes for the transition filter (FUN_001ab9e8), so TK5 5, not 3 and 4;
+// 16 homes as 15. TK5 codes 39..42 have no TK6 code.
 @(private, rodata)
 MOTION_CODES := [MOTION_TABLE_SIZE]u8{
-	0, 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9, 9, 10, 10, 11, 11, 12, 13, 14, 15, 15,
+	0, 1, 2, 3, 5, 4, 5, 5, 6, 7, 8, 9, 9, 10, 10, 11, 11, 12, 13, 14, 15, 15,
 	16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
 	43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
 }
-
-@(private, rodata)
-MOTION_NEW := [?]u32{4, 6, 12, 14, 16, 21}
 
 TRANSITION_CLASS_PASS :: 10  // TK6 "does not stop the scan", sim class 9
 SIM_TRANSITION_CLASS_PASS :: 9
@@ -215,7 +217,6 @@ transition_of :: proc(word: u32, fallbacks: ^Fallbacks) -> u32 {
 		count(fallbacks, .Motion_None, motion)
 	case:
 		sim_motion = u32(MOTION_CODES[motion])
-		for new_code in MOTION_NEW do if new_code == motion do count(fallbacks, .Motion_Nearest, motion)
 	}
 	sim_class := class
 	switch class {
@@ -228,47 +229,24 @@ transition_of :: proc(word: u32, fallbacks: ^Fallbacks) -> u32 {
 	return word &~ 0x3fff | sim_class << 10 | align << 6 | sim_motion
 }
 
-// --- state classes (contract 5)
+// --- state classes (contract 5): TK6 0..0x14 are the sim's, 0x17 and up are 2 higher than the sim's, 0x15 and 0x16
+// (no TK5 twin; the hit test never hits them, FUN_001be02c) are the sim's last two classes.
 
 STATE_CLASS_SHIFT :: 11
-STATE_CLASS_INVULNERABLE :: 20
-STATE_CLASS_LAST :: 25  // the sim's last class
+STATE_CLASS_UNHITTABLE_FIRST :: 0x15
+STATE_CLASS_UNHITTABLE_LAST :: 0x16
+SIM_STATE_CLASS_UNHITTABLE :: 30  // sim CLASS_UNHITTABLE_FIRST
 
 @(private)
-state_word_of :: proc(word: u32, fallbacks: ^Fallbacks) -> u32 {
+state_word_of :: proc(word: u32) -> u32 {
 	class := word >> STATE_CLASS_SHIFT & 31
 	sim_class := class
 	switch class {
-	case 0 ..= 0x14:
-	case 0x17 ..= STATE_CLASS_LAST + 2: sim_class = class - 2
-	case:
-		count(fallbacks, .State_Class_Nearest, class)
-		sim_class = STATE_CLASS_INVULNERABLE
+	case STATE_CLASS_UNHITTABLE_FIRST ..= STATE_CLASS_UNHITTABLE_LAST:
+		sim_class = class - STATE_CLASS_UNHITTABLE_FIRST + SIM_STATE_CLASS_UNHITTABLE
+	case STATE_CLASS_UNHITTABLE_LAST + 1 ..= 31: sim_class = class - 2
 	}
 	return word &~ (31 << STATE_CLASS_SHIFT) | sim_class << STATE_CLASS_SHIFT
-}
-
-// --- facing modes (contract 6): TK6 mode -> the TK5 mode the TK5 rows take
-
-FACING_FREE :: 12
-
-// From the motion code switch: TK6 3 and 5 are TK5 2 and 3; 2, 4, 6, 13 are new (nearest TK5 mode).
-@(private, rodata)
-FACING_MODES := [18]u8{0, 1, 1, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9, 9, 10, 11, 12, 13}
-
-@(private, rodata)
-FACING_NEW := [?]u32{2, 4, 6, 13}
-
-FACING_SHIFTED_LAST :: 50  // 18..50 are TK5 14..46
-
-@(private)
-facing_mode_of :: proc(mode: u32, fallbacks: ^Fallbacks) -> u32 {
-	for new_mode in FACING_NEW do if new_mode == mode do count(fallbacks, .Facing_Nearest, mode)
-	switch {
-	case mode < len(FACING_MODES): return u32(FACING_MODES[mode])
-	case mode <= FACING_SHIFTED_LAST: return mode - 4
-	}
-	return FACING_FREE
 }
 
 // --- cancel commands (contract 7): the high u32 is the code, the low u32 the buttons, TK5's layout widened

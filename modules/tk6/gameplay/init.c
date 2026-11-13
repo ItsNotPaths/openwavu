@@ -31,13 +31,14 @@ static const char *load_moveset(sqlite3 *db, const char *character, const char *
     return failed;
 }
 
-// Mokujin's move set of each round: one mix step of the match seed, side and round over the characters with moves.
+// Mokujin's move set of each round: one mix step of the match seed, side and round over the characters with moves. The game
+// draws from every character but Panda, Azazel and NANCY (FUN_00346168, list 0x7d2c4c).
 static const char *pick_rounds(sqlite3 *db, uint64_t seed, uint32_t side, char picks[ROUNDS_MAX][T6_NAME_BYTES]) {
     enum { CANDIDATES_MAX = 64 };
     const uint64_t GOLDEN_MIX = 0x9e3779b97f4a7c15u;  // 2^64 / golden ratio: spreads close seeds apart
     char candidates[CANDIDATES_MAX][T6_NAME_BYTES];
     sqlite3_stmt *rows;
-    const char *sql = "SELECT id FROM character WHERE game_index IS NOT NULL AND id NOT IN ('jinpachi', 'jinpachi2') ORDER BY rowid";
+    const char *sql = "SELECT id FROM character WHERE game_index IS NOT NULL AND game_index NOT IN (32, 38, 39) ORDER BY rowid";
     if (sqlite3_prepare_v2(db, sql, -1, &rows, NULL) != SQLITE_OK) return "the character table does not read";
     uint32_t count = 0;
     while (count < CANDIDATES_MAX && sqlite3_step(rows) == SQLITE_ROW)

@@ -6,6 +6,7 @@
 #include "sim/damage.h"
 #include "sim/facing.h"
 #include "sim/fighter.h"
+#include "sim/guard.h"
 #include "sim/math.h"
 #include "sim/motion.h"
 #include "sim/properties.h"
@@ -133,10 +134,19 @@ void t6_reaction_move(T6World *w, T6Fighter *f) {
     set_pending_move(w, f);
 }
 
+// The KO move by the damage of the killing hits and the kind of the opponent's attack (FUN_001ac7b8).
+static uint16_t ko_alias(const T6Fighter *f, const T6Fighter *opponent) {
+    if ((uint32_t)f->last_hits_damage < KO_HARD_DAMAGE) return T6_ALIAS_KO;
+    if (opponent->attack_kind >= ATTACK_KIND_STAND_FIRST && opponent->attack_kind <= ATTACK_KIND_STAND_LAST) return T6_ALIAS_KO_HARD_HIGH;
+    if (opponent->attack_kind == ATTACK_KIND_LOW) return T6_ALIAS_KO_HARD_LOW;
+    return T6_ALIAS_KO_HARD;
+}
+
 // The KO move starts at once, as a clean hit.
 void t6_ko_move(T6World *w, T6Fighter *f) {
-    f->pending_id = (int16_t)T6_ALIAS_KO;  // queue the KO move
-    f->pending_move = t6_move_lookup(w, f, T6_ALIAS_KO);
+    uint16_t alias = ko_alias(f, t6_object(w, f->opponent));
+    f->pending_id = (int16_t)alias;  // queue the KO move
+    f->pending_move = t6_move_lookup(w, f, alias);
     f->frame = 1;  // it starts at frame 1 right away
     f->pending_frame = 1;
     f->transition = t6_transition_filter(w, f,  // start facing the fighter, no motion code
@@ -384,7 +394,7 @@ static bool look_ahead(T6World *w, T6Fighter *f, T6Fighter *opponent, Scan *curr
     int16_t facing = f->facing;  // keep the facing and yaws to restore after
     float body_yaw = f->body_yaw, look_yaw = f->look_yaw;
     face_next_move(f, t6_move_at(w, f->move)->end_yaw, end->extradata);  // face as the next move will
-    t6_relative_angles(w, f, opponent);  // recompute the angles to the opponent from that facing
+    t6_relative_angles(w, f, opponent, false);  // recompute the angles to the opponent from that facing
     uint8_t group_set = f->moveset;  // group cancels come from the fighter's moveset
     if (own_alias(end->move)) group_set = f->data;  // an own alias: from the fighter's data set instead
     Scan ahead = scan_from(w, f, opponent, next.set, group_set);  // scan the next move's cancels
@@ -395,7 +405,7 @@ static bool look_ahead(T6World *w, T6Fighter *f, T6Fighter *opponent, Scan *curr
     f->facing = facing;  // restore the real facing and yaws
     f->body_yaw = body_yaw;
     f->look_yaw = look_yaw;
-    t6_relative_angles(w, f, opponent);  // and the real angles to the opponent
+    t6_relative_angles(w, f, opponent, false);  // and the real angles to the opponent
     if (follow->command.code == T6_CANCEL_END) return false;  // the next move has no cancel for this frame: nothing taken
     take_ahead(w, f, current, &ahead, end, follow);  // take the follow-up cancel
     return true;
@@ -474,7 +484,7 @@ static void take_reversal(T6World *w, T6Fighter *f, T6Fighter *opponent, const T
 
 void t6_reversal(T6World *w, T6Fighter *f, T6Fighter *opponent) {
     f->reversal_damage = 0;  // no reversal damage unless one is taken
-    if (!f->hit_taken) return;  // only after a hit was taken
+    if (!f->hit_taken || opponent->body_rules.unthrowable) return;  // only after a hit was taken (FUN_001add58)
     Scan scan = scan_from(w, f, opponent, f->move.set, f->moveset);  // group cancels come from the fighter's moveset
     for (Walk walk = walk_start(&scan, t6_move_at(w, f->move)->cancels);  // walk every cancel of the move
          !walk_done(walk); walk = walk_next(&scan, walk)) {
@@ -500,16 +510,36 @@ static bool reacts(const T6Fighter *f, uint8_t rule) {
            !t6_state_has(f->state, STATE_AT_WALL);  // and not at a wall
 }
 
+// A guarded hit in the body's guard move class forces the guard move (FUN_001ac394).
+static void forced_guard(T6World *w, T6Fighter *f) {
+    f->pending_id = (int16_t)T6_ALIAS_FORCED_GUARD;
+    f->pending_move = t6_move_lookup(w, f, T6_ALIAS_FORCED_GUARD);
+    f->pending_id_high = 1;
+    f->frame = 1;
+    f->pending_frame = 1;
+    T6StartAlignment align = f->reaction_facing == REACTION_FACING_LOOK ? GUARD.align : root_align(GUARD.align);
+    f->transition = t6_transition_filter(w, f, t6_transition(TRANSITION_START, align, GUARD.code));
+}
+
+static bool keeps_move_when_hit(const T6Fighter *f) {
+    T6ReactionKeeping keeping = f->body_rules.reaction_keeping;
+    return keeping == REACTION_KEEPING_ALWAYS || (keeping == REACTION_KEEPING_WHEN_GUARDING && f->guarded != 0);
+}
+
 // The reaction to the hit that counts. Reaction ids index the attacker's move set.
 static void take_hit(T6World *w, T6Fighter *f, uint8_t moveset) {
     T6Fighter *attacker = t6_object(w, f->records[f->hit_record].attacker);  // the attacker of the hit that counts
-    t6_relative_angles(w, f, attacker);  // work out the angles to the attacker
+    t6_relative_angles(w, f, attacker, false);  // work out the angles to the attacker
     f->moveset = attacker->moveset_decided;  // reaction ids index the attacker's move set
     if (attacker->reaction_rule == REACT_HARMLESS) {  // harmless hit: no reaction, keep our own move set
         f->moveset = moveset;
+    } else if (reacts(f, attacker->reaction_rule) && keeps_move_when_hit(f)) {
+        f->moveset = moveset;
+        if (f->body_rules.guard_move_class != 0 && f->state_class == f->body_rules.guard_move_class) forced_guard(w, f);
     } else if (reacts(f, attacker->reaction_rule)) {  // the hit reacts: pick the reaction move
         t6_reaction_move(w, f);
         f->pick_kind = PICKED_REACTION;
+        f->parts_swapped_second = 0;  // FUN_001bfa50
         if (t6_throwing(f->throw.chain))  // they are the thrower: their own hits become harmless
             f->reaction_rule = REACT_HARMLESS;
     }
@@ -523,19 +553,20 @@ static bool ko_cuts(const T6Move *move) {
 }
 
 // The stats (outside the sim) are left out.
-// (hole tk6-reaction-input-diff :tags (tk6 sim) :sev gap) TK6's reaction pick and input pass are not compared with the game; simdiff still lacks those rows, a facing row and a whole-frame row (needs the full fighter layout).
+// (hole tk6-reaction-input-diff :tags (tk6 sim) :sev gap) the input pass (FUN_001c3018 and its helpers) is not compared with the sim's, and no whole-frame row exists; the reaction pick, the relative angles and the transition filter have simdiff rows.
 void t6_decide_object(T6World *w, T6Fighter *f) {
     uint8_t moveset = f->moveset;  // keep the move set from before the hit
     f->self_damage.effect = SELF_DAMAGE_NONE;  // the points stay, as in the game
     if (f->hit_taken != 0) take_hit(w, f, moveset);  // a hit was taken: pick the reaction
     T6Fighter *opponent = t6_object(w, f->opponent);  // the opponent
-    t6_relative_angles(w, f, opponent);  // angles to the opponent
+    t6_relative_angles(w, f, opponent, false);  // angles to the opponent
     if (t6_ref_none(f->pending_move)) {  // no pending move yet: look for one
         f->moveset = moveset;  // back to our own move set
         if (f->kind == T6_KIND_FIGHTER) t6_scan_cancels(w, f, opponent);  // only fighters scan cancels
     }
     if (f->health == 0 && f->clean_hit != 0 && w->mode != T6_MODE_PRACTICE) {  // dead from a clean hit, outside practice mode
-        if (ko_cuts(t6_move_at(w, t6_move_lookup(w, f, (uint16_t)f->pending_id))))  // the KO move cuts the pending move
+        const T6Move *current = t6_move_at(w, f->move);  // TK6 also asks the current move (FUN_001bfa50)
+        if (!(current->flags & T6_MOVE_NO_KO) && ko_cuts(t6_move_at(w, t6_move_lookup(w, f, (uint16_t)f->pending_id))))
             t6_ko_move(w, f);
     }
     if (t6_transition_class(f->transition) == TRANSITION_THROWER)  // thrower: pair up with the opponent

@@ -89,8 +89,8 @@ static const Field move_fields[] = {
     BIT(T6Move, flags, "hit_reaction", 6), BIT(T6Move, flags, "guard_by_input", 7), BIT(T6Move, flags, "no_leg_push", 8),
     BIT(T6Move, flags, "sets_hurt_lying", 9), BIT(T6Move, flags, "throw_resync", 10), BIT(T6Move, flags, "starts_on_partner", 11),
     BIT(T6Move, flags, "thrown_stays", 12), BIT(T6Move, flags, "keeps_root_yaw", 13),
-    BIT(T6Move, flags, "holds_face_expression", 16), BIT(T6Move, flags, "no_start_shift", 17), BIT(T6Move, flags, "no_sword_trail", 18),
-    BIT(T6Move, flags, "forces_sword_trail", 19), BIT(T6Move, flags, "grounded_reaction", 21), BIT(T6Move, flags, "keeps_took_damage", 23),
+    BIT(T6Move, flags, "no_ko_cut", 15), BIT(T6Move, flags, "holds_face_expression", 16), BIT(T6Move, flags, "no_start_shift", 17),
+    BIT(T6Move, flags, "grounded_reaction", 21), BIT(T6Move, flags, "keeps_took_damage", 23),
     BIT(T6Move, flags, "string_move", 24), BIT(T6Move, flags, "practice_dummy_recovery", 26), BIT(T6Move, flags, "reaction_continues", 28),
     BIT(T6Move, flags, "blends_in_active", 30),
     {"hit_category", AT(T6Move, hitbox), .kind = KIND_BYTES},
@@ -225,6 +225,16 @@ static const Field body_points_fields[] = {
     FIELD(T6BodyPoints, projectile),
 };
 
+static const Field body_rule_fields[] = {
+    FIELD(T6BodyRules, health),
+    FIELD(T6BodyRules, health_fixed),
+    FIELD(T6BodyRules, reaction_keeping),
+    FIELD(T6BodyRules, guard_move_class),
+    FIELD(T6BodyRules, unthrowable),
+    FIELD(T6BodyRules, no_chip_damage),
+    FIELD(T6BodyRules, no_flashback),
+};
+
 static const Field gaze_fields[] = {
     FIELD(T6Gaze, tilt),
     FIELD_AS(T6Gaze, head_turn.bits, "head_turn"),
@@ -279,6 +289,7 @@ static const Table tables[] = {  // moves first: the first thing taken from the 
     TABLE("body", ROWS_ONE, T6Body, body, body_count, body_fields, NULL),
     TABLE("body_points", ROWS_ONE, T6BodyPoints, body_points, body_point_count, body_points_fields, NULL),
     TABLE("gaze", ROWS_ONE, T6Gaze, gaze, gaze_count, gaze_fields, NULL),
+    TABLE("body_rule", ROWS_ONE, T6BodyRules, body_rules, body_rule_count, body_rule_fields, NULL),
 };
 #define TABLE_COUNT (sizeof tables / sizeof tables[0])
 
@@ -531,12 +542,14 @@ static bool ends_combo(uint16_t move) {
 }
 
 // T6Cancel.option as the game's loader computes it: from the requirement ids, the command and the transition.
-// The ids new in TK6 set no option. Only plain cancels reset the bounds.
+// Of the ids new in TK6 only the third facing copy sets options (as the game's ids past 0x16e). Only plain cancels reset the
+// bounds.
 static uint16_t cancel_option(const T6Motbin *motbin, const T6Cancel *cancel, bool plain) {
     uint16_t option = cancel->command.code || cancel->command.buttons ? T6_OPTION_INPUT : T6_OPTION_NO_INPUT;
     for (const T6Requirement *r = &motbin->requirements[cancel->requirements]; r->id != T6_REQUIREMENT_COUNT; r++) {
-        if (r->id > 0x122 && r->id < REQ_TK6_FIRST) option |= T6_OPTION_REVERSAL;
-        if (r->id > 0x134 && r->id < REQ_TK6_FIRST) option |= T6_OPTION_NO_DAMAGE;
+        bool third_facing = r->id >= REQ_THIRD_FACING_FIRST && r->id <= REQ_THIRD_FACING_LAST;
+        if ((r->id > 0x122 && r->id < REQ_TK6_FIRST) || third_facing) option |= T6_OPTION_REVERSAL;
+        if ((r->id > 0x134 && r->id < REQ_TK6_FIRST) || third_facing) option |= T6_OPTION_NO_DAMAGE;
         if (r->id == 0x8162) option |= T6_OPTION_TRACK;
         if (r->id >= 0x6a && r->id <= 0x6c) option |= T6_OPTION_INPUT;
     }
@@ -892,9 +905,10 @@ static const char *load_move_ai(sqlite3 *db, const char *character, T6Motbin *mo
     return failed;
 }
 
-// The body row goes with the body model (Mokujin keeps his own with any move set); every other table with the move set.
+// The body and its rules go with the body model (Mokujin keeps his own with any move set); every other table with the move set.
 static const char *table_owner(const Table *table, const char *character, const char *body) {
-    return table->items == offsetof(T6Motbin, body) ? body : character;
+    bool of_body = table->items == offsetof(T6Motbin, body) || table->items == offsetof(T6Motbin, body_rules);
+    return of_body ? body : character;
 }
 
 const char *t6_load_motbin(T6Motbin *motbin, sqlite3 *db, const char *character, const char *body, T6AnimBases anims, T6Arena *arena) {

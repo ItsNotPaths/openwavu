@@ -102,6 +102,9 @@ void t6_push_radii(const T6World *w, T6Fighter *f) {
         if (in_set(state_off, sphere)) radius = 0.0f;  // the state switches this sphere off
         f->hit.push_point[sphere].w = radius;  // store the radius in the sphere
     }
+    static constexpr uint8_t DROPPED = 1 << PUSH_ARM_2 | 1 << PUSH_HIPS | 1 << PUSH_FOOT_1 | 1 << PUSH_FOOT_2;  // FUN_001d3e94
+    if (f->drops_push_spheres)
+        for (int sphere = 0; sphere < T6_PUSH_POINTS; sphere++) if (in_set(DROPPED, sphere)) f->hit.push_point[sphere].w = 0.0f;
 }
 
 static void previous_root_of(T6World *w, T6Fighter *f) {

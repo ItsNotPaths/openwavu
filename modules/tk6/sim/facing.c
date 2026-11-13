@@ -37,12 +37,18 @@ static int16_t side_of_opponent_angle(const T6Fighter *f) {
 
 static int16_t look_angle(const T6Fighter *f) { return t6_rad_to_angle65535(t6_turn_positive(f->look_yaw)); }  // yaw as an angle
 
+// The near side the turns aim at: the held one while the move asks for it (property 0x8124, TK6 P+0x258 bit 4).
+static int16_t reference_angle(const T6Fighter *f) {
+    if (f->aims_held_side) return f->held_near_side_angle;
+    return f->near_side_angle;
+}
+
 static int16_t target_angle(const T6Fighter *f, T6Target kind) {
     switch (kind) {
     case TARGET_NONE:
     case TARGET_OPPONENT: return f->target_angle;  // no target: same as the opponent
     case TARGET_BEHIND_OPPONENT: return t6_angle_offset(f->target_angle, HALF_TURN);  // the opposite way from the opponent
-    case TARGET_REFERENCE: return f->near_side_angle;  // the opponent, or the other way when they stand behind
+    case TARGET_REFERENCE: return reference_angle(f);  // the opponent, or the other way when they stand behind
     case TARGET_SIDE_OF_OPPONENT: return side_of_opponent_angle(f);
     case TARGET_STAGE_CENTRE: return stage_centre_angle(f);
     case TARGET_OPPONENT_START_SPOT: return start_spot_angle(f);
@@ -50,9 +56,9 @@ static int16_t target_angle(const T6Fighter *f, T6Target kind) {
     case TARGET_LOOK: return look_angle(f);
     case TARGET_WALL: return f->wall_angle;  // the angle of the wall
     case TARGET_OPPONENT_OR_REFERENCE:
-        if (f->opponent_angle > BEHIND_ANGLE.bits) return f->near_side_angle;  // opponent far behind: use the reference angle
+        if (f->opponent_angle > BEHIND_ANGLE.bits) return reference_angle(f);  // opponent far behind: use the reference angle
         return f->target_angle;  // else aim at the opponent
-    case TARGET_REFERENCE_LESS_REACTION: return (int16_t)(f->near_side_angle - f->reaction.angle[0]);  // reference less reaction
+    case TARGET_REFERENCE_LESS_REACTION: return (int16_t)(reference_angle(f) - f->reaction.angle[0]);  // reference less reaction
     }
     return f->target_angle;
 }
@@ -217,7 +223,7 @@ static void reaim(const T6World *w, T6Fighter *f) {
         f->turn_frames = 0;
         return;
     }
-    int16_t gap = (int16_t)(f->near_side_angle - f->facing);  // angle still to turn to the reference angle
+    int16_t gap = (int16_t)(reference_angle(f) - f->facing);  // angle still to turn to the reference angle
     f->turn_speed = t6_clamp_s16(gap / f->turn_frames, steps(TURN_RATE_REAIM));  // scripted turn: gap over frames left, capped
 }
 
@@ -275,8 +281,8 @@ T6TrackingPick t6_pick_of_cancel(const T6World *w, uint8_t owner_set, const T6Ca
     const T6Motbin *owner = t6_set(w, owner_set);
     uint8_t code = t6_transition_code(raw);  // owner of the cancel list
     bool rewritten = t6_transition_class(raw) == TRANSITION_CARRY  // a carry cancel
-                     && (code < MOTION_HOMING_FIRST || code > MOTION_HOMING_LAST)
-                     && t6_transition_code(filtered) == MOTION_HOMING_FIRST;  // that the filter rewrote to the soft homing code
+                     && !t6_motion_homes(code)
+                     && t6_transition_code(filtered) == MOTION_CARRY_HOMING;  // that the filter rewrote to the soft homing code
     if (rewritten && owner->fixed_tracking_count > TRACKING_FIXED_CARRY)  // use the fixed carry tracking of the character
         return (T6TrackingPick){PICK_DATA, owner_set, owner->fixed_tracking[TRACKING_FIXED_CARRY]};
     if (cancel->tracking_pick != 0 && cancel->tracking_pick <= owner->tracking_override_count)  // override named: use it

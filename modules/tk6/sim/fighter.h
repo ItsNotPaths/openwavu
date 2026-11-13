@@ -213,6 +213,7 @@ struct T6Fighter {
     int16_t hit_side;            // 0 front, 1 left, 2 back, 3 right
     int16_t near_side_angle;     // target_angle, or half a turn off it when the opponent is behind the look yaw (far only)
     int16_t reference_near_side_angle;  // the same off the reference yaw
+    int16_t held_near_side_angle;  // near_side_angle, kept while it swings back by up to a quarter turn; a move start resets it
     int16_t turn_total;          // turn applied by tracking
     int16_t pivot_bone;          // -1 = none
     int16_t drift_angle;
@@ -318,6 +319,7 @@ struct T6Fighter {
     uint8_t in_rage;             // low health: this fighter's hits do more damage (docs/data.md Rage)
     uint8_t ko;                  // the fighter is knocked out
     uint8_t ko_scored;           // set on the attacker when this object takes the KO; cleared by the damage pass
+    int32_t last_hits_damage;    // final damage of the hits of the last frame a hit was taken; a move change without a hit clears it
     int16_t damage_raw_frame;    // base damage of the hits taken this frame, plus self damage
     int16_t damage_taken_frame;  // health damage of this frame
     int16_t damage_hits_frame;   // final damage of the hits plus the second self damage sum
@@ -369,6 +371,11 @@ struct T6Fighter {
     uint8_t throw_linked, sound_mask;
     uint8_t hip_drop_from_opponent, limbs_off, claims_stage_object, moves_with_opponent;
     uint8_t keeps_own_height;    // property: in a throw the fighter eases to its own height, not the pair's
+    // Yoshimitsu's model swaps two pairs of parts by these (TK6 FUN_00041d8c); cancels test them. A reaction clears the second.
+    uint8_t parts_swapped_first, parts_swapped_second;
+    uint8_t aims_held_side;      // property 0x8124: the facing turns aim at held_near_side_angle; a move start clears it
+    uint8_t drops_push_spheres;  // property 0x816f: push spheres 2, 3, 6 and 7 are off; a move start clears it
+    uint8_t raises_hurtboxes;    // property 0x8123: hurtboxes 9 and 13 sit higher; a move start clears it
     uint8_t marks_zero_damage;   // `PROP_MARKS_ZERO_DAMAGE`: a hit of 0 damage still marks the defender (zero_damage_hit)
     uint8_t air_move;            // the move has an air window or started in a juggle: a hit in it resets the body scale
     uint8_t can_lock_look;       // the look-at may lock on (set at a move change, a property clears it)
@@ -427,6 +434,7 @@ struct T6Fighter {
     T6Body body;                 // the body measures of the character (BODY row); a host may give another row (practice dummy)
     T6BodyPoints body_points;    // the fixed bone points and the shots of the character (ANCH row)
     T6Gaze gaze;                 // how the character looks at the opponent (GAZE row)
+    T6BodyRules body_rules;      // the boss rules of the body
     T6Hit hit;
     T6SpecialPoints special;
     T6LimbState limbs;           // skeleton B limbs

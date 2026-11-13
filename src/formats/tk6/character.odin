@@ -9,13 +9,12 @@ Character :: struct {
 	id, name: string,
 	motbin:   string,  // the move set's header name
 	number:   int,     // file number: picks the body and part files
-	chara:    int,     // P+0x54, what "own character is" compares (FUN_0023ade0 table, row word 3); Mokujin 0 until a round gives him a set
+	chara:    int,     // P+0x54, what "own character is" compares (FUN_0023ade0 table, row word 3); Mokujin 0: each round gives him another's
 	model:    int,     // P+0x58, what "own model id is" compares (row word 0)
 }
 
 // The playable roster, in character number order. Panda's move set is "[1]", NANCY-MI847J's "[Bonus]"; each "[NAME]1"
 // after a move set has more moves [guess: the scenario campaign copy].
-// (hole tk6-mokujin-moves :tags (tk6 importer) :sev gap) Mokujin's own move set holds 54 moves; the game gives him another character's each round, unread.
 CHARACTERS :: [?]Character{
 	{"paul", "Paul Phoenix", "[Paul]", 0, 0, 0}, {"law", "Marshall Law", "[LAW]", 1, 1, 1}, {"lei", "Lei Wulong", "[Lei_Wulong]", 2, 2, 2},
 	{"king", "King", "[KING]", 3, 3, 3}, {"yoshimitsu", "Yoshimitsu", "[YOSHIMITSU]", 4, 4, 4}, {"nina", "Nina Williams", "[NINA]", 5, 5, 5},
@@ -34,6 +33,11 @@ CHARACTERS :: [?]Character{
 	{"lars", "Lars Alexandersson", "[Lars]", 40, 40, 40}, {"alisa", "Alisa Bosconovitch", "[Alisa]", 41, 41, 41},
 	{"nancy", "NANCY-MI847J", "[Bonus]", 42, 39, 39},
 }
+
+// Mokujin's file number. His own move set (54 moves) only lends the hand and face banks: each round he plays the move set of
+// a character the game draws (FUN_00346168: one draw a round from the list at 0x7d2c4c, every character but Panda 32,
+// Azazel 38 and NANCY 39), so the db leaves his game_index empty and the module draws.
+MOKUJIN :: 19
 
 COMMON_ANIMS :: 147277  // the shared MOTA bank (0x8000 anim ids)
 BODY_FIRST :: 491       // body model of character n: BODY_FIRST + BODY_FILES * n

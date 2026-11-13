@@ -41,7 +41,7 @@ enum : uint32_t {
     T6_MOVE_NO_LEG_PUSH = 1 << 8,     // the push spheres of the legs are off
     T6_MOVE_STATE_4 = 1 << 9,         // a hit-down class that ends in this move gets STATE_HURT_4; its first frame is a first
                                       // frame for the requirements, two moves with it in a row count as one hit streak
-    T6_MOVE_NO_KO = 1 << 15,          // a KO does not cut this move when it is the pending one
+    T6_MOVE_NO_KO = 1 << 15,          // a KO does not cut this move, the current or the pending one
 };
 
 // T6Move.flags that the move change reads.
@@ -83,9 +83,9 @@ enum : uint16_t {
     T6_ALIAS_IDLE_STAND = T6_ALIAS_BASE + 1,
     T6_ALIAS_IDLE_CROUCH = T6_ALIAS_BASE + 2,
     T6_ALIAS_KO = T6_ALIAS_BASE + 25,
-    // (hole tk6-ko-forced-moves :tags (tk6 sim) :sev gap) the KO variant pick, forced guard and forced reaction moves have slots but no sim code; their rules are in TK6's reaction pick, unread.
-    T6_ALIAS_KO_VARIANT = T6_ALIAS_BASE + 26,  // the three KO variants the game picks by the opponent's state; not read yet
-    T6_ALIAS_KO_VARIANT_LAST = T6_ALIAS_BASE + 28,
+    T6_ALIAS_KO_HARD = T6_ALIAS_BASE + 26,       // a KO by hits of KO_HARD_DAMAGE or more, of an attack kind but low, high or mid
+    T6_ALIAS_KO_HARD_HIGH = T6_ALIAS_BASE + 27,  // the same by a high or mid attack (ATTACK_KIND_STAND_FIRST..LAST)
+    T6_ALIAS_KO_HARD_LOW = T6_ALIAS_BASE + 28,   // the same by a low attack
     T6_ALIAS_LAUNCH = T6_ALIAS_BASE + 29,      // the first of the six generic launches (T6LaunchEntry)
     T6_ALIAS_LAUNCH_LAST = T6_ALIAS_BASE + 34,
     T6_ALIAS_GUARD_AIR = T6_ALIAS_BASE + 35,   // a guarded hit in the air
@@ -93,9 +93,9 @@ enum : uint16_t {
     T6_ALIAS_KEEPS_BOUND_LAST = T6_ALIAS_BASE + 38,
     T6_ALIAS_THROW_CLASH = T6_ALIAS_BASE + 43,  // both fighters threw at once
     T6_ALIAS_AWAY = T6_ALIAS_BASE + 44,  // the fighter out of focus during an intro (a slot holding the idle)
-    T6_ALIAS_FORCED_REACTION = T6_ALIAS_BASE + 63,  // the reaction moves the hit reaction pick forces; not read yet
+    T6_ALIAS_FORCED_REACTION = T6_ALIAS_BASE + 63,  // reactions the attacker's campaign item states force: not in versus
     T6_ALIAS_FORCED_REACTION_LAST = T6_ALIAS_BASE + 67,
-    T6_ALIAS_FORCED_GUARD = T6_ALIAS_BASE + 68,  // a stand guard move the game forces with the guard motion; not read yet
+    T6_ALIAS_FORCED_GUARD = T6_ALIAS_BASE + 68,  // forced by a guarded hit in the body rules' guard move class
 };
 
 // Where a hitbox point lies. The exporter turns the game's point code of a hitbox into a kind and an index.
@@ -324,10 +324,15 @@ typedef struct {
     int32_t body_point_count;
     T6Gaze *gaze;                        // GAZE: one row, how the character looks at the opponent
     int32_t gaze_count;
+    T6BodyRules *body_rules;             // one row or none, with the body
+    int32_t body_rule_count;
 } T6Motbin;
 
 // The body row of the character; zeros (nothing pushes, no hurtbox) when the file has none.
 static inline T6Body t6_motbin_body(const T6Motbin *motbin) { return motbin->body_count > 0 ? motbin->body[0] : (T6Body){}; }
+static inline T6BodyRules t6_motbin_body_rules(const T6Motbin *motbin) {
+    return motbin->body_rule_count > 0 ? motbin->body_rules[0] : (T6BodyRules){};
+}
 static inline T6BodyPoints t6_motbin_body_points(const T6Motbin *motbin) {
     if (motbin->body_point_count <= 0) return (T6BodyPoints){};
     T6BodyPoints points = motbin->body_points[0];

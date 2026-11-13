@@ -35,6 +35,15 @@ static void take_moveset(T6Fighter *f, uint32_t side, uint32_t round) {
     f->body = t6_motbin_body(&data->moves);
     f->body_points = t6_motbin_body_points(&data->moves);
     f->gaze = t6_motbin_gaze(&data->moves);
+    f->body_rules = t6_motbin_body_rules(&data->moves);
+}
+
+// Health points: the start_health param, or the body rules' points, which the param scales unless they are fixed.
+static int32_t start_health(T6BodyRules rules) {
+    int32_t setting = (int32_t)ow_param(OW_STR("start_health"), START_HEALTH);
+    if (rules.health == 0) return setting;
+    if (rules.health_fixed) return rules.health;
+    return setting * rules.health / START_HEALTH;
 }
 
 // The fields the passes read of a fresh fighter on a side (no position, no move: the round init places it).
@@ -52,8 +61,8 @@ static void fighter_init(T6World *w, T6Fighter *f, uint32_t side) {
     f->slot = (uint16_t)side;
     f->side_index = (int16_t)side;
     f->opponent = f->target = (int16_t)(1 - side);
-    f->health = f->max_health = (int32_t)ow_param(OW_STR("start_health"), START_HEALTH) << 16;  // 16.16 fixed point
     f->chara_40 = picked->model;
+    f->health = f->max_health = start_health(f->body_rules) << 16;  // 16.16 fixed point
     f->input.mode = T6_INPUT_LIVE;
     f->input.direction_held = T6_DIRECTION_N;
     f->base_position_w = 1.0f;

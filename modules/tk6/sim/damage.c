@@ -150,8 +150,8 @@ static void take_reaction_list(T6World *w, T6Fighter *defender, T6Fighter *attac
 
 // --- damage
 
-static int16_t guarded_damage(uint32_t f, int16_t raw) {
-    if (!has(f, T6_HIT_CHIP) || raw < 1) return 0;  // a block without chip, or no damage: nothing goes through
+static int16_t guarded_damage(const T6Fighter *attacker, uint32_t f, int16_t raw) {
+    if (!has(f, T6_HIT_CHIP) || raw < 1 || attacker->body_rules.no_chip_damage) return 0;  // nothing goes through
     return (int16_t)(t6_ratio_of(raw, CHIP_SHARE) + CHIP_ADD);  // a share of the damage plus a small flat amount
 }
 
@@ -245,7 +245,7 @@ static const DamageScale DAMAGE_SCALES[] = {
 
 // Damage of one live record, s16 after every row.
 static int16_t hit_damage(const T6World *w, const T6Fighter *defender, const T6Fighter *attacker, uint32_t flags, int16_t raw) {
-    if (has(flags, T6_HIT_GUARDED)) return guarded_damage(flags, raw);  // a blocked hit only does chip damage
+    if (has(flags, T6_HIT_GUARDED)) return guarded_damage(attacker, flags, raw);  // a blocked hit only does chip damage
     int16_t damage = raw;
     for (size_t index = 0; index < sizeof DAMAGE_SCALES / sizeof *DAMAGE_SCALES; index++) {  // loop through the scales in order
         DamageScale row = DAMAGE_SCALES[index];
@@ -283,6 +283,7 @@ static void take_damage(const T6World *w, T6Fighter *defender, int32_t self_as_h
     defender->damage_hits_frame = (int16_t)((int16_t)hits + self_as_hit);
     defender->damage_taken_frame = (int16_t)((int16_t)self_total + (int16_t)hits);  // all damage taken this frame
     if (defender->hit_taken != 0) defender->stage_hit_power = (uint16_t)hits;  // stage objects get the hit total as hit power
+    if (defender->hit_taken != 0) defender->last_hits_damage = hits;  // FUN_001dcb14
     defender->damage_dealt = (int16_t)(defender->damage_dealt + (int16_t)self_total);  // self damage counts in the damage dealt
     if (defender->health < before) defender->took_damage = 1;  // health went down: took damage
 }

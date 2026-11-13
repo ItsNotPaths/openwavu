@@ -29,6 +29,7 @@ static constexpr float ARENA_PULL_IN = 5931.3f;   // mm
 static constexpr float RING_OUT_DISTANCE = 7000000.0f;  // ground distance from the stage origin: this far or more is a ring out
 
 static constexpr T6Health OBJECT_START_HEALTH = {5242880};  // 80.0
+static constexpr uint32_t KO_HARD_DAMAGE = 13;  // points: killing hits of this much take the hard KO moves (scenario modes: 11)
 
 // --- Facing (facing.c). The tracking rows are data; these are the values the laws keep.
 static constexpr T6Degrees TURN_RATE_SPREAD_MAX = {14};  // degrees a frame

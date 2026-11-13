@@ -123,13 +123,18 @@ enum : uint16_t {
     PROP_OTHER_POSE_LAST = T6_PROPERTY_BASE + 338,
     PROP_FACE_FIRST = T6_PROPERTY_BASE + 343,           // the face layer
     PROP_FACE_LAST = T6_PROPERTY_BASE + 344,
-    PROP_THROW_WALL_HIT = T6_PROPERTY_BASE + 351,
+    PROP_CAMERA_CATEGORY = T6_PROPERTY_BASE + 351,
     PROP_BASE_TO_ANCHOR = T6_PROPERTY_BASE + 353,
     // New in TK6 (docs/properties.md "NEW ids"); TK5 data uses ids up to 354.
     PROP_BOUND = T6_PROPERTY_BASE + 355,              // 0: the fighter took one bound; else the count starts over
     PROP_JUGGLE_COUNT_CLEAR = T6_PROPERTY_BASE + 356, // the juggle damage scale starts over
     PROP_VAR_TK6_FIRST = T6_PROPERTY_BASE + 357,      // move variables H, I, J (VAR_TK6_PROPS)
     PROP_VAR_TK6_LAST = T6_PROPERTY_BASE + 365,
+    PROP_PARTS_SWAPPED_FIRST = T6_PROPERTY_BASE + 366,   // Yoshimitsu: P+0x740 bit 6
+    PROP_PARTS_SWAPPED_SECOND = T6_PROPERTY_BASE + 367,  // Yoshimitsu: P+0x740 bit 5
+    PROP_AIMS_HELD_SIDE = T6_PROPERTY_BASE + 368,        // P+0x258 bit 4
+    PROP_DROPS_PUSH_SPHERES = T6_PROPERTY_BASE + 369,    // P+0x258 bit 3
+    PROP_RAISES_HURTBOXES = T6_PROPERTY_BASE + 370,      // P+0x258 bit 10
 };
 
 // (fcmpu order: NaN takes the first branch)
@@ -155,8 +160,8 @@ uint16_t t6_transition_filter(const T6World *w, const T6Fighter *f, uint16_t tra
     if (t6_transition_class(transition) == TRANSITION_CARRY) {  // carry: the next move keeps going from the current frame
         bool hits_ahead = pending->first_active != 0 &&  // the pending move has hit frames still coming
             f->pending_frame + 1 < pending->last_active && pending->last_active <= pending->length;
-        if (hits_ahead && homing) return transition;  // already homing and a hit is coming: keep it
-        if (hits_ahead) return t6_transition_recode(transition, MOTION_HOMING_FIRST);  // hit coming: swap in the soft homing code
+        if (hits_ahead && t6_motion_homes(code)) return transition;  // already homing and a hit is coming: keep it
+        if (hits_ahead) return t6_transition_recode(transition, MOTION_CARRY_HOMING);  // hit coming: the soft homing code (FUN_001ab9e8)
         if (!homing) return transition;  // no hit ahead and not homing: nothing to change
     } else if (!t6_motion_homes(code) ||  // plain start: only a homing code on a move with no hit frames is rewritten
         pending->first_active != 0) {
@@ -356,8 +361,13 @@ static bool flag_prop(T6Fighter *f, T6Fighter *target, uint16_t id, uint16_t val
     case PROP_TARGET_UPDATE_DIVIDER: target->update_divider = signed_value; break;  // same for the opponent
     case PROP_BOUND: f->bounds_used = value == 0 ? (int16_t)(f->bounds_used + 1) : 0; break;
     case PROP_JUGGLE_COUNT_CLEAR: f->juggle_count = 0; break;
-    case PROP_THROW_WALL_HIT:  // a throw already marked as wall hit (1) keeps the mark
-        if (!(t6_in_throw(f->throw.chain) && f->throw.wall_hit == 1)) f->throw.wall_hit = signed_value;  // set the wall hit mark
+    case PROP_PARTS_SWAPPED_FIRST: f->parts_swapped_first = value & 1; break;
+    case PROP_PARTS_SWAPPED_SECOND: f->parts_swapped_second = value & 1; break;
+    case PROP_AIMS_HELD_SIDE: f->aims_held_side = value & 1; break;
+    case PROP_DROPS_PUSH_SPHERES: f->drops_push_spheres = value & 1; break;
+    case PROP_RAISES_HURTBOXES: f->raises_hurtboxes = value & 1; break;
+    case PROP_CAMERA_CATEGORY:  // a throw already marked as at a wall keeps the mark
+        if (!(t6_in_throw(f->throw.chain) && f->throw.camera_category == T6_CAMERA_CATEGORY_WALL)) f->throw.camera_category = signed_value;
         break;
     default: return false;
     }

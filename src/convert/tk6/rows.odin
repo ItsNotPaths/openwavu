@@ -18,13 +18,15 @@ Keys :: struct {
 
 // Move flag columns by TK6 bit (schema move); bit 10 is move_ai.ai_follow_up_input.
 FLAG_FOLLOW_UP_INPUT :: 10
+// Bit k of the stored word is runtime bit 37 - k for k in 6..31 (the loader reverses them); runtime bits are TK5's + 2 up
+// to TK5 bit 17 and TK5's from 21 on. Known from code: runtime 3 turns at end (FUN_001ae670), 10 no leg push
+// (FUN_001d428c), 17 no KO cut (FUN_001bfa50), 19 no start shift (FUN_001c51d0), 23 keeps took damage (FUN_001aee6c).
 @(rodata)
-// (hole tk6-move-flags :tags (tk6 sim) :sev gap) the TK6 move flag bit to TK5 meaning map is a guess from data, seven bits stay unknown, and Xiaoyu's rides_partner is written as 0.
 FLAG_COLUMNS := [32]string{
 	"unknown_flag_0", "unknown_flag_1", "keeps_hips", "turns_at_end", "looks_at_opponent", "follows_floor", "unknown_flag_6",
 	"blends_in_active", "unknown_flag_8", "reaction_continues", "", "practice_dummy_recovery", "unknown_flag_12",
-	"string_move", "keeps_took_damage", "unknown_flag_15", "grounded_reaction", "unknown_flag_17", "forces_sword_trail",
-	"no_sword_trail", "no_start_shift", "holds_face_expression", "keeps_root_yaw", "thrown_stays", "starts_on_partner",
+	"string_move", "keeps_took_damage", "unknown_flag_15", "grounded_reaction", "unknown_flag_17", "no_start_shift",
+	"holds_face_expression", "no_ko_cut", "unknown_flag_21", "keeps_root_yaw", "thrown_stays", "starts_on_partner",
 	"throw_resync", "sets_hurt_lying", "no_leg_push", "guard_by_input", "hit_reaction", "no_blend_out", "no_blend_in",
 }
 UNKNOWN_STATE_BITS :: [?]u32{18, 20, 24}
@@ -32,9 +34,10 @@ UNKNOWN_ATTACK_BITS :: [?]u32{17, 23}
 SIDE_BANDS :: 8  // header 0x12c, 4 u16 each
 
 @(private)
-write_rows :: proc(w: ^db.Writer, character, animation_owner: string, m: formats.Motbin, fallbacks: ^Fallbacks) -> (error: string) {
+// game_extras: the cancel extras with TK6 motion codes, which pick the tracking.
+write_rows :: proc(w: ^db.Writer, character, animation_owner: string, m: formats.Motbin, game_extras: []u32, fallbacks: ^Fallbacks) -> (error: string) {
 	keys := keys_of(character, m)
-	tracking := seed_tracking(m)
+	tracking := seed_tracking(m, game_extras)
 	sheets := db.name_sheets(w)
 	db.insert(w, "motbin", character, n(m.unknown_00), transmute([]byte)m.name, transmute([]byte)m.creator, m.date, m.full_date,
 		m.unknown_12c)
@@ -95,7 +98,7 @@ write_rows :: proc(w: ^db.Writer, character, animation_owner: string, m: formats
 			continue
 		}
 		value := property.value
-		if property.id == tk5_convert.PROP_FACING_MODE do value = u32(tk5_convert.row_index(&tracking, int(value)))
+		if property.id == tk5_convert.PROP_FACING_MODE do value = u32(facing_row_index(&tracking, int(value)))
 		values := make([dynamic]db.Value)
 		append(&values, list, pos, n(property.frame), n(property.id))
 		parameters := parameter_values(&keys, property.id, value)
@@ -160,6 +163,7 @@ write_moves :: proc(w: ^db.Writer, keys: ^Keys, animation_owner: string, sheets:
 			tk5_convert.list_ref(keys, .Start_Prop, move.start_properties), tk5_convert.list_ref(keys, .End_Prop, move.end_properties))
 		for column, bit in FLAG_COLUMNS do if column != "" do append(&values, n(move.flags >> u32(bit) & 1))
 		default := tracking.default[index]
+		// (hole tk6-ride-height :tags (tk6 sim) :sev polish) rides_partner (Xiaoyu's Hien throws lift her to the partner's head, TK5 by move id) is 0: the TK6 move ids of that check are not found.
 		append(&values, n(hitbox_bones(hitbox)), n(first_active), n(last_active), n(push >> 16),
 			row_key(character, "tracking_row", default.row), row_key(character, "tracking_row", default.far_row),
 			tk5_convert.named(sheets["tracking_far_source"], default.far_source), n(default.far_angle), n(0))
@@ -265,25 +269,18 @@ write_unknown_tables :: proc(w: ^db.Writer, character: string, m: formats.Motbin
 	write :: proc(w: ^db.Writer, character: string, table: formats.Table, count: int, bytes: []byte) {
 		if len(bytes) > 0 do db.insert(w, "unknown_table", character, n(formats.TABLE_LIST + 8 * int(table)), n(count), bytes)
 	}
-	table_17, table_18, table_23, table_24: [dynamic]byte
+	table_17, table_18: [dynamic]byte
 	for entry in m.table_17 {
 		for word in entry.unknown_00 do put(&table_17, word)
 		put(&table_17, entry.table_18)
 	}
 	for entry in m.table_18 do for value in entry do put(&table_18, value)
-	for entry in m.table_23 do for value in entry do put(&table_23, value)
-	for entry in m.table_24 {
-		put(&table_24, entry.unknown_00)
-		put(&table_24, entry.table_23)
-	}
 	write(w, character, .Table_17, len(m.table_17), table_17[:])
 	write(w, character, .Table_18, len(m.table_18), table_18[:])
 	for bytes, slot in m.unknown_tables {
 		table := formats.Table(int(formats.Table.Table_20) + slot)
 		write(w, character, table, m.tables[table].count, bytes)
 	}
-	write(w, character, .Table_23, len(m.table_23), table_23[:])
-	write(w, character, .Table_24, len(m.table_24), table_24[:])
 }
 
 // The game's end row of a list. Counted lists (pushback curves, input extras) and hit conditions have none.
@@ -382,11 +379,11 @@ check_list_ends :: proc(keys: ^Keys, m: formats.Motbin) -> (error: string) {
 	return ""
 }
 
-// The tracking the moves start, from the motion codes of the cancels that lead to them.
+// The tracking the moves start, from the TK6 motion codes of the cancels that lead to them.
 @(private = "file")
-seed_tracking :: proc(m: formats.Motbin) -> tk5_convert.Tracking {
-	seed_cancels :: proc(m: formats.Motbin, cancels: []formats.Cancel) -> []tk5_convert.Seed_Cancel {
-		seeds := make([]tk5_convert.Seed_Cancel, len(cancels))
+seed_tracking :: proc(m: formats.Motbin, game_extras: []u32) -> Tracking {
+	seed_cancels :: proc(cancels: []formats.Cancel, game_extras: []u32) -> []Seed_Cancel {
+		seeds := make([]Seed_Cancel, len(cancels))
 		for cancel, index in cancels {
 			kind := tk5_convert.Seed_Kind.Plain
 			switch cancel.command >> 32 {
@@ -394,7 +391,7 @@ seed_tracking :: proc(m: formats.Motbin) -> tk5_convert.Tracking {
 			case COMMAND_GROUP: kind = .Group
 			case COMMAND_GROUP_END: kind = .Group_End
 			}
-			seeds[index] = {kind, cancel.move, int(m.cancel_extras[cancel.extra] & tk5_convert.MOTION_CODE_MASK)}
+			seeds[index] = {kind, cancel.move, int(game_extras[cancel.extra] & tk5_convert.MOTION_CODE_MASK)}
 		}
 		return seeds
 	}
@@ -402,7 +399,7 @@ seed_tracking :: proc(m: formats.Motbin) -> tk5_convert.Tracking {
 	for move, index in m.moves do move_cancels[index] = move.cancels
 	aliases := make([]u32, len(m.aliases))
 	for target, slot in m.aliases do aliases[slot] = u32(target)
-	return tk5_convert.seed_tracking_of({seed_cancels(m, m.cancels), seed_cancels(m, m.group_cancels), move_cancels, aliases}, false)
+	return seed_tracking_of({seed_cancels(m.cancels, game_extras), seed_cancels(m.group_cancels, game_extras), move_cancels, aliases})
 }
 
 row_key :: tk5_convert.row_key

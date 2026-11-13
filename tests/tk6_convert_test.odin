@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
+import tk5_convert "../src/convert/tk5"
 import tk6_convert "../src/convert/tk6"
 import "../src/db"
 import tk6 "../src/formats/tk6"
@@ -188,4 +189,22 @@ build_tk6_motbin_check :: proc() -> bool {
 	}
 	state, _, _, err := os.process_exec({command = command}, context.temp_allocator)
 	return err == nil && state.exit_code == 0
+}
+
+// The facing modes TK6 kept steer as their TK5 twins (tk6decomp docs/sim_contract.md 6), and the four new ones differ from
+// their nearest twin only as the game's cases do.
+@(test)
+tk6_facing_modes_keep_tk5_rows :: proc(t: ^testing.T) {
+	same :: proc(tk6_mode, tk5_mode: int) -> bool {
+		tk6_row, tk5_row := tk6_convert.facing_row(tk6_mode), tk5_convert.stock_row(tk5_mode)
+		tk6_row.stock_mode, tk5_row.stock_mode = 0, 0
+		return tk6_row == tk5_row
+	}
+	twins := [?][2]int{{0, 0}, {1, 1}, {3, 2}, {5, 3}, {7, 4}, {8, 5}, {9, 6}, {10, 7}, {11, 8}, {12, 9}, {14, 10}, {15, 11},
+		{16, 12}, {17, 13}, {18, 14}, {50, 46}, {51, 12}}
+	for pair in twins do testing.expectf(t, same(pair[0], pair[1]), "TK6 mode %d is not TK5 mode %d", pair[0], pair[1])
+	carries_yaw := tk6_convert.facing_row(4)
+	testing.expect(t, carries_yaw.end.yaw_when == .Always && carries_yaw.target == .Opponent, "mode 4 is mode 3 carrying the move yaw")
+	live := tk6_convert.facing_row(2)
+	testing.expect(t, live.target == .Opponent && live.end.yaw_when == .Never, "mode 2 aims at the opponent's live angle")
 }

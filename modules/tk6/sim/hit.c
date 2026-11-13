@@ -196,7 +196,12 @@ static void special_points(T6Fighter *f) {
 
 // --- hurtboxes and push points
 
-static void hurtbox_centres(T6Hit *hit, const T6Body *body, const T6Bone *bones) {
+// Property 0x8123 lifts two hurtboxes (FUN_001d62fc).
+enum { RAISED_HURTBOX = 9, RAISED_TOP_HURTBOX = 13 };
+static constexpr float RAISED_LIFT = 250.0f;
+static constexpr float RAISED_TOP_LIFT = 400.0f;
+
+static void hurtbox_centres(T6Hit *hit, const T6Body *body, const T6Bone *bones, bool raised) {
     for (int32_t hurtbox_index = 0; hurtbox_index < T6_HURTBOXES; hurtbox_index++) {  // loop through the hurtboxes of the body
         const T6HurtRow *row = &body->hurt[hurtbox_index];
         const float *bone_at = bone_point(bones, row->bone)->v;
@@ -205,6 +210,8 @@ static void hurtbox_centres(T6Hit *hit, const T6Body *body, const T6Bone *bones)
         hurtbox->y = bone_at[1];
         hurtbox->z = bone_at[2];
         if (row->lift != 0.0f) hurtbox->y = bone_at[1] + row->lift;  // unlifted boxes keep a -0
+        if (raised && hurtbox_index == RAISED_HURTBOX) hurtbox->y = bone_at[1] + RAISED_LIFT;
+        if (raised && hurtbox_index == RAISED_TOP_HURTBOX) hurtbox->y = bone_at[1] + RAISED_TOP_LIFT;
     }
     for (int32_t push_index = 0; push_index < T6_PUSH_POINTS; push_index++) {  // loop through the push points of the body
         const float *bone_at = bone_point(bones, body->push[push_index].bone)->v;
@@ -216,7 +223,7 @@ void t6_hit_points(T6Fighter *f, const T6Move *move) {  // hitbox and hurtbox po
     if (f->kind != 0) return;  // extras do not set them
     special_points(f);  // special points first, the hitbox ends read them
     hitbox_ends(f, move);
-    hurtbox_centres(&f->hit, &f->body, f->rig.bones_b);
+    hurtbox_centres(&f->hit, &f->body, f->rig.bones_b, f->raises_hurtboxes);
 }
 
 // --- radii
@@ -362,6 +369,7 @@ static uint32_t reach(const T6Fighter *attacker, const T6Fighter *defender, cons
     bool move_off_ground =  // the state of the move, not of the fighter
         defender->in_air_window != 0 || t6_state_has(defender_move->vuln, STATE_LAUNCHED);
     if (level == HIT_LEVEL_AIR_ONLY && !move_off_ground) return 0;  // an air-only attack needs a defender who is off the ground
+    if (t6_class_between(defender->state_class, CLASS_UNHITTABLE_FIRST, CLASS_UNHITTABLE_LAST)) return 0;  // FUN_001be02c
     if (defender->stance_rule == STANCE_HELD_LOW) level |= STATE_HURT_1;  // a held low stance makes every attack hit low too
     return defender->state & level & STATE_HURT_BITS;  // the heights that both the attack and the defender's body allow
 }

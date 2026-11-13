@@ -151,6 +151,7 @@ typedef struct {
 enum {
     T6_RESULT_TIME_OVER = 1 << 0, T6_RESULT_KO = 1 << 1, T6_RESULT_DOUBLE_KO = 1 << 2, T6_RESULT_PERFECT = 1 << 3,
     T6_RESULT_CLOSE_WIN = 1 << 4, T6_RESULT_DRAW = 1 << 5,
+    T6_RESULT_NO_REPLAY = 1 << 6,  // a fighter's body rules skip the flashback (FUN_00209d70)
 };
 
 // The rollback state of the round flow.

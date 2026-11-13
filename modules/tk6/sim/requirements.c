@@ -104,7 +104,7 @@ static float floor_at(const T6World *w, T6Vec3 position) { return t6_stage_floor
 
 static bool always(Ask ask) { (void)ask; return true; }  // requirement 0 and some others: always passes
 static bool never(Ask ask) { (void)ask; return false; }  // a requirement the game never lets pass
-static bool landed(Ask ask) { return ask.f->hit_landed != 0; }  // own attack hit something this frame
+static bool landed(Ask ask) { return ask.f->hit_landed != 0 && !ask.opponent->body_rules.unthrowable; }  // hit one that can be thrown
 
 // --- 2..33 throws: the victim's position from the cache of the target, and the range
 
@@ -674,6 +674,11 @@ static bool pool_facing(Ask ask) {  // facing fits and the opponent's move id is
 static bool attack_facing(Ask ask) {  // the opponent shows their attack, the facing fits, and the attack height matches
     return !ask.opponent->hides_attack && facings(ask, ask.argument) && attack_of(ask, ask.levels);
 }
+// 357..368: as attack_facing, but a hidden attack counts unless its hit is harmless (TK6 0x181..0x18c).
+static bool attack_facing_unless_harmless(Ask ask) {
+    bool shown = !ask.opponent->hides_attack || ask.opponent->reaction_rule != REACT_HARMLESS;
+    return shown && facings(ask, ask.argument) && attack_of(ask, ask.levels);
+}
 
 // --- 327..351 new in TK6: bound, health, the move variables H to J, the ground, costumes
 
@@ -721,6 +726,17 @@ static bool in_costume_pair(const T6Fighter *fighter, uint16_t first) {
 }
 static bool costume_pair(Ask ask) { return in_costume_pair(ask.f, ask.param); }
 static bool opponent_costume_pair(Ask ask) { return in_costume_pair(ask.opponent, ask.param); }
+
+// --- 352..368 new in TK6, found later: the hit of this move, Yoshimitsu's part swaps, the loose facing copies (above)
+
+static bool hit_this_move(Ask ask) { return ask.f->hit_this_move != 0; }  // P+0x229
+
+// argument: which pair of parts (P+0x740 bit 6 or bit 5).
+enum : uint8_t { PARTS_FIRST, PARTS_SECOND };
+static bool parts_swapped(Ask ask) {
+    return (ask.argument == PARTS_FIRST ? ask.f->parts_swapped_first : ask.f->parts_swapped_second) != 0;
+}
+static bool parts_not_swapped(Ask ask) { return !parts_swapped(ask); }
 
 static const Row REQUIREMENTS[T6_REQUIREMENT_COUNT] = {
     [0] = {always}, [1] = {landed},
@@ -864,6 +880,21 @@ static const Row REQUIREMENTS[T6_REQUIREMENT_COUNT] = {
     [346] = {opponent_chara_variant}, [347] = {opponent_chara_variant_not},
     [348] = {opponent_model_variant}, [349] = {opponent_model_variant_not},
     [350] = {costume_pair}, [351] = {opponent_costume_pair},
+    [352] = {hit_this_move},
+    [353] = {parts_swapped, .argument = PARTS_FIRST}, [354] = {parts_not_swapped, .argument = PARTS_FIRST},
+    [355] = {parts_swapped, .argument = PARTS_SECOND}, [356] = {parts_not_swapped, .argument = PARTS_SECOND},
+    [357] = {attack_facing_unless_harmless, .argument = FACE_TO_FACE, .levels = LEVELS_HIGH},
+    [358] = {attack_facing_unless_harmless, .argument = FACE_TO_FACE, .levels = LEVELS_MID},
+    [359] = {attack_facing_unless_harmless, .argument = FACE_TO_FACE, .levels = LEVELS_LOW},
+    [360] = {attack_facing_unless_harmless, .argument = FACE_TO_FACE, .levels = LEVELS_HIGH_MID},
+    [361] = {attack_facing_unless_harmless, .argument = FACING_BACK, .levels = LEVELS_HIGH},
+    [362] = {attack_facing_unless_harmless, .argument = FACING_BACK, .levels = LEVELS_MID},
+    [363] = {attack_facing_unless_harmless, .argument = FACING_BACK, .levels = LEVELS_LOW},
+    [364] = {attack_facing_unless_harmless, .argument = FACING_BACK, .levels = LEVELS_HIGH_MID},
+    [365] = {attack_facing_unless_harmless, .argument = OPP_FACING, .levels = LEVELS_HIGH},
+    [366] = {attack_facing_unless_harmless, .argument = OPP_FACING, .levels = LEVELS_MID},
+    [367] = {attack_facing_unless_harmless, .argument = OPP_FACING, .levels = LEVELS_LOW},
+    [368] = {attack_facing_unless_harmless, .argument = OPP_FACING, .levels = LEVELS_HIGH_MID},
 };
 
 bool t6_requirement(T6World *w, const T6Requirement *req, T6Fighter *f, const T6Fighter *opponent) {

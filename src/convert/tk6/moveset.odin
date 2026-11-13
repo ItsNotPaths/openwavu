@@ -13,7 +13,9 @@ VOICECLIP_END :: 0xffffffff
 write_moveset_rows :: proc(w: ^db.Writer, character, animation_owner: string, motbin: formats.Motbin, fallbacks: ^Fallbacks) -> (error: string) {
 	for &counts in fallbacks do if counts == nil do counts = make(map[u32]int)
 	context.allocator = context.temp_allocator
-	return write_rows(w, character, animation_owner, sim_motbin(motbin, fallbacks), fallbacks)
+	error = write_rows(w, character, animation_owner, sim_motbin(motbin, fallbacks), motbin.cancel_extras, fallbacks)
+	if error == "" do write_throw_shots(w, character, motbin, fallbacks)
+	return
 }
 
 @(private = "file")
@@ -28,7 +30,6 @@ Converter :: struct {
 Kept :: []u32
 
 // The motbin in sim numbers: the same tables and records; ids rewritten, rows with no sim meaning dropped.
-// (hole tk6-heihachi-hellsweep-grounded :tags (tk6 importer fighter-detail) :sev gap) Heihachi's 1+2, then his hellsweep on the opponent lying after it: the sweep sometimes passes through the grounded opponent (no hit, no damage; inconsistent, any opponent, input as fast as allowed); the sweep, the victim's launched and lying chain and the down-hit reactions all match TK5's rows, and hit.c is the same, so check timing (the 56-frame launched move) and the hurtboxes.
 sim_motbin :: proc(motbin: formats.Motbin, fallbacks: ^Fallbacks) -> (sim: formats.Motbin) {
 	converter := Converter{motbin = motbin, fallbacks = fallbacks}
 	sim = motbin
@@ -142,7 +143,7 @@ sim_cancels :: proc(converter: ^Converter, cancels: []formats.Cancel, requiremen
 @(private = "file")
 sim_move :: proc(converter: ^Converter, move: formats.Move, property_kept: [3]Kept) -> (sim: formats.Move) {
 	sim = move
-	sim.vulnerability = state_word_of(move.vulnerability, converter.fallbacks)
+	sim.vulnerability = state_word_of(move.vulnerability)
 	sim.extra_properties = kept_index(property_kept[0], move.extra_properties)
 	sim.start_properties = kept_index(property_kept[1], move.start_properties)
 	sim.end_properties = kept_index(property_kept[2], move.end_properties)
@@ -157,11 +158,11 @@ sim_move :: proc(converter: ^Converter, move: formats.Move, property_kept: [3]Ke
 @(private = "file")
 kept_index :: proc(kept: Kept, index: i32) -> i32 {return index < 0 ? -1 : i32(kept[index])}
 
-// A requirement param or property value in sim terms: a facing mode, a state or a hit bone rewritten, the rest as stored.
+// A requirement param or property value in sim terms: a state or a hit bone rewritten, the rest as stored (a facing mode
+// stays a TK6 mode until rows.odin makes it a tracking row).
 @(private = "file")
 parameter_of :: proc(converter: ^Converter, tk6_id, sim_id, value: u32) -> u32 {
-	if tk5_convert.code_ref(u16(sim_id)) == "tracking_row" do return facing_mode_of(value, converter.fallbacks)
-	if tk6_id == PROPERTY_STATE do return state_word_of(value, converter.fallbacks)
+	if tk6_id == PROPERTY_STATE do return state_word_of(value)
 	if tk5_convert.is_category_requirement(u16(sim_id)) do return sim_bone_code(value)
 	return value
 }

@@ -168,7 +168,7 @@ bool t6_match_over(T6MatchRules rules, T6RoundState round_state, int16_t wins_1,
 }
 
 static bool outcome_holds(T6RoundOutcome when, T6RoundState round_state, bool match_over) {
-    if (when == T6_AFTER_KO) return (round_state.result & T6_RESULT_KO) != 0;  // the round ended in a KO
+    if (when == T6_AFTER_KO) return (round_state.result & (T6_RESULT_KO | T6_RESULT_NO_REPLAY)) == T6_RESULT_KO;  // a KO
     return match_over;  // after the last round: the match is over
 }
 
@@ -214,7 +214,7 @@ static uint16_t health_percent(const T6Fighter *f) {  // at least 1 while alive
     return percent;
 }
 
-uint32_t t6_round_result(T6RoundState round_state, const T6Fighter *first, const T6Fighter *second) {
+static uint32_t round_result(T6RoundState round_state, const T6Fighter *first, const T6Fighter *second) {
     bool alive = first->health != 0 && second->health != 0;  // both fighters have health left
     uint32_t timeout = 0;
     if (round_state.timer.ticks < 1 && alive) timeout = T6_RESULT_TIME_OVER;  // the clock ran out with both alive
@@ -232,6 +232,12 @@ uint32_t t6_round_result(T6RoundState round_state, const T6Fighter *first, const
     if (health_percent(winner) < CLOSE_WIN_PERCENT && t6_input_pad_driven(&winner->input))  // close win: low-health KO by player
         return T6_RESULT_CLOSE_WIN | T6_RESULT_KO;
     return T6_RESULT_KO;  // a plain KO
+}
+
+uint32_t t6_round_result(T6RoundState round_state, const T6Fighter *first, const T6Fighter *second) {
+    uint32_t result = round_result(round_state, first, second);
+    if (first->body_rules.no_flashback || second->body_rules.no_flashback) result |= T6_RESULT_NO_REPLAY;
+    return result;
 }
 
 static T6RoundMarks won(T6RoundMarks marks) { return (T6RoundMarks){(int16_t)(marks.wins + 1), T6_ROUND_WON}; }

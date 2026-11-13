@@ -35,7 +35,11 @@ INSERT INTO state_class VALUES
 	('crouch_guard_locked', 7), ('lying_face_up', 12), ('lying_face_down', 13), ('launched', 14), ('launched_downed', 15),
 	('invulnerable', 20),
 	('unknown_vuln_class_21', 21),  -- the bits of launched, read by nothing
-	('crouch_launched', 22), ('jump', 23), ('jump_alternate', 24), ('air_guard', 25);
+	('crouch_launched', 22), ('jump', 23), ('jump_alternate', 24), ('air_guard', 25), ('air_guard_alternate', 26),
+	('unknown_vuln_class_27', 27),  -- TK6 0x1d, Azazel only
+	('azazel_guard', 28),           -- TK6 0x1e: a guarded hit forces Azazel's guard move
+	('unknown_vuln_class_29', 29),  -- TK6 0x1f, two moves a character
+	('unhittable', 30), ('unhittable_alternate', 31);  -- TK6 0x15, 0x16: the hit test never hits them
 
 -- What an attack is (hit.h): the guards that block it and the reaction it gives.
 CREATE TABLE attack_kind (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
@@ -92,9 +96,9 @@ CREATE TABLE move (
 	extra_props    TEXT REFERENCES extra_prop_list(key),
 	start_props    TEXT REFERENCES start_prop_list(key),
 	end_prop       TEXT REFERENCES end_prop_list(key),
-	-- The move's flags (+0x44 as stored), by TK6 bit: bits 2..21 are TK5's stored bits 0..19, 22..31 TK5's 22..31
-	-- [guess, sim_contract.md 9.6]; bit 10 is move_ai.ai_follow_up_input. unknown_flag_*: TK6 bits 0, 1 (new) and the
-	-- bits TK5 reads nowhere, or has no data for (not loaded).
+	-- The move's flags (+0x44 as stored), by TK6 bit. The loader reverses bits 6..31 (runtime bit 37 - k); runtime bits
+	-- are TK5's + 2 up to TK5 17 and TK5's from 21 on (sim_contract.md 9.6); bit 10 is move_ai.ai_follow_up_input.
+	-- unknown_flag_*: TK6 bits with no TK5 twin (0, 1, 6, 8, 12, 15, 17, 21) (not loaded).
 	unknown_flag_0 INTEGER NOT NULL DEFAULT 0 CHECK (unknown_flag_0 IN (0, 1)),
 	unknown_flag_1 INTEGER NOT NULL DEFAULT 0 CHECK (unknown_flag_1 IN (0, 1)),
 	keeps_hips INTEGER NOT NULL DEFAULT 0 CHECK (keeps_hips IN (0, 1)),
@@ -112,10 +116,10 @@ CREATE TABLE move (
 	unknown_flag_15 INTEGER NOT NULL DEFAULT 0 CHECK (unknown_flag_15 IN (0, 1)),
 	grounded_reaction INTEGER NOT NULL DEFAULT 0 CHECK (grounded_reaction IN (0, 1)),
 	unknown_flag_17 INTEGER NOT NULL DEFAULT 0 CHECK (unknown_flag_17 IN (0, 1)),
-	forces_sword_trail INTEGER NOT NULL DEFAULT 0 CHECK (forces_sword_trail IN (0, 1)),
-	no_sword_trail INTEGER NOT NULL DEFAULT 0 CHECK (no_sword_trail IN (0, 1)),
 	no_start_shift INTEGER NOT NULL DEFAULT 0 CHECK (no_start_shift IN (0, 1)),
 	holds_face_expression INTEGER NOT NULL DEFAULT 0 CHECK (holds_face_expression IN (0, 1)),
+	no_ko_cut INTEGER NOT NULL DEFAULT 0 CHECK (no_ko_cut IN (0, 1)),
+	unknown_flag_21 INTEGER NOT NULL DEFAULT 0 CHECK (unknown_flag_21 IN (0, 1)),
 	keeps_root_yaw INTEGER NOT NULL DEFAULT 0 CHECK (keeps_root_yaw IN (0, 1)),
 	thrown_stays INTEGER NOT NULL DEFAULT 0 CHECK (thrown_stays IN (0, 1)),
 	starts_on_partner INTEGER NOT NULL DEFAULT 0 CHECK (starts_on_partner IN (0, 1)),
@@ -197,7 +201,9 @@ CREATE TABLE motion (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
 INSERT INTO motion VALUES
 	('none', 0),               -- tracking stays as it is
 	('free', 1),               -- nothing steers; a running turn goes on
-	('homing_soft', 2), ('homing_halved', 3), ('homing', 4), ('homing_soft_any_angle', 8), ('homing_halved_any_angle', 9),
+	('homing_soft', 2), ('homing_halved', 3), ('homing', 4),
+	('tracking_only', 5),      -- TK6 codes 4 and 6: the tracking row and a cleared turn, no homing for the transition filter
+	('homing_soft_any_angle', 8), ('homing_halved_any_angle', 9),
 	('homing_any_angle', 10),
 	('homing_reference', 11),  -- strong homing on the reference direction
 	('homing_behind_halved', 12), ('homing_behind', 13),
@@ -663,28 +669,71 @@ CREATE TABLE gaze (
 	head_turn INTEGER NOT NULL   -- angle steps (65536 a turn) about the head's y axis
 );
 
--- Throw cameras (EBOOT 0x3513f8): a throw's camera category (extra property 0x815f) picks one row by weight (libc rand).
--- A camera is a clip of the global camera bank (anim owner cameras) or a hand-coded shot (ids below 0x67).
--- left_* is used when the thrower is on the left of the screen, right_* on the right; the mirror bits count only on the right.
-CREATE TABLE throw_camera (
-	category        INTEGER NOT NULL,
-	pos             INTEGER NOT NULL,
-	weight          INTEGER NOT NULL,
-	tracks          TEXT NOT NULL DEFAULT 'cameras',
-	left_track      INTEGER,  -- NULL: a coded shot
-	left_coded      INTEGER,
-	right_track     INTEGER,
-	right_coded     INTEGER,
-	hold            INTEGER NOT NULL DEFAULT 0,  -- 0x04: keep the camera at least 15 frames
-	wide            INTEGER NOT NULL DEFAULT 0,  -- 0x08: coded shots: fov +5, a smaller turn
-	wall_check      INTEGER NOT NULL DEFAULT 0,  -- 0x20: both fighters away from a wall, else row 0
-	track_target    INTEGER NOT NULL DEFAULT 0,  -- 0x40: the target comes from the track
-	aim_at_fighters INTEGER NOT NULL DEFAULT 0,  -- 0x80 without track_target: the target follows the fighters
-	mirror_x        INTEGER NOT NULL DEFAULT 0,  -- 0x200, and 0x100 mirror_z: axes of the track as imported (the game's z and x)
-	mirror_z        INTEGER NOT NULL DEFAULT 0,
-	PRIMARY KEY (category, pos),
-	FOREIGN KEY (tracks, left_track) REFERENCES anim(character, idx),
-	FOREIGN KEY (tracks, right_track) REFERENCES anim(character, idx)
+-- What a hit does to the fighter: a reaction move, or the fighter keeps its move.
+CREATE TABLE reaction_keeping (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);
+INSERT INTO reaction_keeping VALUES ('reacts', 0), ('always', 1), ('when_guarding', 2);
+
+-- The rules TK6 gives its bosses by model in code (tk6decomp docs/sim_contract.md 9.5); a character without a row
+-- plays by the plain rules. Goes with the body, as the body row does.
+CREATE TABLE body_rule (
+	character        TEXT PRIMARY KEY,
+	health           INTEGER NOT NULL DEFAULT 0,  -- points at the stock health setting; 0: the setting's (FUN_001ce48c)
+	health_fixed     INTEGER NOT NULL DEFAULT 0 CHECK (health_fixed IN (0, 1)),  -- the health setting does not scale it
+	reaction_keeping TEXT NOT NULL DEFAULT 'reacts' REFERENCES reaction_keeping(name),  -- FUN_001bfa50
+	guard_move_class TEXT REFERENCES state_class(name),  -- a guarded hit in it forces alias 68, the guard move (FUN_001ac394)
+	unthrowable      INTEGER NOT NULL DEFAULT 0 CHECK (unthrowable IN (0, 1)),  -- no throw, hit grab or reversal (requirement 0x2, FUN_001add58)
+	no_chip_damage   INTEGER NOT NULL DEFAULT 0 CHECK (no_chip_damage IN (0, 1)),  -- its blocked hits do no chip damage (FUN_001dbf40)
+	no_flashback     INTEGER NOT NULL DEFAULT 0 CHECK (no_flashback IN (0, 1))  -- a KO skips the flashback (FUN_00209d70)
+);
+
+-- A throw's camera shot (tk6decomp docs/data.md "Camera picks"): from the move frame its move names the list, the
+-- camera waits 16 frames, then takes a spot turned off the fight camera's bearing and follows the fighters until the
+-- throw lets go. A list holds rows for each screen side the thrower can be on; one is drawn by weight. Degrees.
+CREATE TABLE throw_shot (
+	character          TEXT NOT NULL REFERENCES motbin(character),
+	list               INTEGER NOT NULL,
+	pos                INTEGER NOT NULL,
+	thrower_right      INTEGER NOT NULL CHECK (thrower_right IN (0, 1)),  -- the thrower is on the right of the screen
+	weight             INTEGER NOT NULL,
+	keeps_fight_camera INTEGER NOT NULL DEFAULT 0 CHECK (keeps_fight_camera IN (0, 1)),  -- 1: no shot
+	yaw_least          REAL NOT NULL DEFAULT 0,  -- off the bearing from the target to the fight camera's eye
+	yaw_most           REAL NOT NULL DEFAULT 0,
+	pitch_least        REAL NOT NULL DEFAULT 0,  -- the eye above the target, from level
+	pitch_most         REAL NOT NULL DEFAULT 0,
+	fov_least          REAL NOT NULL DEFAULT 0,
+	fov_most           REAL NOT NULL DEFAULT 0,
+	distance_scale     REAL NOT NULL DEFAULT 1,  -- times the fight camera's distance from its target
+	cut_in             INTEGER NOT NULL DEFAULT 0 CHECK (cut_in IN (0, 1)),  -- else it eases in
+	PRIMARY KEY (character, list, pos, thrower_right)
+);
+
+-- The frame a move draws its throw shot from a list of its character's throw_shot rows.
+CREATE TABLE move_throw_shot (
+	move  TEXT NOT NULL REFERENCES move(key),
+	frame INTEGER NOT NULL,  -- move frame, 1-based
+	list  INTEGER NOT NULL,
+	PRIMARY KEY (move, frame)
+);
+
+-- A clean hit by a fighter whose camera category (property 0x815f) has a row swings the camera on screen about its
+-- target, closes in and holds it still for `frames`, then cuts back. Not on a guarded hit.
+CREATE TABLE hit_zoom (
+	category     INTEGER PRIMARY KEY,
+	frames       INTEGER NOT NULL,
+	distance     REAL NOT NULL,     -- mm from the target
+	fov          REAL NOT NULL,     -- degrees
+	counter_only INTEGER NOT NULL CHECK (counter_only IN (0, 1))  -- only within 5 frames of a counter hit
+);
+
+-- The swing of a hit zoom, drawn by weight. Degrees about y; positive turns one way with the attacker on the left of the
+-- screen and the other way with them on the right. wall_turn: the swing when either fighter touches a wall.
+CREATE TABLE hit_zoom_turn (
+	category  INTEGER NOT NULL REFERENCES hit_zoom(category),
+	pos       INTEGER NOT NULL,
+	weight    INTEGER NOT NULL,
+	turn      REAL NOT NULL,
+	wall_turn REAL NOT NULL,
+	PRIMARY KEY (category, pos)
 );
 
 -- Camera shots of moves (the intro and win poses: property 0x8153). From move frame `frame` on, the track plays one key a

@@ -27,8 +27,9 @@ enum T6TransitionClass : uint8_t {
 // Motion codes (transition bits 0..5) that the sim acts on. Code 0 and the codes from MOTION_CODE_END on leave the tracking as it is.
 enum : uint8_t {
     MOTION_NONE = 0,
-    MOTION_HOMING_FIRST = 2,           // 2..4 home on the opponent; 2 is also the carry rewrite of the transition filter
+    MOTION_HOMING_FIRST = 2,           // 2..4 home on the opponent
     MOTION_HOMING_LAST = 4,
+    MOTION_CARRY_HOMING = 3,           // what the transition filter gives a carried cancel with hits ahead (TK5: 2)
     MOTION_HOMING_REFERENCE = 11,      // homes on the reference direction
     MOTION_APPROACH = 14,              // turn to the target until the first active frame and slide in
     MOTION_SWEEP = 16,                 // locks the cancels for a while

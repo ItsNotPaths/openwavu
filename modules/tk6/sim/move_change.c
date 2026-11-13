@@ -112,6 +112,9 @@ static void reset_property_bytes(T6Fighter *f) {
     f->face_posed = false;
     f->throw_linked = 1;
     f->hides_attack = 0;
+    f->aims_held_side = 0;
+    f->drops_push_spheres = 0;
+    f->raises_hurtboxes = 0;
     f->keeps_throw_immune = 0;
     f->sound_mask = 0;
     f->hip_drop_from_opponent = 0;
@@ -149,7 +152,7 @@ static void reset_for_move(T6World *w, T6Fighter *f, const T6Fighter *opponent, 
     f->facing_state = t6_facing_begin(w, f->move.set, 0);  // start facing tracking for the move set
     f->input.latch_asked = T6_BUTTONS_NONE;  // clear the asked button latch
     if (fighter(f)) t6_hit_victims_clear(f);  // forget the victims already hit (fighters only)
-    f->throw.wall_hit = 0;
+    f->throw.camera_category = 0;
     f->throw.chain_before = f->throw.chain;  // remember the throw chain from before the change
     f->can_act_frame = new_move->length;  // by default they can act at the end of the move
     if (end->window_start != 0) f->can_act_frame = end->window_start;  // the end entry can set an earlier frame to act from
@@ -200,6 +203,7 @@ static void state_for_move(T6Fighter *f, const T6Motbin *motbin, const T6Move *o
         f->launch_flag = 0.0f;
         f->hit_this_move = 0;
         f->juggle_count = 0;
+        f->last_hits_damage = 0;
     } else if (transition_class == TRANSITION_THROWER ||
                transition_class == TRANSITION_THROWN) {  // in a throw: only the launch flag clears
         f->launch_flag = 0.0f;
@@ -815,7 +819,7 @@ void t6_move_tick(T6World *w, T6Fighter *f, T6Fighter *opponent) {
     if (f->pending_flags.turn) pending_turn(f);  // the cancel asked for a turn
     if (f->end_yaw_flag && t6_transition_class(f->transition) != TRANSITION_THROWN)  // turn by the old end yaw unless thrown
         end_turn(f, old_move);
-    t6_relative_angles(w, f, opponent);  // update the angles to the opponent
+    t6_relative_angles(w, f, opponent, true);  // update the angles to the opponent
     if (f->pending_id_high != 0) f->moveset = f->data;
     start_frame(w, f, old_move, new_move, new_ref);  // set the start frame
     floor_for_move(w, f, old_move, new_move);  // floor flags

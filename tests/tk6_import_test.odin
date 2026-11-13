@@ -260,6 +260,24 @@ tk6_pose_cameras_resolve :: proc(t: ^testing.T) {
 	}
 }
 
+// Throws draw their camera shot from a list of their own character's, and every list holds a shot for either screen side.
+@(test)
+tk6_throw_shots_resolve :: proc(t: ^testing.T) {
+	pack_dir, imported := tk6_pack(t)
+	if !imported do return
+	handle: ^db.Sqlite
+	defer db.close_v2(handle)
+	database := strings.clone_to_cstring(strings.concatenate({pack_dir, "/tk6.db"}, context.temp_allocator), context.temp_allocator)
+	if !testing.expect_value(t, db.open_v2(database, &handle, db.OPEN_READWRITE, nil), db.OK) do return
+	throws := count(handle, "SELECT count(*) FROM move_throw_shot")
+	testing.expect(t, throws > 500, "too few moves draw a throw shot")
+	SIDES_DRAWN :: "SELECT count(*) FROM move_throw_shot JOIN move ON move.key = move_throw_shot.move WHERE " +
+		"(SELECT count(DISTINCT thrower_right) FROM throw_shot WHERE throw_shot.character = move.character AND throw_shot.list = move_throw_shot.list) = 2"
+	testing.expect_value(t, count(handle, SIDES_DRAWN), throws)
+	testing.expect(t, count(handle, "SELECT count(*) FROM throw_shot WHERE NOT keeps_fight_camera") > 10000, "too few throw shots")
+	testing.expect(t, count(handle, "SELECT count(*) FROM hit_zoom WHERE category = 3") == 1, "no hit zoom for category 3")
+}
+
 // The first column of the first row; -1 when the query fails.
 @(private = "file")
 count :: proc(handle: ^db.Sqlite, sql: cstring) -> i64 {

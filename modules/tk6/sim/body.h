@@ -48,6 +48,20 @@ typedef struct {
     float head_top;                      // height of the head end point in the standing idle (not stock: the exporter measures it)
 } T6Body;
 
+// What a hit does to the fighter: a reaction move, or it keeps its move (TK6's bosses, FUN_001bfa50).
+typedef enum : uint8_t { REACTION_KEEPING_REACTS, REACTION_KEEPING_ALWAYS, REACTION_KEEPING_WHEN_GUARDING } T6ReactionKeeping;
+
+// The rules TK6 gives its bosses by model in code, as data of the body (Azazel, NANCY); zeros for any other fighter.
+typedef struct {
+    int16_t health;                      // points at the stock health setting; 0: the setting's points
+    bool health_fixed;                   // the health setting does not scale it
+    T6ReactionKeeping reaction_keeping;
+    uint8_t guard_move_class;            // a guarded hit in this state class forces T6_ALIAS_FORCED_GUARD; 0: none
+    bool unthrowable;                    // no throw or hit grab takes the fighter, no reversal answers its hits
+    bool no_chip_damage;                 // its blocked hits do no chip damage
+    bool no_flashback;                   // a KO in a round it fights skips the flashback
+} T6BodyRules;
+
 // A point fixed to a bone: the bone's world matrix applied to an offset. Of a character, from the ANCH row of its file
 // row i fills T6SpecialPoints.fixed[i]. `bone` is a bone of skeleton B.
 #define T6_BODY_POINTS 2

@@ -15,7 +15,7 @@ import "../../release"
 import tk5_importer "../tk5"
 
 TK6_SCHEMA :: #load("../../db/tk6/schema.sql", string)
-SCHEMA_VERSION :: "2"
+SCHEMA_VERSION :: "3"
 DATABASE :: "tk6.db"
 COSTUMES :: [?]int{tk6.PLAYER_ONE}  // costume n + 1 is the game's costume n
 
@@ -58,7 +58,7 @@ run :: proc(usrdir, root: string, progress: ^Progress = nil) -> (err: string) {
 	db.insert(w, "source", "importer_version", release.current())
 
 	write_bank(&im, "common", read_file(&im, tk6.COMMON_ANIMS) or_else nil)
-	// (hole tk6-throw-cameras :tags (tk6 importer) :sev gap) no throw_camera rows or global camera bank: TK6's throw camera table and bank are not found (tk6decomp docs/data.md "Cameras: other kinds"), so throws keep the fight camera.
+	tk6_convert.write_hit_zooms(w)
 	step(&im)
 	roster, listed := tk6.read_roster(game)
 	if !listed do return "the move sets did not read"
@@ -93,7 +93,8 @@ step :: proc(im: ^Import) {
 import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Roster_Entry) -> (err: string) {
 	w := &im.w
 	id := character.id
-	db.insert(w, "character", id, character.name, i64(character.chara), i64(character.model))
+	game_index: db.Value = character.number == tk6.MOKUJIN ? db.Null{} : i64(character.chara)  // the module draws Mokujin's move sets
+	db.insert(w, "character", id, character.name, game_index, i64(character.model))
 
 	motbin_index := -1
 	for entry in roster do if entry.name == character.motbin do motbin_index = entry.index
@@ -133,11 +134,12 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	tk5_convert.write_skeleton_rows(w, id, skeleton)
 	idle, has_idle := idle_anim(im, motbin, banks[0])
 	if !has_idle do return fmt.tprintf("%s: standing idle did not read", id)
-	// (hole tk6-body-rows :tags (tk6 importer) :sev polish) hurt and push radii, points and gaze are TK5's defaults, not read from TK6.
+	// (hole tk6-body-rows :tags (tk6 importer) :sev polish) hurt and push radii, points and gaze are TK5's defaults, not read from TK6; NANCY's push spheres come from a table of their own, also against her (FUN_001d428c).
 	body_model := character.model == tk5_convert.MODEL_JINPACHI ? 0 : character.model  // TK6 has no Jinpachi: 34 is Bob
 	tk5_convert.write_body(w, id, body_model, tk5_convert.head_top(&skeleton, idle))
 	tk5_convert.write_body_points(w, id, -1)
 	tk5_convert.write_gaze(w, id, -1)
+	tk6_convert.write_body_rules(w, id, character.model)
 
 	for costume in COSTUMES do import_costume(im, character, costume, bone)
 	return ""

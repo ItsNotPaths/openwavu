@@ -45,6 +45,7 @@ enum : uint8_t {
     CLASS_JUMP_A = 23, CLASS_JUMP_B = 24,                    // moves in the air; every jump move of a character is class 23
     CLASS_AIR_GUARD_FIRST = 25, CLASS_AIR_GUARD_LAST = 26,   // the classes that guard in the air
     CLASS_JUMP_LAST = 28,                                    // CLASS_JUMP_A..this: the jump and air guard classes
+    CLASS_UNHITTABLE_FIRST = 30, CLASS_UNHITTABLE_LAST = 31, // TK6 classes 0x15, 0x16: the hit test never hits them
 };
 
 // true if any of the bits is set

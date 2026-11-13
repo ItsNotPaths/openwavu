@@ -14,7 +14,8 @@ enum : uint16_t {
     REQ_AIR_REACTION = 286,  // the opponent is off the ground; a hit condition that holds it reacts in the air from its own list
     REQ_TK6_FIRST = 327,
     REQ_BOUND_ALLOWED = REQ_TK6_FIRST,  // like REQ_AIR_REACTION, a hit condition that holds it reacts in the air from its own list
-    T6_REQUIREMENT_COUNT = 352,
+    REQ_THIRD_FACING_FIRST = 357, REQ_THIRD_FACING_LAST = 368,  // TK6 0x181..0x18c: the loader options of the facing tests
+    T6_REQUIREMENT_COUNT = 369,
     T6_REQ_END = T6_REQUIREMENT_COUNT,
 };
 

@@ -10,7 +10,8 @@
 typedef struct T6Reaction T6Reaction;
 
 float t6_turn_positive(float angle);  // wraps into [-pi, pi], then [0, 2pi)
-void t6_relative_angles(const T6World *w, T6Fighter *f, const T6Fighter *opponent);  // angle to opponent, and which side is hit
+// angle to opponent, and which side is hit; a move start also resets held_near_side_angle (FUN_001d0f40 third argument)
+void t6_relative_angles(const T6World *w, T6Fighter *f, const T6Fighter *opponent, bool move_start);
 void t6_face_angles(const T6World *w, T6Fighter *f, const T6Fighter *opponent);  // yaw from facing, turned or look, then relative
 void t6_angles_pass(T6World *w);
 void t6_root_matrix_pass(T6World *w);  // root matrix copy, base position as translation

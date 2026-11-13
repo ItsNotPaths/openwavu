@@ -67,7 +67,10 @@ static int16_t near_side(int16_t target_angle, int16_t off) {
 }
 
 // The bands of a side_band_table index above 7 are other header bytes of the game; not modeled.
-void t6_relative_angles(const T6World *w, T6Fighter *f, const T6Fighter *opponent) {
+// The held angle follows the near side only while it moves less than a quarter turn the one way (TK6 P+0xbe).
+static bool held_follows(int16_t held, int16_t near) { return (uint16_t)(held - near) < QUARTER_TURN.bits; }
+
+void t6_relative_angles(const T6World *w, T6Fighter *f, const T6Fighter *opponent, bool move_start) {
     const T6SideBand *band = &t6_set(w, f->moveset)->side_bands[f->side_band_table & 7];
     int16_t face = t6_rad_to_angle65535(t6_turn_positive(f->look_yaw));  // the way they look, as a binary angle
     const T6Fighter *target = opponent;  // aim at the opponent
@@ -85,6 +88,7 @@ void t6_relative_angles(const T6World *w, T6Fighter *f, const T6Fighter *opponen
     if (f->distance > NEAR_SIDE_DISTANCE) {  // target far enough away: keep the near side angles
         f->near_side_angle = near_side(angle, f->opponent_angle);  // look: turn around if the back is nearer the target
         f->reference_near_side_angle = near_side(angle, f->angle_84);  // reference: the same
+        if (move_start || held_follows(f->held_near_side_angle, f->near_side_angle)) f->held_near_side_angle = f->near_side_angle;
     }
 }
 
@@ -92,7 +96,7 @@ void t6_face_angles(const T6World *w, T6Fighter *f, const T6Fighter *opponent) {
     f->reference_yaw = f->facing;  // by default the reference is where they face
     if (f->reaction_facing == REACTION_FACING_TURNED) f->reference_yaw = t6_angle_offset(f->facing, HALF_TURN);
     else if (f->reaction_facing == REACTION_FACING_LOOK) f->reference_yaw = t6_rad_to_angle65535(t6_turn_positive(f->look_yaw));
-    t6_relative_angles(w, f, opponent);  // then work out the angles to the opponent
+    t6_relative_angles(w, f, opponent, false);  // then work out the angles to the opponent
 }
 
 void t6_angles_pass(T6World *w) {
