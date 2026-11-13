@@ -163,10 +163,9 @@ write_moves :: proc(w: ^db.Writer, keys: ^Keys, animation_owner: string, sheets:
 			tk5_convert.list_ref(keys, .Start_Prop, move.start_properties), tk5_convert.list_ref(keys, .End_Prop, move.end_properties))
 		for column, bit in FLAG_COLUMNS do if column != "" do append(&values, n(move.flags >> u32(bit) & 1))
 		default := tracking.default[index]
-		// (hole tk6-ride-height :tags (tk6 sim) :sev polish) rides_partner (Xiaoyu's Hien throws lift her to the partner's head, TK5 by move id) is 0: the TK6 move ids of that check are not found.
 		append(&values, n(hitbox_bones(hitbox)), n(first_active), n(last_active), n(push >> 16),
 			row_key(character, "tracking_row", default.row), row_key(character, "tracking_row", default.far_row),
-			tk5_convert.named(sheets["tracking_far_source"], default.far_source), n(default.far_angle), n(0))
+			tk5_convert.named(sheets["tracking_far_source"], default.far_source), n(default.far_angle), n(rides_partner(move)))
 		kinds := sheets["hit_point_kind"]
 		for pair in hits.pairs {
 			append(&values, tk5_convert.named(kinds, pair.end.kind), n(pair.end.index), tk5_convert.named(kinds, pair.start.kind), n(pair.start.index))
@@ -404,3 +403,14 @@ seed_tracking :: proc(m: formats.Motbin, game_extras: []u32) -> Tracking {
 
 row_key :: tk5_convert.row_key
 n :: tk5_convert.n
+
+// Xiaoyu's Hien throws, front and back (FUN_001c0a98: compare id). The game lifts her only on model 11; the sim lifts her
+// on any partner by the partner's head height.
+@(private = "file")
+RIDE_COMPARE_IDS :: [?]u32{0x702f9, 0x702fb}
+
+@(private = "file")
+rides_partner :: proc(move: formats.Move) -> bool {
+	for id in RIDE_COMPARE_IDS do if move.unknown_1c == id do return true
+	return false
+}

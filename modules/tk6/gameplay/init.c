@@ -25,7 +25,7 @@ static const char *load_moveset(sqlite3 *db, const char *character, const char *
     size_t bytes;
     T6Arena arena;
     const char *failed = t6_load_character(db, character, &moveset->chara, &model);
-    if (!failed) failed = t6_load_fighter_storage(db, character, &bytes);
+    if (!failed) failed = t6_load_fighter_storage(db, character, body, &bytes);
     if (!failed) failed = t6_new_arena(&arena, bytes);
     if (!failed) failed = t6_load_fighter(&moveset->data, db, character, body, t6_read_pack_file, NULL, &arena);
     return failed;
@@ -59,6 +59,7 @@ static const char *load_side(sqlite3 *db, uint64_t seed, uint32_t side) {
     picked->loadout.character[T6_NAME_BYTES - 1] = 0;
     uint8_t chara;
     const char *failed = t6_load_character(db, character, &chara, &picked->model);
+    if (!failed) failed = t6_load_costume(db, character, picked->loadout.costume, &picked->costume, &picked->costume_variant);
     if (failed) return failed;
     char picks[ROUNDS_MAX][T6_NAME_BYTES];
     if (chara == T6_CHARA_NONE) failed = pick_rounds(db, seed, side, picks);

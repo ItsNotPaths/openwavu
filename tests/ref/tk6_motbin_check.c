@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
     for (int argument = 2; argument < argc; argument++) {
         const char *character = argv[argument];
         size_t bytes;
-        const char *failed = t6_load_motbin_storage(db, character, &bytes);
+        const char *failed = t6_load_motbin_storage(db, character, character, &bytes);
         T6Arena arena = {malloc(bytes), bytes, 0};
         T6Motbin m;
         if (!failed) failed = t6_load_motbin(&m, db, character, character, (T6AnimBases){}, &arena);

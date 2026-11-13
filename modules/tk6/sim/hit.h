@@ -114,7 +114,7 @@ void t6_limb_offset(const T6LimbState *limbs, T6HitPoint point, T6Vec4 *position
 T6Vec4 *t6_limb_offset_at(T6LimbState *table, int32_t slot, int32_t limb, int32_t skeleton);
 void t6_hitbox_starts(T6Fighter *f, const T6Move *move);
 void t6_hit_points(T6Fighter *f, const T6Move *move);
-void t6_hurtbox_radii(T6Fighter *f);
+void t6_hurtbox_radii(T6Fighter *f);  // radii by state class and the arm flag, each frame
 void t6_attack_direction(T6Hit *hit);
 void t6_incoming_direction(T6Hit *defender, const T6Hit *attacker);
 

@@ -74,6 +74,7 @@ run :: proc(usrdir, root: string, progress: ^Progress = nil) -> (err: string) {
 		music: db.Value = db.Null{}
 		if track, has := stage_music[number]; has do music = track
 		import_stage(&im, stage, music)
+		tk6_convert.write_stage_arena(w, stage.id, number)
 		free_all(context.temp_allocator)
 		step(&im)
 	}
@@ -134,9 +135,7 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	tk5_convert.write_skeleton_rows(w, id, skeleton)
 	idle, has_idle := idle_anim(im, motbin, banks[0])
 	if !has_idle do return fmt.tprintf("%s: standing idle did not read", id)
-	// (hole tk6-body-rows :tags (tk6 importer) :sev polish) hurt and push radii, points and gaze are TK5's defaults, not read from TK6; NANCY's push spheres come from a table of their own, also against her (FUN_001d428c).
-	body_model := character.model == tk5_convert.MODEL_JINPACHI ? 0 : character.model  // TK6 has no Jinpachi: 34 is Bob
-	tk5_convert.write_body(w, id, body_model, tk5_convert.head_top(&skeleton, idle))
+	tk6_convert.write_body(w, id, character.model, tk5_convert.head_top(&skeleton, idle))
 	tk6_convert.write_body_points(w, id, character.chara)
 	tk5_convert.write_gaze(w, id, -1)
 	tk6_convert.write_body_rules(w, id, character.model)
@@ -179,6 +178,7 @@ import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone
 		return
 	}
 	db.insert(w, "costume", id, name)
+	tk6_convert.write_costume_index(w, character, costume, name)
 	db.insert(w, "costume_voice", id, name, i64(character.number))
 	body_part := fmt.tprintf("%s_%s_body", id, name)
 	first_mesh_node, written := write_part(im, id, body_part, "body", body_part, tk6.body_file(character), texture_set = worn.body_texture_set)
@@ -250,7 +250,7 @@ write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: 
 
 // The six layers as one glb, each placed by its nodes, and the walls and floor.
 // (hole tk6-stage-look :tags (tk6 importer) :sev polish) stage blend modes, node anims (gyas) and the effect list are not read.
-// (hole tk6-stage-start :tags (tk6 importer) :sev gap) the start points are not read (posf holds none found), so the sim's fallback line places the fighters.
+// (hole tk6-stage-start :tags (tk6 importer) :sev gap) posf table 0 (one centre point and yaw per stage) is not imported, so the sim's fallback line places the fighters; the facing of the placement (FUN_001c548c) is open (tk6decomp data.md posf).
 // (hole tk6-floor-breaks :tags (tk6 importer) :sev gap) floor and wall breaks are not imported; they look like stage objects (properties touch them), not fighter code [guess].
 import_stage :: proc(im: ^Import, stage: tk6.Stage, music: db.Value) {
 	collision, has_collision := tk6.read_stage_collision(im.game, stage, context.temp_allocator)

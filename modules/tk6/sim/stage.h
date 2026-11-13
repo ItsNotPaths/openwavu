@@ -37,6 +37,7 @@ struct T6Stage {
     int32_t wall_count;
     T6StartList start[T6_START_LISTS];
     bool infinite;  // no walls and a flat floor at 0 (the game's stage mode 2); the fighters walk on forever
+    float arena_radius, arena_pull_in;  // fighters further apart than the pull-in distance are pulled onto the ring; mm
 };
 
 // The floor queries on w->stage. They read w's stage_depth, floor_disabled and stage_state.

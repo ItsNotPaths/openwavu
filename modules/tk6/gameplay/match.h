@@ -25,6 +25,7 @@ typedef struct {
 typedef struct {
     T6Loadout loadout;
     int16_t model;  // its body model id (T6Fighter.chara_40); requirements compare it and the move set id
+    int16_t costume, costume_variant;  // T6Fighter's
     const T6Moveset *round_movesets[ROUNDS_MAX];  // the move set of each round: one for most, Mokujin's from the seed
     T6FighterData data;  // the move set of this round, a copy (properties write its aliases)
 } T6SideData;

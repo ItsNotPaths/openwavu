@@ -22,7 +22,7 @@ static inline T6AnimBases t6_anim_bases(const T6FighterFiles *files) {
 typedef T6Bytes (*T6ReadFile)(void *context, const char *path);
 
 // Each returns NULL on success, else what went wrong.
-const char *t6_load_motbin_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t6_load_motbin takes
+const char *t6_load_motbin_storage(sqlite3 *db, const char *character, const char *body, size_t *bytes);  // arena bytes t6_load_motbin takes
 const char *t6_load_motbin(T6Motbin *motbin, sqlite3 *db, const char *character, const char *body, T6AnimBases anims, T6Arena *arena);
 const char *t6_load_skeleton(T6Skeleton *skeleton, sqlite3 *db, const char *character);
 // One anim bank by its owner (a character, common, <character>/embedded). Rows with the same file share one anim.
@@ -45,12 +45,14 @@ enum { T6_OWNER_BYTES = 128 };
 // The owner of the character's own anim bank: the one its moves name that is neither common nor embedded.
 const char *t6_own_anim_bank(sqlite3 *db, const char *character, char owner[T6_OWNER_BYTES]);
 // A fighter: the anim banks and moves of one character on the skeleton and body row of `body`, and the steps after them (t6_fighter_finish).
-const char *t6_load_fighter_storage(sqlite3 *db, const char *character, size_t *bytes);  // arena bytes t6_load_fighter takes
+const char *t6_load_fighter_storage(sqlite3 *db, const char *character, const char *body, size_t *bytes);  // arena bytes t6_load_fighter takes
 const char *t6_load_fighter(T6FighterData *data, sqlite3 *db, const char *character, const char *body, T6ReadFile read, void *context,
                             T6Arena *arena);
 enum { T6_CHARA_NONE = 0xff };  // a character with no move set of its own (Mokujin): he takes another's each round
 // A character's move set id (or T6_CHARA_NONE) and body model id (T6Fighter.chara, chara_40).
 const char *t6_load_character(sqlite3 *db, const char *character, uint8_t *chara, int16_t *model);
+// The costume's row of the game's fighter table and its variant (costume_index).
+const char *t6_load_costume(sqlite3 *db, const char *character, uint32_t costume, int16_t *game_index, int16_t *variant);
 // A stage's collision: the collision glb and .surfaces file of its stage row.
 const char *t6_load_stage_storage(sqlite3 *db, const char *stage, T6ReadFile read, void *context, size_t *bytes);
 const char *t6_load_stage(T6Stage *out, sqlite3 *db, const char *stage, T6ReadFile read, void *context, T6Arena *arena);

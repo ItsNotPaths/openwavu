@@ -23,6 +23,7 @@ enum T6PushSphere {
 // record stores. Units: mm.
 typedef struct {
     int16_t radius;  // radius, and half height
+    int16_t lying_radius;  // the radius in the lying classes (FUN_001d3e94)
     uint8_t bone;
     float lift;  // added to the bone's height for the box centre
 } T6HurtRow;
@@ -60,6 +61,12 @@ typedef struct {
     bool unthrowable;                    // no throw or hit grab takes the fighter, no reversal answers its hits
     bool no_chip_damage;                 // its blocked hits do no chip damage
     bool no_flashback;                   // a KO in a round it fights skips the flashback
+    bool plain_push;                     // in its fights both fighters push at body radii, the move push shapes do nothing
+    // The sounds of a hit it takes; none set: the plain steps by the attacker's damage.
+    uint16_t hit_sound;                  // on every hit; 0: none
+    uint16_t hit_sound_heavy_damage;     // from this much damage also the heavy kick or punch sound; 0: never
+    uint16_t hit_sound_heavy_kick, hit_sound_heavy_punch;
+    uint16_t hit_sound_random_first, hit_sound_random_count;  // one of count sounds from the first, at random
 } T6BodyRules;
 
 // A point on a bone, from the character's body_points row: the bone's world matrix applied to an offset, or, when `yawed`,

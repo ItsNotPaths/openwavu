@@ -8,6 +8,7 @@
 #include "sim/fighter.h"
 #include "sim/math.h"
 #include "sim/pose.h"
+#include "sim/stage.h"
 #include "sim/vec.h"
 
 int32_t t6_extra_count(const T6World *w) { return w->extra_count; }
@@ -87,7 +88,7 @@ static void pull_in(T6World *w, T6Fighter *f) {
     t6_mat_identity(&turn);  // start with no turn
     t6_mat_rotate_y(&turn, t6_rad_to_angle_round(angle));  // turn by the angle about y
     memcpy(turn.m[3], centre, 3 * sizeof(float));  // the turn's origin is the centre
-    T6Vec4 edge = {{ARENA_RADIUS, 0.0f, 0.0f, 1.0f}}, out;  // a point on the edge circle, out along x
+    T6Vec4 edge = {{w->stage->arena_radius, 0.0f, 0.0f, 1.0f}}, out;  // a point on the edge circle, out along x
     t6_vec_times_mat(&out, &edge, &turn);  // turn the edge point to its place on the circle
     float offset_x = out.x - f->base_position.x;  // step from f to the edge point
     float offset_z = out.z - f->base_position.z;
@@ -110,9 +111,10 @@ void t6_arena_pass(T6World *w) {
     T6Fighter *first = w->fighters[0], *second = w->fighters[1];
     float distance = w->distance = base_distance(first, second);  // measure the distance and keep it on the world
     if (t6_phase_row(w).arena) {  // only in phases where the arena holds fighters together
-        if (distance > ARENA_PULL_IN) {  // far apart: pull fighters outside the circle onto its edge
-            if (centre_distance(w, first) > ARENA_RADIUS) pull_in(w, first);  // pull first onto the edge if outside the circle
-            if (centre_distance(w, second) > ARENA_RADIUS) pull_in(w, second);
+        float radius = w->stage->arena_radius;
+        if (distance > w->stage->arena_pull_in) {  // far apart: pull fighters outside the circle onto its edge
+            if (centre_distance(w, first) > radius) pull_in(w, first);  // pull first onto the edge if outside the circle
+            if (centre_distance(w, second) > radius) pull_in(w, second);
         } else {  // close: centre the arena between the fighters
             float *centre = w->arena_centre;
             centre[0] = (first->base_position.x + second->base_position.x) * 0.5f;  // centre is the midpoint of the two fighters

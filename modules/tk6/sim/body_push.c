@@ -5,9 +5,11 @@
 #include "sim/collision.h"
 #include "sim/constants.h"
 #include "sim/fighter.h"
+#include "sim/hit.h"
 #include "sim/math.h"
 #include "sim/pose.h"
 #include "sim/units.h"
+#include "sim/world.h"
 
 void t6_push_init(T6Fighter *f) {
     for (int point = 0; point < T6_PUSH_POINTS; point++)  // loop through the push spheres
@@ -47,7 +49,8 @@ static constexpr RadiusRule OFF = {0.0f, 0.0f};
 static constexpr RadiusRule WIDER_60 = {1.0f, 60.0f};
 static constexpr RadiusRule WIDER_100 = {1.0f, 100.0f};
 
-// Per shape kind and sphere. Kinds 10 and 12..15 change nothing.
+// Per shape kind and sphere (FUN_001d428c, TOC -0x3404; TK6 moved TK5's kinds 9 and 11 up by one). Kinds 11 and 13..15
+// change nothing.
 static const RadiusRule SHAPES[SHAPE_KIND_COUNT][T6_PUSH_POINTS] = {
     [0] = {SAME, SAME, SAME, SAME, SAME, SAME, SAME, SAME},
     [1] = {SAME, POINT, POINT, SAME, POINT, POINT, POINT, POINT},
@@ -58,10 +61,10 @@ static const RadiusRule SHAPES[SHAPE_KIND_COUNT][T6_PUSH_POINTS] = {
     [6] = {HALF, POINT, POINT, HALF, POINT, POINT, POINT, POINT},
     [7] = {WIDER_60, SAME, SAME, SAME, POINT, POINT, POINT, POINT},
     [8] = {WIDER_100, WIDER_100, WIDER_100, WIDER_100, WIDER_100, WIDER_100, WIDER_100, WIDER_100},
-    [9] = {WIDER_60, OFF, OFF, OFF, OFF, OFF, OFF, OFF},
-    [10] = {SAME, SAME, SAME, SAME, SAME, SAME, SAME, SAME},
-    [11] = {HALF, SAME, SAME, SAME, SAME, SAME, SAME, SAME},
-    [12] = {SAME, SAME, SAME, SAME, SAME, SAME, SAME, SAME},
+    [9] = {WIDER_100, WIDER_100, WIDER_100, WIDER_100, WIDER_100, WIDER_100, WIDER_100, WIDER_100},
+    [10] = {WIDER_60, OFF, OFF, OFF, OFF, OFF, OFF, OFF},
+    [11] = {SAME, SAME, SAME, SAME, SAME, SAME, SAME, SAME},
+    [12] = {HALF, SAME, SAME, SAME, SAME, SAME, SAME, SAME},
     [13] = {SAME, SAME, SAME, SAME, SAME, SAME, SAME, SAME},
     [14] = {SAME, SAME, SAME, SAME, SAME, SAME, SAME, SAME},
     [15] = {SAME, SAME, SAME, SAME, SAME, SAME, SAME, SAME},
@@ -92,7 +95,9 @@ static uint8_t spheres_off_by_state(const T6Fighter *f, const T6Move *move) {
 void t6_push_radii(const T6World *w, T6Fighter *f) {
     if (f->kind != T6_KIND_FIGHTER) return;  // only fighters have push spheres
     const T6Move *move = t6_move_at(w, f->move);
-    PushShape shape = shape_of(move->push_shape);  // the move picks a radius rule per sphere
+    const T6Fighter *opponent = t6_object(w, f->opponent);
+    bool plain = f->body_rules.plain_push || (opponent != nullptr && opponent->body_rules.plain_push);
+    PushShape shape = plain ? (PushShape){} : shape_of(move->push_shape);  // the move picks a radius rule per sphere
     bool mask_off = shape.kind == SHAPE_KIND_BY_MASK && mask_applies(f, move, shape);  // switch-off by mask?
     uint8_t state_off = spheres_off_by_state(f, move);  // spheres the fighter state switches off
     for (int sphere = 0; sphere < T6_PUSH_POINTS; sphere++) {  // loop through the spheres
@@ -102,9 +107,6 @@ void t6_push_radii(const T6World *w, T6Fighter *f) {
         if (in_set(state_off, sphere)) radius = 0.0f;  // the state switches this sphere off
         f->hit.push_point[sphere].w = radius;  // store the radius in the sphere
     }
-    static constexpr uint8_t DROPPED = 1 << PUSH_ARM_2 | 1 << PUSH_HIPS | 1 << PUSH_FOOT_1 | 1 << PUSH_FOOT_2;  // FUN_001d3e94
-    if (f->drops_push_spheres)
-        for (int sphere = 0; sphere < T6_PUSH_POINTS; sphere++) if (in_set(DROPPED, sphere)) f->hit.push_point[sphere].w = 0.0f;
 }
 
 static void previous_root_of(T6World *w, T6Fighter *f) {
@@ -112,11 +114,14 @@ static void previous_root_of(T6World *w, T6Fighter *f) {
     t6_previous_root(f);
 }
 
-static void push_radii_of(T6World *w, T6Fighter *f) { t6_push_radii(w, f); }
+static void radii_of(T6World *w, T6Fighter *f) {  // FUN_001d4ca8
+    t6_push_radii(w, f);
+    t6_hurtbox_radii(f);
+}
 
 void t6_previous_root_pass(T6World *w) { t6_each_object(w, previous_root_of); }
 
-void t6_push_radii_pass(T6World *w) { t6_each_object(w, push_radii_of); }
+void t6_radii_pass(T6World *w) { t6_each_object(w, radii_of); }
 
 // --- the push of a pair
 

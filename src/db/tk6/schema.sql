@@ -487,20 +487,20 @@ CREATE TABLE unknown_table (
 
 CREATE TABLE body (  -- hurtboxes: vertical cylinders on bones of skeleton B, in hit record order; push spheres: radius at rest
 	character       TEXT PRIMARY KEY,
-	hurt_radius_0 INTEGER NOT NULL, hurt_bone_0 INTEGER NOT NULL, hurt_lift_0 REAL NOT NULL,  -- radius: and half height
-	hurt_radius_1 INTEGER NOT NULL, hurt_bone_1 INTEGER NOT NULL, hurt_lift_1 REAL NOT NULL,
-	hurt_radius_2 INTEGER NOT NULL, hurt_bone_2 INTEGER NOT NULL, hurt_lift_2 REAL NOT NULL,
-	hurt_radius_3 INTEGER NOT NULL, hurt_bone_3 INTEGER NOT NULL, hurt_lift_3 REAL NOT NULL,
-	hurt_radius_4 INTEGER NOT NULL, hurt_bone_4 INTEGER NOT NULL, hurt_lift_4 REAL NOT NULL,
-	hurt_radius_5 INTEGER NOT NULL, hurt_bone_5 INTEGER NOT NULL, hurt_lift_5 REAL NOT NULL,
-	hurt_radius_6 INTEGER NOT NULL, hurt_bone_6 INTEGER NOT NULL, hurt_lift_6 REAL NOT NULL,
-	hurt_radius_7 INTEGER NOT NULL, hurt_bone_7 INTEGER NOT NULL, hurt_lift_7 REAL NOT NULL,
-	hurt_radius_8 INTEGER NOT NULL, hurt_bone_8 INTEGER NOT NULL, hurt_lift_8 REAL NOT NULL,
-	hurt_radius_9 INTEGER NOT NULL, hurt_bone_9 INTEGER NOT NULL, hurt_lift_9 REAL NOT NULL,
-	hurt_radius_10 INTEGER NOT NULL, hurt_bone_10 INTEGER NOT NULL, hurt_lift_10 REAL NOT NULL,
-	hurt_radius_11 INTEGER NOT NULL, hurt_bone_11 INTEGER NOT NULL, hurt_lift_11 REAL NOT NULL,
-	hurt_radius_12 INTEGER NOT NULL, hurt_bone_12 INTEGER NOT NULL, hurt_lift_12 REAL NOT NULL,
-	hurt_radius_13 INTEGER NOT NULL, hurt_bone_13 INTEGER NOT NULL, hurt_lift_13 REAL NOT NULL,
+	hurt_radius_0 INTEGER NOT NULL, hurt_lying_radius_0 INTEGER NOT NULL, hurt_bone_0 INTEGER NOT NULL, hurt_lift_0 REAL NOT NULL,  -- radius: and half height; lying: in classes lying_face_up/_down (FUN_001d3e94)
+	hurt_radius_1 INTEGER NOT NULL, hurt_lying_radius_1 INTEGER NOT NULL, hurt_bone_1 INTEGER NOT NULL, hurt_lift_1 REAL NOT NULL,
+	hurt_radius_2 INTEGER NOT NULL, hurt_lying_radius_2 INTEGER NOT NULL, hurt_bone_2 INTEGER NOT NULL, hurt_lift_2 REAL NOT NULL,
+	hurt_radius_3 INTEGER NOT NULL, hurt_lying_radius_3 INTEGER NOT NULL, hurt_bone_3 INTEGER NOT NULL, hurt_lift_3 REAL NOT NULL,
+	hurt_radius_4 INTEGER NOT NULL, hurt_lying_radius_4 INTEGER NOT NULL, hurt_bone_4 INTEGER NOT NULL, hurt_lift_4 REAL NOT NULL,
+	hurt_radius_5 INTEGER NOT NULL, hurt_lying_radius_5 INTEGER NOT NULL, hurt_bone_5 INTEGER NOT NULL, hurt_lift_5 REAL NOT NULL,
+	hurt_radius_6 INTEGER NOT NULL, hurt_lying_radius_6 INTEGER NOT NULL, hurt_bone_6 INTEGER NOT NULL, hurt_lift_6 REAL NOT NULL,
+	hurt_radius_7 INTEGER NOT NULL, hurt_lying_radius_7 INTEGER NOT NULL, hurt_bone_7 INTEGER NOT NULL, hurt_lift_7 REAL NOT NULL,
+	hurt_radius_8 INTEGER NOT NULL, hurt_lying_radius_8 INTEGER NOT NULL, hurt_bone_8 INTEGER NOT NULL, hurt_lift_8 REAL NOT NULL,
+	hurt_radius_9 INTEGER NOT NULL, hurt_lying_radius_9 INTEGER NOT NULL, hurt_bone_9 INTEGER NOT NULL, hurt_lift_9 REAL NOT NULL,
+	hurt_radius_10 INTEGER NOT NULL, hurt_lying_radius_10 INTEGER NOT NULL, hurt_bone_10 INTEGER NOT NULL, hurt_lift_10 REAL NOT NULL,
+	hurt_radius_11 INTEGER NOT NULL, hurt_lying_radius_11 INTEGER NOT NULL, hurt_bone_11 INTEGER NOT NULL, hurt_lift_11 REAL NOT NULL,
+	hurt_radius_12 INTEGER NOT NULL, hurt_lying_radius_12 INTEGER NOT NULL, hurt_bone_12 INTEGER NOT NULL, hurt_lift_12 REAL NOT NULL,
+	hurt_radius_13 INTEGER NOT NULL, hurt_lying_radius_13 INTEGER NOT NULL, hurt_bone_13 INTEGER NOT NULL, hurt_lift_13 REAL NOT NULL,
 	push_radius_0 REAL NOT NULL, push_bone_0 INTEGER NOT NULL,
 	push_radius_1 REAL NOT NULL, push_bone_1 INTEGER NOT NULL,
 	push_radius_2 REAL NOT NULL, push_bone_2 INTEGER NOT NULL,
@@ -682,7 +682,15 @@ CREATE TABLE body_rule (
 	guard_move_class TEXT REFERENCES state_class(name),  -- a guarded hit in it forces alias 68, the guard move (FUN_001ac394)
 	unthrowable      INTEGER NOT NULL DEFAULT 0 CHECK (unthrowable IN (0, 1)),  -- no throw, hit grab or reversal (requirement 0x2, FUN_001add58)
 	no_chip_damage   INTEGER NOT NULL DEFAULT 0 CHECK (no_chip_damage IN (0, 1)),  -- its blocked hits do no chip damage (FUN_001dbf40)
-	no_flashback     INTEGER NOT NULL DEFAULT 0 CHECK (no_flashback IN (0, 1))  -- a KO skips the flashback (FUN_00209d70)
+	no_flashback     INTEGER NOT NULL DEFAULT 0 CHECK (no_flashback IN (0, 1)),  -- a KO skips the flashback (FUN_00209d70)
+	plain_push       INTEGER NOT NULL DEFAULT 0 CHECK (plain_push IN (0, 1)),  -- in its fights both push at body radii, the move push shapes do nothing (FUN_001d428c)
+	-- the sounds of a hit it takes (FUN_002ed920); none set: the plain steps by the attacker's damage
+	hit_sound              INTEGER NOT NULL DEFAULT 0,  -- played on every hit; 0: none
+	hit_sound_heavy_damage INTEGER NOT NULL DEFAULT 0,  -- from this much damage also the heavy sound; 0: never
+	hit_sound_heavy_kick   INTEGER NOT NULL DEFAULT 0,
+	hit_sound_heavy_punch  INTEGER NOT NULL DEFAULT 0,
+	hit_sound_random_first INTEGER NOT NULL DEFAULT 0,  -- one of count sounds from this one, at random
+	hit_sound_random_count INTEGER NOT NULL DEFAULT 0
 );
 
 -- A throw's camera shot (tk6decomp docs/data.md "Camera picks"): from the move frame its move names the list, the
@@ -762,6 +770,23 @@ CREATE TABLE character_effect_row (
 	sound_row INTEGER NOT NULL,  -- -1: none
 	light     INTEGER NOT NULL,  -- 1: record 0's colour also lights the hit point for a moment
 	PRIMARY KEY (character, row)
+);
+
+-- The arena ring of a stage (FUN_001bf15c): fighters farther apart than pull_in are pulled onto a circle of radius. mm.
+CREATE TABLE stage_arena (
+	stage   TEXT PRIMARY KEY REFERENCES stage(id),
+	radius  REAL NOT NULL,
+	pull_in REAL NOT NULL
+);
+
+-- A costume's row of the game's fighter table (FUN_0023ade0): what costume requirements compare (P+0x5c), and its variant.
+CREATE TABLE costume_index (
+	character  TEXT NOT NULL,
+	costume    TEXT NOT NULL,
+	game_index INTEGER NOT NULL,  -- the fighter table row
+	variant    INTEGER NOT NULL,  -- row word 1 (FUN_0023a798): 0, 1, 2 by costume, Panda 1
+	PRIMARY KEY (character, costume),
+	FOREIGN KEY (character, costume) REFERENCES costume(character, id)
 );
 
 -- Sound ids of the sim's cues (tk6decomp data.md "Sound"). A voice character is the character's file number.

@@ -403,22 +403,7 @@ static bool opponent_control_is(Ask ask) {  // opponent's control type is the pa
     return t6_input_control_is(&ask.opponent->input, ask.param);
 }
 
-// (hole tk6-costume-variant-table :tags (tk6 sim) :sev polish) this is the TK5 table; TK6's 102-entry table is not extracted.
-// 155: a costume variant, by costume (other values read record 0).
-enum { COSTUMES = 86 };
-static const int16_t COSTUME_VARIANT[COSTUMES] = {
-    0, 1, 0, 1, 2, 0, 1, 0, 1, 0, 1, 2, 0, 1, 0, 1, 0, 1, 2, 3, 4, 0, 1, 0, 1, 0, 1, 2, 0,
-    1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 0, 1, 0, 1,
-    2, 0, 1, 2, 3, 0, 1, 2, 0, 1, 0, 1, 0, 1, 2, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 3, 0,
-};
-
-static int16_t costume_variant_of(const T6Fighter *fighter) {
-    int16_t costume = fighter->costume;
-    if (costume < 0 || costume >= COSTUMES) costume = 0;  // a costume out of range reads as the first
-    return COSTUME_VARIANT[costume];
-}
-
-static bool costume_variant_is(Ask ask) { return costume_variant_of(ask.f) == ask.param; }  // own costume is the variant in the param
+static bool costume_variant_is(Ask ask) { return ask.f->costume_variant == ask.param; }  // own costume is the variant in the param
 
 static bool ai_signal_is(Ask ask) { return ask.f->ai_signal == ask.param; }  // the AI signal is the param
 static bool practice_16_is(Ask ask) { return ask.w->practice_16 == ask.param; }  // a practice setting equals the param
@@ -708,7 +693,7 @@ static bool opponent_on_ground(Ask ask) { return !t6_off_ground(ask.opponent); }
 // The param is the character (or model) in the high byte and the costume variant in the low byte.
 enum { PARAM_BYTE_BITS = 8, PARAM_BYTE_MASK = 255 };
 static bool opponent_variant_is(Ask ask) {
-    return costume_variant_of(ask.opponent) == (ask.param & PARAM_BYTE_MASK);
+    return ask.opponent->costume_variant == (ask.param & PARAM_BYTE_MASK);
 }
 static bool opponent_chara_variant(Ask ask) {
     return ask.opponent->chara == ask.param >> PARAM_BYTE_BITS && opponent_variant_is(ask);

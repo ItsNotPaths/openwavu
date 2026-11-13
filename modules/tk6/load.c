@@ -203,6 +203,7 @@ static const Field move_tracking_fields[] = {
 
 static const Field body_fields[] = {
     ARRAY_AS(T6Body, hurt, .radius, "hurt_radius"),
+    ARRAY_AS(T6Body, hurt, .lying_radius, "hurt_lying_radius"),
     ARRAY_AS(T6Body, hurt, .bone, "hurt_bone"),
     ARRAY_AS(T6Body, hurt, .lift, "hurt_lift"),
     ARRAY_AS(T6Body, push, .radius, "push_radius"),
@@ -231,6 +232,13 @@ static const Field body_rule_fields[] = {
     FIELD(T6BodyRules, unthrowable),
     FIELD(T6BodyRules, no_chip_damage),
     FIELD(T6BodyRules, no_flashback),
+    FIELD(T6BodyRules, plain_push),
+    FIELD(T6BodyRules, hit_sound),
+    FIELD(T6BodyRules, hit_sound_heavy_damage),
+    FIELD(T6BodyRules, hit_sound_heavy_kick),
+    FIELD(T6BodyRules, hit_sound_heavy_punch),
+    FIELD(T6BodyRules, hit_sound_random_first),
+    FIELD(T6BodyRules, hit_sound_random_count),
 };
 
 static const Field gaze_fields[] = {
@@ -583,11 +591,17 @@ static const char *load_inputs(sqlite3 *db, const char *character, T6Arena *aren
     return failed;
 }
 
-const char *t6_load_motbin_storage(sqlite3 *db, const char *character, size_t *bytes) {
+// The body and its rules go with the body model (Mokujin keeps his own with any move set); every other table with the move set.
+static const char *table_owner(const Table *table, const char *character, const char *body) {
+    bool of_body = table->items == offsetof(T6Motbin, body) || table->items == offsetof(T6Motbin, body_rules);
+    return of_body ? body : character;
+}
+
+const char *t6_load_motbin_storage(sqlite3 *db, const char *character, const char *body, size_t *bytes) {
     *bytes = 0;
     for (size_t index = 0; index < TABLE_COUNT; index++) {
         int32_t count;
-        const char *failed = count_rows(db, character, &tables[index], &count);
+        const char *failed = count_rows(db, table_owner(&tables[index], character, body), &tables[index], &count);
         if (failed) return failed;
         *bytes += table_bytes(count, tables[index].size);
     }
@@ -903,12 +917,6 @@ static const char *load_move_ai(sqlite3 *db, const char *character, T6Motbin *mo
     return failed;
 }
 
-// The body and its rules go with the body model (Mokujin keeps his own with any move set); every other table with the move set.
-static const char *table_owner(const Table *table, const char *character, const char *body) {
-    bool of_body = table->items == offsetof(T6Motbin, body) || table->items == offsetof(T6Motbin, body_rules);
-    return of_body ? body : character;
-}
-
 const char *t6_load_motbin(T6Motbin *motbin, sqlite3 *db, const char *character, const char *body, T6AnimBases anims, T6Arena *arena) {
     memset(motbin, 0, sizeof *motbin);
     Refs refs = {.bases = anims};
@@ -1042,11 +1050,11 @@ const char *t6_load_anims(T6FighterFiles *files, sqlite3 *db, const char *charac
     return failed;
 }
 
-const char *t6_load_fighter_storage(sqlite3 *db, const char *character, size_t *bytes) {
+const char *t6_load_fighter_storage(sqlite3 *db, const char *character, const char *body, size_t *bytes) {
     size_t anims, motbin;
     uint32_t anim_count;
     const char *failed = anims_storage(db, character, &anims, &anim_count);
-    if (!failed) failed = t6_load_motbin_storage(db, character, &motbin);
+    if (!failed) failed = t6_load_motbin_storage(db, character, body, &motbin);
     *bytes = failed ? 0 : anims + motbin + t6_fighter_finish_storage(anim_count);
     return failed;
 }
@@ -1083,12 +1091,25 @@ static const char *stage_files(sqlite3 *db, const char *stage, T6ReadFile read, 
     return failed;
 }
 
+static const char *stage_arena(sqlite3 *db, const char *stage, T6Stage *out) {
+    sqlite3_stmt *row;
+    const char *failed = prepare(db, "SELECT radius, pull_in FROM stage_arena WHERE stage = ?1", stage, &row);
+    if (!failed && sqlite3_step(row) != SQLITE_ROW) failed = fail("stage %s: no arena row", stage);
+    if (!failed) {
+        out->arena_radius = (float)sqlite3_column_double(row, 0);
+        out->arena_pull_in = (float)sqlite3_column_double(row, 1);
+    }
+    sqlite3_finalize(row);
+    return failed;
+}
+
 static const char *load_stage(T6Stage *out, sqlite3 *db, const char *stage, T6ReadFile read, void *context, T6Arena *arena, size_t *bytes) {
     T6Bytes collision, surfaces;
     bool infinite = false;
     const char *failed = stage_files(db, stage, read, context, &collision, &surfaces, &infinite);
     if (!failed) failed = t6_stage_parse(out, collision, surfaces, arena, bytes);
     if (!failed) out->infinite = infinite;
+    if (!failed) failed = stage_arena(db, stage, out);
     return failed && failed != error ? fail("stage %s: %s", stage, failed) : failed;
 }
 
@@ -1111,6 +1132,23 @@ const char *t6_load_character(sqlite3 *db, const char *character, uint8_t *chara
         *model = (int16_t)sqlite3_column_int(row, 1);
     } else {
         failed = fail("no character %s", character);
+    }
+    sqlite3_finalize(row);
+    return failed;
+}
+
+const char *t6_load_costume(sqlite3 *db, const char *character, uint32_t costume, int16_t *game_index, int16_t *variant) {
+    sqlite3_stmt *row;
+    const char *failed = prepare(db, "SELECT game_index, variant FROM costume_index WHERE character = ?1 AND costume = ?2", character, &row);
+    if (failed) return failed;
+    char costume_id[12];
+    snprintf(costume_id, sizeof costume_id, "%u", costume);
+    sqlite3_bind_text(row, 2, costume_id, -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(row) == SQLITE_ROW) {
+        *game_index = (int16_t)sqlite3_column_int(row, 0);
+        *variant = (int16_t)sqlite3_column_int(row, 1);
+    } else {
+        failed = fail("no costume %u of %s", costume, character);
     }
     sqlite3_finalize(row);
     return failed;

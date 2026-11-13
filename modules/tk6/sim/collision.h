@@ -61,7 +61,7 @@ void t6_push_init(T6Fighter *f);  // push spheres to the base position, no throw
 void t6_previous_root(T6Fighter *f);  // save the base position as the previous root
 void t6_push_radii(const T6World *w, T6Fighter *f);  // radii of the push spheres, from the move and state
 void t6_previous_root_pass(T6World *w);  // previous root of each fighter and extra
-void t6_push_radii_pass(T6World *w);  // push radii of every object (only fighters get them)
+void t6_radii_pass(T6World *w);  // push and hurtbox radii of every object (only fighters get them)
 
 // The push of one pair of fighters in the ground plane. `settled`: the bodies overlap and do not cross, so both
 // fighters take `counter` as their softening counter (frames left in which a throw softens the push).

@@ -27,7 +27,7 @@ typedef struct {
     T6Pass props_effects;
     T6Pass root_delta;
     T6Pass hurtboxes;  // sets each fighter's hurt areas for the current move
-    T6Pass push_radii;  // sets each fighter's body radius for pushing
+    T6Pass radii;  // sets each fighter's push and hurtbox radii
     T6Pass push_solve;  // pushes overlapping fighters apart
     T6Pass hit_clear;  // clears last frame's hit records
     T6Pass hit_detect;  // attacks that reach the other fighter land a hit

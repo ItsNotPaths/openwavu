@@ -194,16 +194,18 @@ void t6_hit_points(T6Fighter *f, const T6Move *move) {  // hitbox and hurtbox po
 
 // --- radii
 
-static void set_radii(T6Hit *hit, const T6HurtRow rows[T6_HURTBOXES]) {
-    for (int32_t hurtbox_index = 0; hurtbox_index < T6_HURTBOXES; hurtbox_index++) {  // loop through the hurtboxes
-        hit->hurtbox[hurtbox_index].radius = (float)rows[hurtbox_index].radius;  // cylinder radius from the body table
-        hit->hurtbox[hurtbox_index].radius_squared =  // hit detection compares against the squared radius
-            (float)(rows[hurtbox_index].radius * rows[hurtbox_index].radius);
-    }
-}
+static constexpr uint16_t ARM_HURTBOXES = 1 << 2 | 1 << 3 | 1 << 6 | 1 << 7;
 
-void t6_hurtbox_radii(T6Fighter *f) {
-    if (f->kind == 0) set_radii(&f->hit, f->body.hurt);  // extras keep their radii
+void t6_hurtbox_radii(T6Fighter *f) {  // FUN_001d3e94
+    if (f->kind != 0) return;  // extras keep their radii
+    bool lying = t6_class_between(f->state_class, CLASS_LYING_FACE_UP, CLASS_LYING_FACE_DOWN);
+    for (int32_t hurtbox_index = 0; hurtbox_index < T6_HURTBOXES; hurtbox_index++) {  // loop through the hurtboxes
+        const T6HurtRow *row = &f->body.hurt[hurtbox_index];
+        int32_t radius = lying ? row->lying_radius : row->radius;
+        if (f->arms_unhittable && (ARM_HURTBOXES >> hurtbox_index & 1)) radius = 0;
+        f->hit.hurtbox[hurtbox_index].radius = (float)radius;  // cylinder radius from the body table
+        f->hit.hurtbox[hurtbox_index].radius_squared = (float)(radius * radius);  // hit detection compares against the squared radius
+    }
 }
 
 T6Vec4 *t6_limb_offset_at(T6LimbState *table, int32_t slot, int32_t limb, int32_t skeleton) {

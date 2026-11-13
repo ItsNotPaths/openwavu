@@ -113,7 +113,7 @@ static void reset_property_bytes(T6Fighter *f) {
     f->throw_linked = 1;
     f->hides_attack = 0;
     f->aims_held_side = 0;
-    f->drops_push_spheres = 0;
+    f->arms_unhittable = 0;
     f->raises_hurtboxes = 0;
     f->push_points_behind = 0;
     f->keeps_throw_immune = 0;

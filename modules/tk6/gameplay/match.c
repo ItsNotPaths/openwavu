@@ -62,6 +62,8 @@ static void fighter_init(T6World *w, T6Fighter *f, uint32_t side) {
     f->side_index = (int16_t)side;
     f->opponent = f->target = (int16_t)(1 - side);
     f->chara_40 = picked->model;
+    f->costume = picked->costume;
+    f->costume_variant = picked->costume_variant;
     f->health = f->max_health = start_health(f->body_rules) << 16;  // 16.16 fixed point
     f->input.mode = T6_INPUT_LIVE;
     f->input.direction_held = T6_DIRECTION_N;

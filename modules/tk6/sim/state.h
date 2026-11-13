@@ -40,6 +40,7 @@ enum : uint8_t {
     CLASS_STANCE_FIRST = 1, CLASS_STANCE_LAST = 11,         // the stances on the ground: stand, crouch, no guard, alternate
     CLASS_STAND = 2, CLASS_NO_GUARD = 5, CLASS_CROUCH = 6,
     CLASS_ALTERNATE_STAND = 8, CLASS_ALTERNATE_CROUCH = 9, CLASS_ALTERNATE_CROUCH_LOW = 10, CLASS_ALTERNATE_DOWN = 11,
+    CLASS_LYING_FACE_UP = 12, CLASS_LYING_FACE_DOWN = 13,
     CLASS_HIT_DOWN_FIRST = 14, CLASS_HIT_DOWN_LAST = 15,    // a hit-down move that ends touches down; may carry STATE_HURT_4
     CLASS_FALLEN_FIRST = 18, CLASS_FALLEN_LAST = 19,         // the same end
     CLASS_JUMP_A = 23, CLASS_JUMP_B = 24,                    // moves in the air; every jump move of a character is class 23

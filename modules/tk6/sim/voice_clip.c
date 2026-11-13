@@ -24,7 +24,6 @@ enum {
 };
 
 enum { GUARD_SOUND = 25, HIT_SOUND_STEPS = 4, SWING_PUNCH_SOUND = 33, SWING_KICK_SOUND = 34, WINDOW_SOUND = 29 };
-enum { NO_SOUND = 0xffff };
 enum { STAGE_FALL_BOTH = 2 };
 
 // Random voice kinds, named by when they play.
@@ -50,27 +49,24 @@ typedef struct {
 // special point codes are not read yet (sim_contract.md 9.7).
 static bool kicks(uint8_t hitbox_code) { return hitbox_code >= 14 && hitbox_code <= 21; }
 
-// The guard sound on a guard, else the hit sound by the attacker's damage.
-// (hole tk6-hit-sound-models :tags (tk6 audio) :sev polish) a hit on Jack-6 (model 19) plays 497, then 499 (kick) or 500 (punch) from 20 damage; a hit on Mokujin (model 18) one of 468..472 at random; both play the plain hit sound here.
-static uint16_t hit_sound(const T6Fighter *attacker, const T6Fighter *opponent, bool kick) {
-    if (opponent->guarded) return GUARD_SOUND;
+static uint32_t voice_word(uint32_t selector, uint32_t number) { return selector << T6_VOICE_SELECTOR_SHIFT | number; }
+static uint32_t sound(uint16_t number) { return voice_word(SELECTOR_SOUND, number); }
+
+// The plain hit sound by the attacker's damage.
+static uint16_t hit_sound(const T6Fighter *attacker, bool kick) {
     const int16_t *steps = kick ? KICK_STEPS : PUNCH_STEPS;
     int step = 0;
     while (step < HIT_SOUND_STEPS - 1 && attacker->damage > steps[step]) step++;
     return (uint16_t)(kick ? KICK_SOUNDS : PUNCH_SOUNDS)[step];
 }
 
-static uint32_t voice_word(uint32_t selector, uint32_t number) { return selector << T6_VOICE_SELECTOR_SHIFT | number; }
-static uint32_t sound(uint16_t number) { return voice_word(SELECTOR_SOUND, number); }
-
-// The clip as the presenter plays it, or T6_VOICECLIP_END when the game plays nothing this frame.
-static uint32_t played_clip(const T6Fighter *f, const T6Fighter *opponent, uint32_t clip, bool kick) {
+// The clip as the presenter plays it, or T6_VOICECLIP_END when the game plays nothing this frame. Hit sound clips go
+// through send_hit_sounds.
+static uint32_t played_clip(const T6Fighter *f, uint32_t clip) {
     bool move_starts = f->frame == 1 && f->frame_changed && f->health > 0;
     switch (clip >> T6_VOICE_SELECTOR_SHIFT) {
     case SELECTOR_VOICE: case SELECTOR_VOICE_KIND_6: return move_starts ? clip : T6_VOICECLIP_END;
     case SELECTOR_SOUND: case SELECTOR_SPECIAL_ON_HIT: return f->hit_landed ? clip : T6_VOICECLIP_END;
-    case SELECTOR_HIT_SOUND: case SELECTOR_HIT_SOUND_7:
-        return f->hit_landed ? sound(hit_sound(f, opponent, kick)) : T6_VOICECLIP_END;
     case SELECTOR_SPECIAL: return clip;
     default: return T6_VOICECLIP_END;
     }
@@ -82,6 +78,23 @@ static void send(T6World *w, const T6Fighter *f, uint16_t id, uint32_t value, in
     t6_cue_add(&w->cues, w->frame, (T6Cue){T6_CUE_VOICE, id, value, key.side, key, {}, {}});
 }
 
+// The guard sound on a guard, else the defender's own hit sounds (FUN_002ed920), else the plain one by damage.
+static void send_hit_sounds(T6World *w, const T6Fighter *f, const T6Fighter *opponent, bool kick, T6Rng *voice_rng, int32_t entry) {
+    const T6BodyRules *rules = &opponent->body_rules;
+    if (opponent->guarded) {
+        send(w, f, T6_VOICE_CLIP, sound(GUARD_SOUND), entry);
+    } else if (rules->hit_sound_random_count != 0) {
+        uint16_t pick = (uint16_t)(t6_rand(voice_rng) % rules->hit_sound_random_count);
+        send(w, f, T6_VOICE_CLIP, sound(rules->hit_sound_random_first + pick), entry);
+    } else if (rules->hit_sound != 0) {
+        send(w, f, T6_VOICE_CLIP, sound(rules->hit_sound), entry);
+        if (rules->hit_sound_heavy_damage != 0 && f->damage >= rules->hit_sound_heavy_damage)
+            send(w, f, T6_VOICE_CLIP, sound(kick ? rules->hit_sound_heavy_kick : rules->hit_sound_heavy_punch), entry);
+    } else {
+        send(w, f, T6_VOICE_CLIP, sound(hit_sound(f, kick)), entry);
+    }
+}
+
 // The game rolls with libc rand(); here the roll comes from a copy of the sim RNG, which the fight never sees.
 static void random_voice(T6World *w, const T6Fighter *f, T6Rng *voice_rng, uint16_t kind) {
     uint16_t roll = (uint16_t)(t6_rand(voice_rng) & ROLL_MASK);
@@ -90,7 +103,7 @@ static void random_voice(T6World *w, const T6Fighter *f, T6Rng *voice_rng, uint1
 
 static bool coin(T6Rng *voice_rng) { return t6_rand(voice_rng) & 1; }
 
-static ClipsSeen fighter_clips(T6World *w, const T6Fighter *f, const T6Fighter *opponent, const T6Move *move, bool kick) {
+static ClipsSeen fighter_clips(T6World *w, const T6Fighter *f, const T6Fighter *opponent, const T6Move *move, bool kick, T6Rng *voice_rng) {
     ClipsSeen seen = {};
     const T6Motbin *motbin = t6_set(w, f->move.set);
     if (move->voiceclips < 0 || move->voiceclips >= motbin->voiceclip_count) return seen;
@@ -100,7 +113,9 @@ static ClipsSeen fighter_clips(T6World *w, const T6Fighter *f, const T6Fighter *
         uint32_t selector = clip >> T6_VOICE_SELECTOR_SHIFT;
         seen.voice |= selector == SELECTOR_VOICE;
         seen.hit_sound |= selector == SELECTOR_HIT_SOUND || selector == SELECTOR_HIT_SOUND_7 || selector == SELECTOR_SPECIAL_ON_HIT;
-        uint32_t played = played_clip(f, opponent, clip, kick);
+        bool hit_clip = selector == SELECTOR_HIT_SOUND || selector == SELECTOR_HIT_SOUND_7;
+        uint32_t played = hit_clip ? T6_VOICECLIP_END : played_clip(f, clip);
+        if (hit_clip && f->hit_landed) send_hit_sounds(w, f, opponent, kick, voice_rng, entry);
         if (played != T6_VOICECLIP_END) send(w, f, T6_VOICE_CLIP, played, entry);
     }
     return seen;
@@ -108,12 +123,14 @@ static ClipsSeen fighter_clips(T6World *w, const T6Fighter *f, const T6Fighter *
 
 // The sound after the clips: a KO hit, the hit sound no clip played, or the swing at the first active frame. The game
 // also needs a voice character; every fighter has one.
-static uint16_t strike_sound(const T6Fighter *f, const T6Fighter *opponent, const T6Move *move, ClipsSeen seen, bool kick) {
-    if (opponent->clean_hit && opponent->health <= 0) return (uint16_t)(kick ? KICK_SOUNDS : PUNCH_SOUNDS)[HIT_SOUND_STEPS - 1];
+static void strike_sounds(T6World *w, const T6Fighter *f, const T6Fighter *opponent, const T6Move *move, ClipsSeen seen, bool kick,
+                          T6Rng *voice_rng) {
     bool reacts = f->reaction_rule == REACT_ALWAYS;
-    if (!seen.hit_sound && f->hit_landed && reacts) return hit_sound(f, opponent, kick);
-    if (f->frame_changed && f->frame == move->first_active && reacts) return kick ? SWING_KICK_SOUND : SWING_PUNCH_SOUND;
-    return NO_SOUND;
+    if (opponent->clean_hit && opponent->health <= 0)
+        send(w, f, T6_VOICE_CLIP, sound((uint16_t)(kick ? KICK_SOUNDS : PUNCH_SOUNDS)[HIT_SOUND_STEPS - 1]), -1);
+    else if (!seen.hit_sound && f->hit_landed && reacts) send_hit_sounds(w, f, opponent, kick, voice_rng, -1);
+    else if (f->frame_changed && f->frame == move->first_active && reacts)
+        send(w, f, T6_VOICE_CLIP, sound(kick ? SWING_KICK_SOUND : SWING_PUNCH_SOUND), -1);
 }
 
 static void fighter_sounds(T6World *w, T6Fighter *f, const T6Fighter *opponent, T6Rng *voice_rng) {
@@ -121,15 +138,14 @@ static void fighter_sounds(T6World *w, T6Fighter *f, const T6Fighter *opponent, 
     if (move == nullptr) return;
     bool kick = kicks(move->hitbox[0]);
     if (f->ko) random_voice(w, f, voice_rng, VOICE_KNOCKED_OUT);
-    ClipsSeen seen = fighter_clips(w, f, opponent, move, kick);
+    ClipsSeen seen = fighter_clips(w, f, opponent, move, kick, voice_rng);
 
     if (move->first_active != 0 && !t6_in_throw(f->throw.chain) && f->anim_changed && !seen.voice && coin(voice_rng))
         random_voice(w, f, voice_rng, f->damage > HEAVY_ATTACK_DAMAGE ? VOICE_HEAVY_ATTACK : VOICE_ATTACK);
     if (f->clean_hit && f->health != 0 && coin(voice_rng))
         random_voice(w, f, voice_rng, opponent->damage > HEAVY_HURT_DAMAGE ? VOICE_HEAVY_HURT : VOICE_HURT);
 
-    uint16_t strike = strike_sound(f, opponent, move, seen, kick);
-    if (strike != NO_SOUND) send(w, f, T6_VOICE_CLIP, sound(strike), -1);
+    strike_sounds(w, f, opponent, move, seen, kick, voice_rng);
 
     if (f->frame == move->window_start && f->frame != 1) {
         send(w, f, T6_VOICE_CLIP, sound(WINDOW_SOUND), -1);

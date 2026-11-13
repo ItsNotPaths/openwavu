@@ -36,7 +36,7 @@ void t6_battle_frame(T6World *w) {
     hooks->props_effects(w);
     hooks->root_delta(w);
     hooks->hurtboxes(w);
-    hooks->push_radii(w);
+    hooks->radii(w);
     hooks->push_solve(w);
     hooks->hit_clear(w);
     hooks->hit_detect(w);
@@ -79,7 +79,7 @@ const T6Hooks t6_default_hooks = {
     .props_effects = props_effects,
     .root_delta = t6_root_delta_pass,
     .hurtboxes = t6_hurtboxes_pass,
-    .push_radii = t6_push_radii_pass,
+    .radii = t6_radii_pass,
     .push_solve = t6_push_pass,
     .hit_clear = t6_hit_records_pass,
     .hit_detect = t6_hit_detection_pass,

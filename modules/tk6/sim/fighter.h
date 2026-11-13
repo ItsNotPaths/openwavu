@@ -148,7 +148,8 @@ struct T6Fighter {
     int16_t side_index;          // 0 or 1
     int16_t chara;               // character id
     int16_t chara_40;            // character id of the radius tables
-    int16_t costume;  // which costume the fighter wears
+    int16_t costume;  // which costume the fighter wears: its row of the game's fighter table
+    int16_t costume_variant;  // that row's variant
     uint8_t data;                // own move data: a slot of w->data
     uint8_t moveset;             // the slot move ids resolve in (the thrower's during a throw)
     uint8_t moveset_scan;        // the slot the last cancel scan took its group cancels and input sequences from
@@ -374,7 +375,7 @@ struct T6Fighter {
     // Yoshimitsu's model swaps two pairs of parts by these (TK6 FUN_00041d8c); cancels test them. A reaction clears the second.
     uint8_t parts_swapped_first, parts_swapped_second;
     uint8_t aims_held_side;      // property 0x8124: the facing turns aim at held_near_side_angle; a move start clears it
-    uint8_t drops_push_spheres;  // property 0x816f: push spheres 2, 3, 6 and 7 are off; a move start clears it
+    uint8_t arms_unhittable;     // property 0x816f: hurtboxes 2, 3, 6 and 7 (hands, forearms) are off; a move start clears it
     uint8_t raises_hurtboxes;    // property 0x8123: hurtboxes 9 and 13 sit higher; a move start clears it
     uint8_t push_points_behind;  // property 0x8096: bit k puts push point k 300 behind its bone; a move start clears it
     uint8_t marks_zero_damage;   // `PROP_MARKS_ZERO_DAMAGE`: a hit of 0 damage still marks the defender (zero_damage_hit)

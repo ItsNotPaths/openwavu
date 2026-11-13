@@ -132,7 +132,7 @@ enum : uint16_t {
     PROP_PARTS_SWAPPED_FIRST = T6_PROPERTY_BASE + 366,   // Yoshimitsu: P+0x740 bit 6
     PROP_PARTS_SWAPPED_SECOND = T6_PROPERTY_BASE + 367,  // Yoshimitsu: P+0x740 bit 5
     PROP_AIMS_HELD_SIDE = T6_PROPERTY_BASE + 368,        // P+0x258 bit 4
-    PROP_DROPS_PUSH_SPHERES = T6_PROPERTY_BASE + 369,    // P+0x258 bit 3
+    PROP_ARMS_UNHITTABLE = T6_PROPERTY_BASE + 369,       // P+0x258 bit 3
     PROP_RAISES_HURTBOXES = T6_PROPERTY_BASE + 370,      // P+0x258 bit 10
     PROP_PUSH_POINTS_BEHIND = T6_PROPERTY_BASE + 371,    // P+0x210
 };
@@ -364,7 +364,7 @@ static bool flag_prop(T6Fighter *f, T6Fighter *target, uint16_t id, uint16_t val
     case PROP_PARTS_SWAPPED_FIRST: f->parts_swapped_first = value & 1; break;
     case PROP_PARTS_SWAPPED_SECOND: f->parts_swapped_second = value & 1; break;
     case PROP_AIMS_HELD_SIDE: f->aims_held_side = value & 1; break;
-    case PROP_DROPS_PUSH_SPHERES: f->drops_push_spheres = value & 1; break;
+    case PROP_ARMS_UNHITTABLE: f->arms_unhittable = value & 1; break;
     case PROP_RAISES_HURTBOXES: f->raises_hurtboxes = value & 1; break;
     case PROP_PUSH_POINTS_BEHIND: f->push_points_behind = (uint8_t)value; break;
     case PROP_CAMERA_CATEGORY:  // a throw already marked as at a wall keeps the mark
