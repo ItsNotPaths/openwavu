@@ -368,7 +368,7 @@ void t6_wall_solve(T6World *w, T6Fighter *f) {
         pushed = true;
     }
     if (pushed) {  // a wall moved the fighter
-        if (t6_in_throw(f->throw.chain) && f->frame2 != 1) f->throw.wall_hit = 1;  // throw hits wall after first frame
+        if (t6_in_throw(f->throw.chain) && f->frame2 != 1) f->throw.camera_category = T6_CAMERA_CATEGORY_WALL;  // throw hits wall after first frame
         total = vec4_subtract(spheres.positions[WALL_HIPS], origin);  // the fighter's push is how far the hips moved
         total.y = 0.0f;
         total.w = 0.0f;

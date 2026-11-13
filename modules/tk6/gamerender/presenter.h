@@ -22,33 +22,33 @@ uint32_t t6_asset_of(const unsigned char *path);
 void t6_stage_init(sqlite3 *db, const T6View *view);
 // The stage nodes of this frame, at most max; returns how many. midpoint: the fighters', metres.
 uint32_t t6_stage_nodes(const T6View *view, OwCamera camera, float midpoint_x, float midpoint_z, OwNode *nodes, uint32_t max);
-// The throw a hand-coded shot shows: it eases out once the thrower passes `release` in `move` or leaves it.
+// A throw's camera shot drawn from a throw_shot row (degrees).
 typedef struct {
-    int thrower;
-    int16_t move, release;  // release 0: the move's end
-} T6CodedThrow;
-// A hand-coded throw shot (camera ids below 0x67, coded_camera.c); mm.
+    float yaw, pitch, fov;  // yaw off the fight camera's bearing; pitch from level
+    float distance_scale;   // times the fight camera's distance
+    bool cut_in;            // else it eases in
+} T6ThrowShotPlan;
+// A throw's camera shot while it plays (throw_shot.c); mm, radians.
 typedef struct {
-    T6CodedThrow throw_move;
-    int id;
-    bool thrower_right, wide, walled_stage, cut_in;  // cut_in: full weight at once
-    uint32_t set_up_frame;   // sim frame it shows from
-    uint32_t stepped_frame;  // the last sim frame stepped; 0: not set up yet
-    int32_t easing_out;      // frames since the throw ended
-    float fov, distance_scale;
+    int thrower;             // -1: none
+    T6ThrowShotPlan plan;
+    uint32_t stepped_frame;  // the last sim frame stepped
+    int32_t age;             // sim frames since the draw
+    int32_t letting_go;      // sim frames since the throw let go; 0: holding
+    uint16_t thrower_moves;  // the thrower's throw moves at the draw
+    float yaw, pitch, distance;
     T6Vec3 eye, target;
     T6Vec3 line_point, line_direction;  // thrower to victim when it was set up
-} T6CodedShot;
-// A shot of the throw that sets its camera on sim `frame`.
-void t6_coded_shot_start(T6CodedShot *shot, T6CodedThrow throw_move, int id, bool thrower_right, bool wide, bool hold,
-                         bool walled_stage, uint32_t frame);
-// This frame's shot and its weight, 0 to 1: how far it pulls the camera on screen (`shown`) a sim frame; 0: not shown.
-float t6_coded_shot(T6CodedShot *shot, const T6View *view, OwCamera shown, OwCamera *camera);
-// The throw camera rows, the global camera bank and whether the view's stage has walls.
-void t6_camera_init(sqlite3 *db, const T6View *view);
-// The camera shots and throw moves of a side's moves, from the db character whose move set it runs.
+} T6ThrowShot;
+void t6_throw_shot_start(T6ThrowShot *shot, int thrower, T6ThrowShotPlan plan, uint16_t thrower_moves);
+// This frame's shot and its weight, 0 to 1, over the fight camera; 0: not shown. `fight`: the fight camera.
+// `releases_ahead`: a fighter of the throw still has a release property ahead in its move.
+float t6_throw_shot(T6ThrowShot *shot, const T6View *view, OwCamera fight, bool releases_ahead, OwCamera *camera);
+// The hit zoom rows.
+void t6_camera_init(sqlite3 *db);
+// The camera shots, throw shot lists and release frames of a side's moves, from the db character whose move set it runs.
 void t6_camera_load(sqlite3 *db, int side, const char *character, T6FileSet *files);
-// A move's or a throw's camera shot while it plays, else the fight camera: behind the line between the fighters,
+// A move's or a throw's camera shot or a hit zoom while it plays, else the fight camera: behind the line between the fighters,
 // eased over the `seconds` since the last frame. Sends each fighter's screen side to the host.
 OwCamera t6_camera(const T6View *view, float seconds);
 // The shared effect files and each fighter's own, with its hit table, by asset id.

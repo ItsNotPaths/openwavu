@@ -10,7 +10,7 @@
 #include "sim/throw.h"
 #include "sim/world.h"
 
-enum { T6_VIEW_VERSION = 9 };
+enum { T6_VIEW_VERSION = 10 };
 
 typedef struct {  // the fighter fields the presenter's hand poses read
     T6PoseProp right_pose, left_pose;  // the hand channel properties
@@ -43,6 +43,16 @@ typedef struct {  // the look-at fields the presenter's eyes read
     int32_t weight;        // 0..LOOK_WEIGHT_FULL
 } T6ViewLook;
 
+typedef struct {  // the fighter fields the presenter's throw shots and hit zooms read, of this frame
+    int16_t category;      // the camera category a move property set (the game's +0x1dc)
+    uint16_t throw_moves;  // moves played in a row in the current throw role
+    bool hit_landed;       // own attack connected
+    bool hit_taken;
+    bool guarded;
+    bool counter_hit;      // the hit taken was a counter hit
+    bool at_wall;          // touching a wall
+} T6ViewCamera;
+
 typedef struct {
     T6Loadout loadout;
     char moveset[T6_NAME_BYTES]; // the db character whose moves run this round (Mokujin takes another's)
@@ -58,7 +68,8 @@ typedef struct {
     int16_t move_frame;          // 1-based
     int16_t move_yaw;            // 65536 a turn: camera shots are placed by it, not by facing
     T6Vec3 position;             // mm, on the floor: where camera shots are placed
-    T6ThrowRole throw_role;      // a thrower's move camera category picks a throw shot; it follows the thrown fighter
+    T6ThrowRole throw_role;
+    T6ViewCamera camera;
 } T6ViewFighter;
 
 typedef struct {
@@ -77,7 +88,7 @@ typedef struct {
     T6CueEntry cues[T6_CUE_RING];  // the cues of the last T6_CUE_FRAMES frames, oldest first
 } T6View;
 
-// The frame, each fighter's rig, parents, hand, face and look blocks, move and move yaw, and the recent cues, from the world.
+// The frame, each fighter's rig, parents, hand, face, look and camera blocks, move and move yaw, and the recent cues, from the world.
 void t6_view_poses(T6View *view, const T6World *w);
 
 #endif

@@ -95,8 +95,8 @@ indices_hold :: proc(t: ^testing.T, entry: tk6.Roster_Entry, motbin: tk6.Motbin)
 	for record, number in motbin.table_17 {
 		testing.expectf(t, index_in(record.table_18, motbin.table_18), "%d %s: table 17 record %d", entry.index, entry.name, number) or_return
 	}
-	for record, number in motbin.table_24 {
-		testing.expectf(t, index_in(record.table_23, motbin.table_23), "%d %s: table 24 record %d", entry.index, entry.name, number) or_return
+	for list, number in motbin.camera_pick_lists {
+		testing.expectf(t, index_in(list.first, motbin.camera_picks), "%d %s: camera pick list %d", entry.index, entry.name, number) or_return
 	}
 	return true
 }

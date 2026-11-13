@@ -47,6 +47,18 @@ static T6ViewLook view_look(const T6World *w, const T6Fighter *f) {
     };
 }
 
+static T6ViewCamera view_camera(const T6Fighter *f) {
+    return (T6ViewCamera){
+        .category = f->throw.camera_category,
+        .throw_moves = f->throw.chain.moves,
+        .hit_landed = f->hit_landed != 0,
+        .hit_taken = f->hit_taken != 0,
+        .guarded = f->guarded != 0,
+        .counter_hit = f->counter_hit != 0,
+        .at_wall = f->wall_count > 0,
+    };
+}
+
 static void view_cues(T6View *view, const T6World *w) {
     const T6CueRing *ring = &w->cues;
     view->cue_count = 0;
@@ -75,5 +87,6 @@ void t6_view_poses(T6View *view, const T6World *w) {
         out->move_yaw = f->move_yaw;
         out->position = f->position;
         out->throw_role = f->throw.chain.role;
+        out->camera = view_camera(f);
     }
 }

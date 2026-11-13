@@ -43,11 +43,13 @@ typedef struct {
     uint32_t seen_move_id;
 } T6ThrowTarget;
 
+enum { T6_CAMERA_CATEGORY_WALL = 0x8fd };  // TK5 marks 1
+
 typedef struct {
     int16_t partner;                // object index of the other fighter of the throw
     T6ThrowChain chain;
     T6ThrowChain chain_before;      // the chain as the current move began
-    int16_t wall_hit;               // the throw hit a wall (1), or a voice property's value
+    int16_t camera_category;        // property 0x815f's value; T6_CAMERA_CATEGORY_WALL once a throw hits a wall
     T6ThrowTarget target[T6_FIGHTER_COUNT];  // by the opponent's slot
 } T6Throw;
 

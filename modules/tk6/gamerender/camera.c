@@ -1,5 +1,5 @@
-// Stock TK6 presenter (gamerender.wasm): the fight camera and the camera shots of moves and throws. Per viewer, outside
-// rollback. The camera and the timeline player are SDK libraries; TK6 gives params and data.
+// Stock TK6 presenter (gamerender.wasm): the fight camera, the camera shots of moves and throws, and the hit zoom. Per
+// viewer, outside rollback. The camera and the timeline player are SDK libraries; TK6 gives params and data.
 #include <SDL3/SDL.h>
 #include <math.h>
 #include <stddef.h>
@@ -17,9 +17,14 @@ static const float FOCUS_HEIGHT = 0.9f;  // metres above the floor
 static const float RAISE = 0.5f;         // the camera sits this much above the focus
 static const float FOV = 0.698132f;      // 40 degrees, vertical
 static const float TURN = 6.2831853f / 65536.0f;  // radians per yaw unit
+static const float DEGREE = 3.14159265f / 180;
 static const float FOLLOW_RATE = 8.0f;  // per second: how fast the fight camera closes on where it should be
 
-enum { SHOTS_MAX = 32, THROW_MOVES_MAX = 96, THROW_CAMERAS_MAX = 1024, CLIPS_MAX = 512 };  // shots, throw moves: per side
+enum {
+    SHOTS_MAX = 32, THROW_MOVES_MAX = 128, THROW_SHOTS_MAX = 1024, RELEASE_MOVES_MAX = 512,  // per side
+    HIT_ZOOMS_MAX = 64, ZOOM_TURNS_MAX = 4,
+    COUNTER_FRAMES = 5,  // a counter hit lets a counter-only hit zoom start this many frames
+};
 enum { CAMERA_CHANNELS = 3 };  // eye, target, lens (fov, roll, smoothing)
 
 typedef float CameraKey[CAMERA_CHANNELS][3];
@@ -35,32 +40,47 @@ typedef struct {
     Clip clip;
 } Shot;
 
-// A thrower's move with a camera category (property 0x815f) that has throw_camera rows.
+// A move that draws a throw shot (move_throw_shot).
 typedef struct {
-    int16_t move;     // index in the side's move set
-    int16_t frame;    // move frame the category is set on
-    int16_t release;  // move frame a hand-coded shot starts to ease out (properties 0x803b..0x8041); 0: the move's end
-    int32_t category;
+    int16_t move, frame;
+    int32_t list;
 } ThrowMove;
 
+// A throw_shot row: ranges least, most, in degrees.
 typedef struct {
-    int32_t category, weight;
-    int16_t camera[T6_FIGHTER_COUNT];  // the game's camera id by the thrower's screen side, left then right
-    bool hold, wide;                   // hold: no wait before a coded shot
-    bool mirror_x, mirror_z;           // only with the thrower on the right
-    bool aim_at_fighters;
-    bool wall_check;
-} ThrowCamera;
+    int32_t list, weight;
+    bool thrower_right, keeps_fight_camera, cut_in;
+    float yaw[2], pitch[2], fov[2], distance_scale;
+} ThrowShotRow;
+
+// A move's last release property frame (0x803b..0x8041): the throw holds until then.
+typedef struct {
+    int16_t move, frame;
+} ReleaseFrame;
+
+typedef struct {
+    int32_t weight;
+    float turn, wall_turn;  // degrees
+} ZoomTurn;
+
+typedef struct {
+    int32_t category, frames;
+    float distance, fov;  // mm, degrees
+    bool counter_only;
+    int turn_count;
+    ZoomTurn turns[ZOOM_TURNS_MAX];
+} HitZoom;
 
 static Shot shots[T6_FIGHTER_COUNT][SHOTS_MAX];
 static int shot_count[T6_FIGHTER_COUNT];
 static ThrowMove throw_moves[T6_FIGHTER_COUNT][THROW_MOVES_MAX];
 static int throw_move_count[T6_FIGHTER_COUNT];
-static ThrowCamera throw_cameras[THROW_CAMERAS_MAX];  // by category, then pos
-static int throw_camera_count;
-static Clip clips[CLIPS_MAX];  // the global bank
-static T6FileSet clip_files;
-static bool walled_stage;
+static ThrowShotRow throw_shot_rows[T6_FIGHTER_COUNT][THROW_SHOTS_MAX];  // by list, then pos
+static int throw_shot_row_count[T6_FIGHTER_COUNT];
+static ReleaseFrame release_frames[T6_FIGHTER_COUNT][RELEASE_MOVES_MAX];
+static int release_frame_count[T6_FIGHTER_COUNT];
+static HitZoom hit_zooms[HIT_ZOOMS_MAX];
+static int hit_zoom_count;
 
 static T6KeyKind camera_channel_kind(int32_t channel) { return channel < 2 ? T6_KEY_POSITION : T6_KEY_VALUES; }
 
@@ -75,14 +95,20 @@ static Clip clip_of(T6FileSet *files, const unsigned char *path) {
 #define MOVES_IN_SHEET_ORDER \
     "(SELECT key, extra_props, row_number() OVER (ORDER BY rowid) - 1 AS number FROM move WHERE character = ?1) AS move "
 
+static sqlite3_stmt *character_rows(sqlite3 *db, const char *query, const char *character) {
+    sqlite3_stmt *rows;
+    if (sqlite3_prepare_v2(db, query, -1, &rows, NULL) != SQLITE_OK) return NULL;
+    sqlite3_bind_text(rows, 1, character, -1, SQLITE_STATIC);
+    return rows;
+}
+
 static void load_shots(sqlite3 *db, int side, const char *character, T6FileSet *files) {
     shot_count[side] = 0;
-    sqlite3_stmt *rows;
-    const char *query = "SELECT move.number, move_camera.frame, anim.file FROM " MOVES_IN_SHEET_ORDER
-                        "JOIN move_camera ON move_camera.move = move.key "
-                        "JOIN anim ON anim.character = move_camera.tracks AND anim.idx = move_camera.track";
-    if (sqlite3_prepare_v2(db, query, -1, &rows, NULL) != SQLITE_OK) return;
-    sqlite3_bind_text(rows, 1, character, -1, SQLITE_STATIC);
+    sqlite3_stmt *rows = character_rows(db,
+        "SELECT move.number, move_camera.frame, anim.file FROM " MOVES_IN_SHEET_ORDER
+        "JOIN move_camera ON move_camera.move = move.key "
+        "JOIN anim ON anim.character = move_camera.tracks AND anim.idx = move_camera.track", character);
+    if (!rows) return;
     while (shot_count[side] < SHOTS_MAX && sqlite3_step(rows) == SQLITE_ROW) {
         Clip clip = clip_of(files, sqlite3_column_text(rows, 2));
         if (clip.frame_count)
@@ -91,51 +117,64 @@ static void load_shots(sqlite3 *db, int side, const char *character, T6FileSet *
     sqlite3_finalize(rows);
 }
 
-static void load_throw_moves(sqlite3 *db, int side, const char *character) {
-    throw_move_count[side] = 0;
-    sqlite3_stmt *rows;
-    const char *query = "SELECT move.number, extra_prop.\"when\" & 0x7fff, extra_prop.value, "
-                        "(SELECT min(release.\"when\" & 0x7fff) FROM extra_prop AS release "
-                        "WHERE release.list = move.extra_props AND release.id BETWEEN 0x803b AND 0x8041) FROM " MOVES_IN_SHEET_ORDER
-                        "JOIN extra_prop ON extra_prop.list = move.extra_props AND extra_prop.id = 0x815f "
-                        "WHERE extra_prop.value IN (SELECT category FROM throw_camera)";
-    if (sqlite3_prepare_v2(db, query, -1, &rows, NULL) != SQLITE_OK) return;
-    sqlite3_bind_text(rows, 1, character, -1, SQLITE_STATIC);
-    while (throw_move_count[side] < THROW_MOVES_MAX && sqlite3_step(rows) == SQLITE_ROW)
-        throw_moves[side][throw_move_count[side]++] = (ThrowMove){
-            (int16_t)sqlite3_column_int(rows, 0), (int16_t)sqlite3_column_int(rows, 1), (int16_t)sqlite3_column_int(rows, 3),
-            sqlite3_column_int(rows, 2)};
-    sqlite3_finalize(rows);
+static void load_throw_shots(sqlite3 *db, int side, const char *character) {
+    throw_move_count[side] = throw_shot_row_count[side] = release_frame_count[side] = 0;
+    sqlite3_stmt *rows = character_rows(db,
+        "SELECT move.number, move_throw_shot.frame, move_throw_shot.list FROM " MOVES_IN_SHEET_ORDER
+        "JOIN move_throw_shot ON move_throw_shot.move = move.key", character);
+    if (rows) {
+        while (throw_move_count[side] < THROW_MOVES_MAX && sqlite3_step(rows) == SQLITE_ROW)
+            throw_moves[side][throw_move_count[side]++] =
+                (ThrowMove){(int16_t)sqlite3_column_int(rows, 0), (int16_t)sqlite3_column_int(rows, 1), sqlite3_column_int(rows, 2)};
+        sqlite3_finalize(rows);
+    }
+    rows = character_rows(db,
+        "SELECT list, weight, thrower_right, keeps_fight_camera, cut_in, yaw_least, yaw_most, pitch_least, pitch_most, "
+        "fov_least, fov_most, distance_scale FROM throw_shot WHERE character = ?1 ORDER BY list, pos", character);
+    if (rows) {
+        while (throw_shot_row_count[side] < THROW_SHOTS_MAX && sqlite3_step(rows) == SQLITE_ROW) {
+            float value[7];
+            for (int at = 0; at < 7; at++) value[at] = (float)sqlite3_column_double(rows, 5 + at);
+            throw_shot_rows[side][throw_shot_row_count[side]++] = (ThrowShotRow){
+                sqlite3_column_int(rows, 0), sqlite3_column_int(rows, 1), sqlite3_column_int(rows, 2) != 0,
+                sqlite3_column_int(rows, 3) != 0, sqlite3_column_int(rows, 4) != 0,
+                {value[0], value[1]}, {value[2], value[3]}, {value[4], value[5]}, value[6]};
+        }
+        sqlite3_finalize(rows);
+    }
+    rows = character_rows(db,
+        "SELECT move.number, max(extra_prop.\"when\" & 0x7fff) FROM " MOVES_IN_SHEET_ORDER
+        "JOIN extra_prop ON extra_prop.list = move.extra_props AND extra_prop.id BETWEEN 0x803b AND 0x8041 GROUP BY move.number",
+        character);
+    if (rows) {
+        while (release_frame_count[side] < RELEASE_MOVES_MAX && sqlite3_step(rows) == SQLITE_ROW)
+            release_frames[side][release_frame_count[side]++] = (ReleaseFrame){(int16_t)sqlite3_column_int(rows, 0), (int16_t)sqlite3_column_int(rows, 1)};
+        sqlite3_finalize(rows);
+    }
 }
 
 void t6_camera_load(sqlite3 *db, int side, const char *character, T6FileSet *files) {
     load_shots(db, side, character, files);
-    load_throw_moves(db, side, character);
+    load_throw_shots(db, side, character);
 }
 
-void t6_camera_init(sqlite3 *db, const T6View *view) {
+void t6_camera_init(sqlite3 *db) {
+    hit_zoom_count = 0;
     sqlite3_stmt *rows;
-    if (sqlite3_prepare_v2(db, "SELECT radius = 0 FROM stage WHERE id = ?1", -1, &rows, NULL) == SQLITE_OK) {
-        sqlite3_bind_text(rows, 1, view->stage, -1, SQLITE_STATIC);
-        walled_stage = sqlite3_step(rows) == SQLITE_ROW && sqlite3_column_int(rows, 0) != 0;
-        sqlite3_finalize(rows);
-    }
-    if (sqlite3_prepare_v2(db, "SELECT idx, file FROM anim WHERE character = 'cameras'", -1, &rows, NULL) == SQLITE_OK) {
-        while (sqlite3_step(rows) == SQLITE_ROW) {
-            int index = sqlite3_column_int(rows, 0);
-            if (index >= 0 && index < CLIPS_MAX) clips[index] = clip_of(&clip_files, sqlite3_column_text(rows, 1));
+    if (sqlite3_prepare_v2(db, "SELECT category, frames, distance, fov, counter_only FROM hit_zoom ORDER BY category", -1, &rows, NULL) != SQLITE_OK) return;
+    while (hit_zoom_count < HIT_ZOOMS_MAX && sqlite3_step(rows) == SQLITE_ROW)
+        hit_zooms[hit_zoom_count++] = (HitZoom){sqlite3_column_int(rows, 0), sqlite3_column_int(rows, 1), (float)sqlite3_column_double(rows, 2),
+                                                (float)sqlite3_column_double(rows, 3), sqlite3_column_int(rows, 4) != 0};
+    sqlite3_finalize(rows);
+    if (sqlite3_prepare_v2(db, "SELECT category, weight, turn, wall_turn FROM hit_zoom_turn ORDER BY category, pos", -1, &rows, NULL) != SQLITE_OK) return;
+    while (sqlite3_step(rows) == SQLITE_ROW) {
+        int32_t category = sqlite3_column_int(rows, 0);
+        for (int at = 0; at < hit_zoom_count; at++) {
+            HitZoom *zoom = &hit_zooms[at];
+            if (zoom->category != category || zoom->turn_count == ZOOM_TURNS_MAX) continue;
+            zoom->turns[zoom->turn_count++] = (ZoomTurn){sqlite3_column_int(rows, 1), (float)sqlite3_column_double(rows, 2), (float)sqlite3_column_double(rows, 3)};
         }
-        sqlite3_finalize(rows);
     }
-    const char *query = "SELECT category, weight, coalesce(left_track + 0x67, left_coded), coalesce(right_track + 0x67, right_coded), hold, wide, "
-                        "mirror_x, mirror_z, aim_at_fighters AND NOT track_target, wall_check "
-                        "FROM throw_camera ORDER BY category, pos";
-    if (sqlite3_prepare_v2(db, query, -1, &rows, NULL) != SQLITE_OK) return;
-    while (throw_camera_count < THROW_CAMERAS_MAX && sqlite3_step(rows) == SQLITE_ROW)
-        throw_cameras[throw_camera_count++] = (ThrowCamera){
-            sqlite3_column_int(rows, 0), sqlite3_column_int(rows, 1), {(int16_t)sqlite3_column_int(rows, 2), (int16_t)sqlite3_column_int(rows, 3)},
-            sqlite3_column_int(rows, 4) != 0, sqlite3_column_int(rows, 5) != 0, sqlite3_column_int(rows, 6) != 0,
-            sqlite3_column_int(rows, 7) != 0, sqlite3_column_int(rows, 8) != 0, sqlite3_column_int(rows, 9) != 0};
     sqlite3_finalize(rows);
 }
 
@@ -198,6 +237,11 @@ static OwVec3 eased(OwVec3 from, OwVec3 to, float weight) {
     return (OwVec3){from.x + (to.x - from.x) * weight, from.y + (to.y - from.y) * weight, from.z + (to.z - from.z) * weight};
 }
 
+static OwCamera blended(OwCamera from, OwCamera to, float weight) {
+    return (OwCamera){eased(from.position, to.position, weight), eased(from.target, to.target, weight),
+                      from.fov + (to.fov - from.fov) * weight, from.roll + (to.roll - from.roll) * weight};
+}
+
 // The fight camera eased toward `goal` over `seconds`, the same at any display rate.
 static OwCamera followed(OwCamera goal, float seconds) {
     if (!follow.live) {
@@ -205,11 +249,8 @@ static OwCamera followed(OwCamera goal, float seconds) {
         return follow.camera = goal;
     }
     float weight = 1.0f - expf(-FOLLOW_RATE * seconds);
-    OwCamera *camera = &follow.camera;
-    camera->position = eased(camera->position, goal.position, weight);
-    camera->target = eased(camera->target, goal.target, weight);
-    camera->fov += (goal.fov - camera->fov) * weight;
-    return *camera;
+    follow.camera = blended(follow.camera, goal, weight);
+    return follow.camera;
 }
 
 // Where a track is placed: a fighter's position and move yaw.
@@ -219,21 +260,20 @@ typedef struct {
 } Anchor;
 
 // A track point in the anchor's frame, in the world: turned by -yaw about y, then moved to the anchor.
-static OwVec3 placed(Anchor anchor, const float local[3], bool mirror_x, bool mirror_z) {
-    float x = mirror_x ? -local[0] : local[0], z = mirror_z ? -local[2] : local[2];
+static OwVec3 placed(Anchor anchor, const float local[3]) {
     float angle = -anchor.yaw * TURN, cosine = cosf(angle), sine = sinf(angle);
     T6Vec3 at = anchor.position;
     return (OwVec3){
-        (at.x + cosine * x - sine * z) * MM,
+        (at.x + cosine * local[0] - sine * local[2]) * MM,
         (at.y + local[1]) * MM,
-        (at.z + sine * x + cosine * z) * MM,
+        (at.z + sine * local[0] + cosine * local[2]) * MM,
     };
 }
 
-static OwCamera keyed(Anchor anchor, const CameraKey *key, bool mirror_x, bool mirror_z) {
+static OwCamera keyed(Anchor anchor, const CameraKey *key) {
     return (OwCamera){
-        .position = placed(anchor, (*key)[0], mirror_x, mirror_z),
-        .target = placed(anchor, (*key)[1], mirror_x, mirror_z),
+        .position = placed(anchor, (*key)[0]),
+        .target = placed(anchor, (*key)[1]),
         .fov = (*key)[2][0],
         .roll = (*key)[2][1],
     };
@@ -275,48 +315,39 @@ static bool move_shot_camera(const T6View *view, OwCamera *camera) {
     uint32_t start_frame = view->frame - (uint32_t)newest;
     if (move_shot.side != shot_side || move_shot.move != fighter->move.index || move_shot.start_frame != start_frame)
         move_shot = (typeof(move_shot)){shot_side, fighter->move.index, start_frame, {fighter->position, fighter->move_yaw}};
-    *camera = keyed(move_shot.anchor, key, false, false);
+    *camera = keyed(move_shot.anchor, key);
     return true;
 }
 
-// A row of the category by weight, as the game draws it (libc rand, not the sim's). A wall-checked row needs the camera
-// over a list 3 floor and it and the fighters off list 2: no stage has those lists, so on a walled stage it is
-// always row 0. Infinite stages skip the check.
-static const ThrowCamera *pick_throw_camera(int32_t category) {
-    int first = 0, total = 0;
-    while (first < throw_camera_count && throw_cameras[first].category != category) first++;
-    int end = first;
-    for (; end < throw_camera_count && throw_cameras[end].category == category; end++) total += throw_cameras[end].weight;
-    if (first == end) return NULL;
-    int draw = total > 0 ? rand() % total : 0;
-    const ThrowCamera *row = &throw_cameras[first];
-    for (int at = first; at < end; at++) {
-        draw -= throw_cameras[at].weight;
-        if (draw < 0) {
-            row = &throw_cameras[at];
-            break;
-        }
+static float random_unit(void) { return (float)rand() / ((float)RAND_MAX + 1.0f); }
+static float drawn(const float range[2]) { return range[0] + (range[1] - range[0]) * random_unit(); }
+
+// The row of a list for the thrower's screen side, by weight (libc rand, not the sim's); NULL when the list has none.
+static const ThrowShotRow *draw_throw_shot(int set, int32_t list, bool thrower_right) {
+    int total = 0;
+    for (int at = 0; at < throw_shot_row_count[set]; at++) {
+        const ThrowShotRow *row = &throw_shot_rows[set][at];
+        if (row->list == list && row->thrower_right == thrower_right) total += row->weight;
     }
-    return row->wall_check && walled_stage ? &throw_cameras[first] : row;
+    if (total <= 0) return NULL;
+    int draw = rand() % total;
+    for (int at = 0; at < throw_shot_row_count[set]; at++) {
+        const ThrowShotRow *row = &throw_shot_rows[set][at];
+        if (row->list != list || row->thrower_right != thrower_right) continue;
+        draw -= row->weight;
+        if (draw < 0) return row;
+    }
+    return NULL;
 }
 
-enum { CODED_CAMERAS = 0x67, WIDER_CODED = 0x66, INFINITE_CODED = 2 };  // ids below CODED_CAMERAS are hand-coded shots
-
-// The throw shot: picked once per throw. A track plays for its length whatever the moves do, following the thrown
-// fighter on the floor while they are in the throw, then staying. A hand-coded shot runs until the throw ends.
+static T6ThrowShot throw_shot = {.thrower = -1};
 static struct {
-    int thrower;  // -1: none yet
+    int thrower;
     int16_t move;
-    uint32_t start_frame;  // sim frame of the shot's first key
-    const Clip *clip;      // NULL: a coded shot
-    bool mirror_x, mirror_z, aim_at_fighters;
-    Anchor anchor;
-    T6CodedShot coded;
-    T6Vec3 line_point, line_direction;  // the throw's line, still while the fighters' roots shift as they grapple
-} throw_shot = {.thrower = -1};
+    uint32_t frame;  // sim frame of the draw
+} throw_draw = {.thrower = -1};
 
-// A throw starts its shot on the frame its thrower's move sets the camera category. On an infinite stage every shot is
-// hand-coded id 2, so no throw switches sides there.
+// A thrower's move draws its shot on the frame it names, once.
 static void start_throw_shot(const T6View *view) {
     for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
         const T6ViewFighter *thrower = &view->fighters[side];
@@ -325,75 +356,85 @@ static void start_throw_shot(const T6View *view) {
         for (int at = 0; at < throw_move_count[set]; at++) {
             const ThrowMove *throw_move = &throw_moves[set][at];
             if (throw_move->move != thrower->move.index || thrower->move_frame < throw_move->frame) continue;
-            uint32_t start_frame = view->frame - (uint32_t)(thrower->move_frame - throw_move->frame);
-            if (throw_shot.thrower == side && throw_shot.move == throw_move->move && throw_shot.start_frame == start_frame) return;
-            const ThrowCamera *row = pick_throw_camera(throw_move->category);
-            if (!row) return;
-            bool right = on_right[side];
-            int id = row->camera[right];
-            if (!walled_stage) id = id == WIDER_CODED ? WIDER_CODED : INFINITE_CODED;
-            int clip = id - CODED_CAMERAS;
-            bool tracked = clip >= 0 && clip < CLIPS_MAX && clips[clip].frame_count;
-            const T6ViewFighter *thrown = &view->fighters[1 - side];
-            throw_shot = (typeof(throw_shot)){side, throw_move->move, start_frame, tracked ? &clips[clip] : NULL,
-                                              tracked && right && row->mirror_x, tracked && right && row->mirror_z,
-                                              tracked && row->aim_at_fighters, {thrown->position, thrown->move_yaw}};
-            if (!tracked)
-                t6_coded_shot_start(&throw_shot.coded, (T6CodedThrow){side, throw_move->move, throw_move->release}, id, right, row->wide,
-                                    row->hold, walled_stage, start_frame);
-            return;
+            uint32_t frame = view->frame - (uint32_t)(thrower->move_frame - throw_move->frame);
+            if (throw_draw.thrower == side && throw_draw.move == throw_move->move && throw_draw.frame == frame) continue;
+            throw_draw.thrower = side, throw_draw.move = throw_move->move, throw_draw.frame = frame;
+            const ThrowShotRow *row = draw_throw_shot(set, throw_move->list, on_right[side]);
+            if (!row || row->keeps_fight_camera) continue;
+            T6ThrowShotPlan plan = {drawn(row->yaw), drawn(row->pitch), drawn(row->fov), row->distance_scale, row->cut_in};
+            t6_throw_shot_start(&throw_shot, side, plan, thrower->camera.throw_moves);
         }
     }
 }
 
-// This frame's throw shot and its weight: how far it pulls the camera on screen a sim frame; 0: none. A
-// track's weight is its smoothing channel, 0 on its first frames and falling to 0 at its end.
-static float throw_shot_camera(const T6View *view, OwCamera *camera) {
-    start_throw_shot(view);
-    if (throw_shot.thrower < 0) return 0;
-    if (!throw_shot.clip) {
-        float weight = t6_coded_shot(&throw_shot.coded, view, follow.camera, camera);
-        throw_shot.line_point = throw_shot.coded.line_point;
-        throw_shot.line_direction = throw_shot.coded.line_direction;
-        return weight;
+// A fighter of the throw still has a release property ahead in its move.
+static bool releases_ahead(const T6View *view) {
+    for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
+        const T6ViewFighter *fighter = &view->fighters[side];
+        int set = fighter->move.set;
+        if (fighter->throw_role == THROW_ROLE_NONE || set >= T6_FIGHTER_COUNT) continue;
+        for (int at = 0; at < release_frame_count[set]; at++) {
+            const ReleaseFrame *release = &release_frames[set][at];
+            if (release->move == fighter->move.index && release->frame > fighter->move_frame) return true;
+        }
     }
-    int32_t elapsed = (int32_t)(view->frame - throw_shot.start_frame);
-    if (elapsed < 0 || elapsed >= throw_shot.clip->frame_count) return 0;
-    const T6ViewFighter *thrown = &view->fighters[1 - throw_shot.thrower];
-    if (thrown->throw_role == THROW_ROLE_THROWN) {
-        throw_shot.anchor.position.x = thrown->position.x;
-        throw_shot.anchor.position.z = thrown->position.z;
-        throw_shot.anchor.yaw = thrown->move_yaw;
-    }
-    const CameraKey *key = &throw_shot.clip->keys[elapsed];
-    float angle = -throw_shot.anchor.yaw * TURN;
-    throw_shot.line_point = throw_shot.anchor.position;
-    throw_shot.line_direction = (T6Vec3){-sinf(angle), 0, cosf(angle)};  // the anchor's facing: local +z
-    *camera = keyed(throw_shot.anchor, key, throw_shot.mirror_x, throw_shot.mirror_z);
-    if (throw_shot.aim_at_fighters) {
-        const T6Vec3 *first = &view->fighters[0].position, *second = &view->fighters[1].position;
-        camera->target.x = (first->x + second->x) * 0.5f * MM;
-        camera->target.z = (first->z + second->z) * 0.5f * MM;
-    }
-    return (*key)[2][2];
+    return false;
 }
 
-static uint32_t shown_frame;  // the sim frame the camera on screen was last pulled on
+static const HitZoom *hit_zoom_of(int32_t category) {
+    for (int at = 0; at < hit_zoom_count; at++) if (hit_zooms[at].category == category) return &hit_zooms[at];
+    return NULL;
+}
 
-// The camera on screen pulled toward a throw shot by `weight` for each sim frame since the last pull. As a
-// shot's weight falls the camera stays where the shot left it, and the fight camera eases on from there.
-static OwCamera shown_toward(OwCamera shot, float weight, uint32_t frames) {
-    OwCamera *shown = &follow.camera;
-    if (!follow.live) {
-        follow.live = true;
-        *shown = shot;
+static float drawn_turn(const HitZoom *zoom, bool by_wall) {
+    int total = 0;
+    for (int at = 0; at < zoom->turn_count; at++) total += zoom->turns[at].weight;
+    int draw = total > 0 ? rand() % total : 0;
+    for (int at = 0; at < zoom->turn_count; at++) {
+        draw -= zoom->turns[at].weight;
+        if (draw < 0) return by_wall ? zoom->turns[at].wall_turn : zoom->turns[at].turn;
     }
-    float share = 1 - powf(1 - fminf(weight, 1), (float)frames);
-    shown->position = eased(shown->position, shot.position, share);
-    shown->target = eased(shown->target, shot.target, share);
-    shown->fov += (shot.fov - shown->fov) * share;
-    shown->roll += (shot.roll - shown->roll) * share;
-    return *shown;
+    return 0;
+}
+
+// The hit zoom on screen: the camera on screen when the hit landed, swung about its target, closer, held still.
+static struct {
+    bool live;
+    uint32_t stepped_frame, end_frame, counter_frame;
+    OwCamera camera;
+} zoom = {.counter_frame = UINT32_MAX};
+
+// A clean hit by a fighter whose camera category has a hit zoom, in the fight.
+static void start_hit_zoom(const T6View *view, OwCamera shown) {
+    for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
+        const T6ViewCamera *attacker = &view->fighters[side].camera, *victim = &view->fighters[1 - side].camera;
+        const HitZoom *row = hit_zoom_of(attacker->category);
+        if (!row || !attacker->hit_landed || attacker->hit_taken || !victim->hit_taken || victim->guarded) continue;
+        if (row->counter_only && view->frame - zoom.counter_frame >= COUNTER_FRAMES) continue;
+        OwVec3 back = {shown.position.x - shown.target.x, shown.position.y - shown.target.y, shown.position.z - shown.target.z};
+        float length = sqrtf(back.x * back.x + back.y * back.y + back.z * back.z);
+        if (length <= 0) return;
+        float across = sqrtf(back.x * back.x + back.z * back.z) / length;
+        float turn = drawn_turn(row, attacker->at_wall || victim->at_wall) * DEGREE * (on_right[side] ? 1 : -1);
+        float bearing = atan2f(back.z, back.x) + turn, distance = row->distance * MM;
+        OwVec3 direction = {across * cosf(bearing), back.y / length, across * sinf(bearing)};
+        zoom.camera = (OwCamera){
+            .position = {shown.target.x + direction.x * distance, shown.target.y + direction.y * distance, shown.target.z + direction.z * distance},
+            .target = shown.target,
+            .fov = row->fov * DEGREE,
+        };
+        zoom.live = true;
+        zoom.end_frame = view->frame + (uint32_t)row->frames;
+        return;
+    }
+}
+
+static void step_hit_zoom(const T6View *view, OwCamera shown) {
+    if (view->frame == zoom.stepped_frame) return;
+    zoom.stepped_frame = view->frame;
+    for (int side = 0; side < T6_FIGHTER_COUNT; side++) if (view->fighters[side].camera.counter_hit) zoom.counter_frame = view->frame;
+    if (zoom.live && view->frame >= zoom.end_frame) zoom.live = false;  // a cut back to the fight camera, which kept following
+    if (!zoom.live && view->phase == T6_PHASE_FIGHT) start_hit_zoom(view, shown);
 }
 
 // The eye's offset from a line, square to it on the floor (mm).
@@ -405,7 +446,13 @@ static void side_of(OwVec3 eye, T6Vec3 point, T6Vec3 direction, float side[2]) {
     side[1] = z - along * direction.z;
 }
 
-// A move shot (cut in), else a throw shot pulling the camera on screen, else the fight camera.
+static T6Vec3 fighters_line(const T6View *view, T6Vec3 *point) {
+    const T6Vec3 *first = &view->fighters[0].position, *second = &view->fighters[1].position;
+    *point = (T6Vec3){(first->x + second->x) * 0.5f, 0, (first->z + second->z) * 0.5f};
+    return (T6Vec3){second->x - first->x, 0, second->z - first->z};
+}
+
+// A move shot (cut in), else a throw shot over the fight camera, else a hit zoom, else the fight camera.
 OwCamera t6_camera(const T6View *view, float seconds) {
     OwCamera camera;
     float side[2];
@@ -416,16 +463,26 @@ OwCamera t6_camera(const T6View *view, float seconds) {
         follow.live = false;
         return camera;
     }
-    uint32_t frames = view->frame > shown_frame ? view->frame - shown_frame : 0;
-    shown_frame = view->frame;
-    float weight = throw_shot_camera(view, &camera);
+    if (view->snap) {  // a scene cut: fresh sides, then the fight camera cuts in
+        update_sides(view, NULL);
+        follow.live = false;
+    }
+    OwCamera fight = followed(fight_camera(view), seconds);
+    if (view->phase == T6_PHASE_FIGHT) start_throw_shot(view);
+    float weight = t6_throw_shot(&throw_shot, view, fight, releases_ahead(view), &camera);
     if (weight > 0) {
-        camera = shown_toward(camera, weight, frames);
+        camera = blended(fight, camera, weight);
         side_of(camera.position, throw_shot.line_point, throw_shot.line_direction, side);
         update_sides(view, side);
         return camera;
     }
+    step_hit_zoom(view, fight);
+    if (zoom.live) {
+        T6Vec3 point, direction = fighters_line(view, &point);
+        side_of(zoom.camera.position, point, direction, side);
+        update_sides(view, side);
+        return zoom.camera;
+    }
     update_sides(view, NULL);
-    if (view->snap) follow.live = false;
-    return followed(fight_camera(view), seconds);
+    return fight;
 }

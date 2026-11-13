@@ -25,7 +25,7 @@ ANIM_INDEX :: 0x3fff
 Table :: enum {
 	Reactions, Requirements, Hit_Conditions, Pushbacks, Pushback_Extras, Cancels, Group_Cancels, Cancel_Extras,
 	Extra_Properties, Start_Properties, End_Properties, Moves, Voiceclips, Input_Sequences, Input_Extras,
-	Table_16, Table_17, Table_18, Move_List, Table_20, Table_21, Table_22, Table_23, Table_24, Embedded_Bank,
+	Table_16, Table_17, Table_18, Move_List, Table_20, Table_21, Table_22, Camera_Picks, Camera_Pick_Lists, Embedded_Bank,
 }
 
 // 0: not known (tables 20..22 are empty in every retail file).
@@ -35,7 +35,7 @@ RECORD_SIZES := [Table]int {
 	.Cancels = 0x20, .Group_Cancels = 0x20, .Cancel_Extras = 4, .Extra_Properties = 0xc, .Start_Properties = 0xc,
 	.End_Properties = 0xc, .Moves = 0x58, .Voiceclips = 4, .Input_Sequences = 8, .Input_Extras = 8, .Table_16 = 4,
 	.Table_17 = 0x14, .Table_18 = 6, .Move_List = 0x40, .Table_20 = 0, .Table_21 = 0, .Table_22 = 0,
-	.Table_23 = 0xc, .Table_24 = 8, .Embedded_Bank = 0,
+	.Camera_Picks = 0xc, .Camera_Pick_Lists = 8, .Embedded_Bank = 0,
 }
 
 Table_Place :: struct {
@@ -74,8 +74,8 @@ Motbin :: struct {
 	table_18:           [][3]u16,
 	move_list:          []Move_List_Entry,
 	unknown_tables:     [3][]byte,  // tables 20..22: the bytes up to the next table
-	table_23:           [][3]u32,   // extra property shape
-	table_24:           []Table_24_Entry,
+	camera_picks:       []Camera_Pick,       // a list ends at kind 0
+	camera_pick_lists:  []Camera_Pick_List,  // property 0x81cf value: a list
 }
 
 Requirement :: struct {
@@ -132,9 +132,20 @@ Table_17_Entry :: struct {
 	table_18:   u32,  // table_18 index
 }
 
-Table_24_Entry :: struct {
-	unknown_00: u32,
-	table_23:   u32,  // table_23 index
+// A throw's camera shot, drawn by weight from a list (tk6decomp docs/data.md "Camera picks").
+Camera_Pick :: struct {
+	weight:        i32,
+	kind:          i16,     // CAMERA_PICK_CODED, CAMERA_PICK_CLIP, else a camera category the fighter takes
+	shot:          [2]u16,  // by the thrower's screen side, left then right [likely: fighter +0x280]
+	extra_degrees: i16,     // yaw added to the shot's, not mirrored by side
+}
+
+CAMERA_PICK_CLIP :: 0x15   // shot: a clip of the thrower's camera bank
+CAMERA_PICK_CODED :: 0x16  // shot: a coded shot id
+
+Camera_Pick_List :: struct {
+	unknown_00: u32,  // 0, 1, 2: the throw camera keeps it at +0x2f8 [open: its meaning]
+	first:      u32,  // camera_picks index
 }
 
 // Pause menu entry. UTF-8, button glyphs in U+E0xx.
@@ -286,10 +297,13 @@ read_motbin :: proc(data: []byte, allocator := context.allocator) -> (motbin: Mo
 		bytes = data[start:end]
 	}
 
-	records = table(&motbin, data, .Table_23, &motbin.table_23) or_return
-	for &entry, number in motbin.table_23 do for &value, slot in entry do value = tk5.be_u32(records, number * 0xc + slot * 4)
-	records = table(&motbin, data, .Table_24, &motbin.table_24) or_return
-	for &entry, number in motbin.table_24 do entry = {tk5.be_u32(records, number * 8), tk5.be_u32(records, number * 8 + 4)}
+	records = table(&motbin, data, .Camera_Picks, &motbin.camera_picks) or_return
+	for &pick, number in motbin.camera_picks {
+		record := records[number * 0xc:]
+		pick = {i32(tk5.be_u32(record, 0)), i16(tk5.be_u16(record, 4)), {tk5.be_u16(record, 6), tk5.be_u16(record, 8)}, i16(tk5.be_u16(record, 10))}
+	}
+	records = table(&motbin, data, .Camera_Pick_Lists, &motbin.camera_pick_lists) or_return
+	for &list, number in motbin.camera_pick_lists do list = {tk5.be_u32(records, number * 8), tk5.be_u32(records, number * 8 + 4)}
 	return motbin, true
 }
 
