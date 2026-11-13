@@ -65,6 +65,7 @@ import_sounds :: proc(im: ^Import, usrdir: string) -> (stage_music: map[int]stri
 		}
 	}
 
+	// (hole tk6-nancy-voice :tags (tk6 audio) :sev polish) NANCY plays another character's voice lines in play (Xiaoyu's or Alisa's).
 	row_of_voice := 0  // the rows come grouped by voice character
 	for row, index in tables.voices {
 		row_of_voice = index > 0 && tables.voices[index - 1].voice == row.voice ? row_of_voice + 1 : 0

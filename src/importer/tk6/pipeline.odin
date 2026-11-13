@@ -168,6 +168,7 @@ idle_anim :: proc(im: ^Import, motbin: tk6.Motbin, own_bank: []byte) -> (idle: t
 
 // The body model and the costume's parts. The body model's part is the costume's own: it hides the meshes the parts cover.
 // (hole tk6-costumes :tags (tk6 importer) :sev polish) only costume 1 is imported; the 2P parts are mapped.
+// (hole tk6-devil-jin-hair :tags (tk6 importer look) :sev polish) Devil Jin shows bald in play: his hair part is missing or wrong.
 import_costume :: proc(im: ^Import, character: tk6.Character, costume: int, bone: tk5.Skeleton) {
 	w := &im.w
 	id := character.id
