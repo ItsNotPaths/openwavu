@@ -24,7 +24,8 @@ write_body_rules :: proc(w: ^db.Writer, character: string, model: int) {
 	case MODEL_AZAZEL: insert_rules(w, character, {i64(240), i64(0), "when_guarding", "azazel_guard", i64(1), i64(0), i64(0), i64(0)}, {})
 	case MODEL_NANCY: insert_rules(w, character, {i64(600), i64(1), "always", db.Null{}, i64(1), i64(1), i64(1), i64(1)}, {})
 	case MODEL_JACK6: insert_rules(w, character, plain, {497, 20, 499, 500, 0, 0})
-	// [open] the game also checks a flag of the defender's sound slot (FUN_002e9ad8)
+	// the game also checks the defender's sound slot flag (FUN_002e9ad8, set by FUN_002eb184 and kept only for Mokujin):
+	// bank bookkeeping [likely]; openwavu sounds are always loaded
 	case MODEL_MOKUJIN: insert_rules(w, character, plain, {0, 0, 0, 0, 468, 5})
 	}
 }
