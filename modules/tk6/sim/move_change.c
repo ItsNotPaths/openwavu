@@ -15,7 +15,7 @@
 #include "sim/math.h"
 #include "sim/motion.h"
 #include "sim/pose.h"
-#include "sim/projectile.h"
+#include "sim/shot.h"
 #include "sim/properties.h"
 #include "sim/quat.h"
 #include "sim/requirements.h"
@@ -115,6 +115,7 @@ static void reset_property_bytes(T6Fighter *f) {
     f->aims_held_side = 0;
     f->drops_push_spheres = 0;
     f->raises_hurtboxes = 0;
+    f->push_points_behind = 0;
     f->keeps_throw_immune = 0;
     f->sound_mask = 0;
     f->hip_drop_from_opponent = 0;
@@ -812,7 +813,7 @@ void t6_move_tick(T6World *w, T6Fighter *f, T6Fighter *opponent) {
         return;
     }
     reset_for_move(w, f, opponent, new_move, end);
-    t6_shots_move_change(f, new_move);
+    t6_shot_move_change(f);
     state_for_move(f, t6_set(w, new_ref.set), old_move, new_move);
     if (takes_new_anim(w, f, new_ref)) f->anim_changed = 1;  // mark the anim as changed
     f->move_start = 1;

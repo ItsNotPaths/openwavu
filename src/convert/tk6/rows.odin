@@ -171,7 +171,7 @@ write_moves :: proc(w: ^db.Writer, keys: ^Keys, animation_owner: string, sheets:
 		for pair in hits.pairs {
 			append(&values, tk5_convert.named(kinds, pair.end.kind), n(pair.end.index), tk5_convert.named(kinds, pair.start.kind), n(pair.start.index))
 		}
-		append(&values, n(hits.attack_bones), n(hits.slots), n(hits.launches))
+		append(&values, n(hits.attack_bones), n(hits.slots))
 		db.insert(w, "move", ..values[:])
 
 		ai := make([dynamic]db.Value)

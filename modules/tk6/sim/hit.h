@@ -24,31 +24,22 @@ typedef struct {
     int16_t frames, curve_frames, distance;
 } T6SpecialScript;
 
-// A hitscan of the fighter (T6Hitscan).
+// The shot of the fighter: a point `length` along a bone's x from the start offset of its mode, grown by its script; stopped,
+// it flies free along tail -> tip. Only the free flight moves the tail, so it starts at the world origin.
 typedef struct {
+    uint32_t mode;           // picks the bone and the start offset (shot.c); a round reset keeps it
     T6SpecialScript script;  // the growth a frame
     int16_t speed;           // the last positive growth step: the speed of the free flight
     float length;
-    int16_t free_frames;     // left of the free flight; none: the tip sits on the line
-    T6Vec4 tip, tail;        // beam from tail to tip; the tail is set when the line stops, so the tip flies on away from it
-} T6HitscanState;
+    int16_t free_frames;     // left of the free flight; none: the tip sits on its bone
+    T6Vec4 tip, tail;
+} T6ShotState;
 
-// A projectile of the fighter (T6Projectile).
-typedef struct {
-    T6SpecialScript script;  // the travel a frame
-    int16_t frames_left;     // of the flight
-    uint16_t aura;           // effect kind: 2, or 7 after a hit
-    T6Vec4 front, direction; // the point that flies, and its flight direction (a unit vector)
-    T6Vec4 back_left, back_right;  // the back corners of its hit area, a wedge behind `front`
-} T6ProjectileState;
-
-// The special points and the shots that move them; the hitbox point kinds HIT_POINT_SPECIAL, _FIXED, _HITSCAN and
-// _PROJECTILE read them.
+// The special points and the shot; the hitbox point kinds HIT_POINT_SPECIAL, _FIXED and _SHOT read them.
 typedef struct T6SpecialPoints {
     T6Vec4 point[T6_SPECIAL_SLOTS];
-    T6Vec4 fixed[T6_BODY_POINTS];  // the fixed bone points of the character (T6BodyPoints)
-    T6HitscanState hitscan;
-    T6ProjectileState projectile;
+    T6Vec4 fixed[T6_BODY_POINTS];  // the fixed points of the character (T6BodyPoints)
+    T6ShotState shot;
 } T6SpecialPoints;
 
 // T6Move.hit_level: the low three bits are the heights the attack hits (the hurt bits of the defender's state, STATE_HURT_BITS),

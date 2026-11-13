@@ -37,6 +37,6 @@ extern const T6SelfDamage T6_SELF_DAMAGE_ROWS[SELF_DAMAGE_PROPERTIES];  // three
 void t6_hit_result(const T6World *w, T6Fighter *defender, const T6HitRecord *record);
 // Classify the records of the defender, pick the main one and its reaction list, damage, health, KO.
 void t6_damage_resolve(T6World *w, T6Fighter *defender);
-void t6_damage_pass(T6World *w);  // once per frame: clear counters, resolve both fighters, then the extras (like projectiles)
+void t6_damage_pass(T6World *w);  // once per frame: clear counters, resolve both fighters, then the extras
 
 #endif

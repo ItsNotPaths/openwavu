@@ -1,6 +1,6 @@
 // Movement: the step of a fighter each frame and the pass over the fighters.
 // Files: move.c (the step in game order, the passes), root_motion.c (position, turn and pushback), move_timers.c (counters,
-// move end, the timers of hits), projectile.c (the shots, step 10: projectile.h). The guard stance is
+// move end, the timers of hits), shot.c (the shot, step 10: shot.h). The guard stance is
 // guard.c (guard.h). The face and hand calls of the game step are left out of move.c.
 #ifndef T6_MOVE_H
 #define T6_MOVE_H

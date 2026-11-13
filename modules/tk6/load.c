@@ -108,7 +108,6 @@ static const Field move_fields[] = {
     ARRAY_AS(T6Move, hit_pair, .start.index, "hit_pair_start_index"),
     FIELD_AS(T6Move, hits.attack_bones, "hits_attack_bones"),
     FIELD_AS(T6Move, hits.slots, "hits_slots"),
-    FIELD_AS(T6Move, hits.launches, "hits_launches"),
 };
 
 // The command and its timing come from `input`, the extradata from the transition columns (load_inputs).
@@ -221,8 +220,7 @@ static const Field body_points_fields[] = {
     ARRAY_AS(T6BodyPoints, point, .offset.x, "point_offset_x"),
     ARRAY_AS(T6BodyPoints, point, .offset.y, "point_offset_y"),
     ARRAY_AS(T6BodyPoints, point, .offset.z, "point_offset_z"),
-    FIELD(T6BodyPoints, hitscan),
-    FIELD(T6BodyPoints, projectile),
+    ARRAY_AS(T6BodyPoints, point, .yawed, "point_yawed"),
 };
 
 static const Field body_rule_fields[] = {

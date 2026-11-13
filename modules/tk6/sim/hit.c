@@ -8,7 +8,7 @@
 #include "sim/fighter.h"
 #include "sim/guard.h"
 #include "sim/math.h"
-#include "sim/projectile.h"
+#include "sim/shot.h"
 #include "sim/state.h"
 
 static const T6Vec4 *bone_point(const T6Bone *bones, int32_t bone) { return (const T6Vec4 *)bones[bone].world.m[3]; }
@@ -37,17 +37,11 @@ void t6_limb_offset(const T6LimbState *limbs, T6HitPoint point, T6Vec4 *position
 
 // The point itself; a point of no kind keeps the previous one
 static const T6Vec4 *point_at(T6HitPoint point, const T6Vec4 *previous, const T6Bone *bones, const T6SpecialPoints *special) {
-    const T6ProjectileState *projectile = &special->projectile;
     switch (point.kind) {
     case HIT_POINT_BONE: return bone_point(bones, point.index);  // point on a bone of the body
     case HIT_POINT_SPECIAL: return &special->point[point.index];  // one of the character's special points
     case HIT_POINT_FIXED: return &special->fixed[point.index];  // one of the fixed body points
-    case HIT_POINT_HITSCAN:  // hitscan end: the tail or the tip
-        return point.index == HITSCAN_TAIL ? &special->hitscan.tail : &special->hitscan.tip;
-    case HIT_POINT_PROJECTILE:  // projectile corner: front or one of the back corners
-        if (point.index == PROJECTILE_BACK_LEFT) return &projectile->back_left;
-        if (point.index == PROJECTILE_BACK_RIGHT) return &projectile->back_right;
-        return &projectile->front;
+    case HIT_POINT_SHOT: return &special->shot.tip;
     default: return previous;  // no point of its own: reuse the previous one
     }
 }
@@ -101,47 +95,13 @@ static void yaw_point(T6Vec4 *out, int32_t angle, const T6Vec4 *origin, T6Vec4 o
     t6_vec_times_mat(out, &offset, &matrix);  // offset turned by the yaw, moved to the origin
 }
 
-// x, y, z scaled; w kept
-static void scale_xyz(T6Vec4 *vector, float factor) {
-    float w = vector->w;  // keep w, scale only x, y and z
-    t6_vec_scale(vector, vector, factor);
-    vector->w = w;
-}
-
-// `direction` turned about y by `angle`, scaled to `length` (w kept)
-static T6Vec4 side_of(const T6Vec4 *direction, int32_t angle, float length) {
-    T6Mat4 matrix;
-    T6Vec4 side;
-    yaw_matrix(&matrix, angle);
-    t6_vec_times_mat(&side, direction, &matrix);
-    scale_xyz(&side, length);
-    return side;
-}
-
-// The tip of a hitscan that is not flying free sits on its line: `length` along x of its bone.
-static void hitscan_tip(T6Hitscan row, T6HitscanState hitscan, const T6Bone *bones, T6SpecialPoints *special) {
-    if (hitscan.free_frames == 0)  // not flying free: the tip is `length` along the bone
-        t6_vec_times_mat(&special->hitscan.tip, &(T6Vec4){{hitscan.length, 0, 0, 1}}, &bones[row.bone].world);
-}
-
-// The back corners of a projectile's hit area: `back` behind its front along its direction, then `side` to each side.
-static void projectile_corners(T6Projectile row, T6ProjectileState *projectile) {
-    T6Vec4 left = side_of(&projectile->direction, QUARTER_TURN.bits, row.side);
-    T6Vec4 right = side_of(&projectile->direction, -QUARTER_TURN.bits, row.side);
-    T6Vec4 back = projectile->direction;
-    scale_xyz(&back, -row.back);
-    t6_vec_add_xyz(&projectile->back_left, &projectile->front, &back);
-    t6_vec_add_xyz(&projectile->back_left, &projectile->back_left, &left);
-    t6_vec_add_xyz(&projectile->back_right, &projectile->front, &back);
-    t6_vec_add_xyz(&projectile->back_right, &projectile->back_right, &right);
-}
-
-// The fixed bone points of the character (BODY points of its file)
-static void apply_body_points(const T6BodyPoints *points, const T6Bone *bones, T6SpecialPoints *special) {
-    for (uint32_t index = 0; index < points->count; index++) {  // loop through the fixed body points of the character
+// The fixed points of the character (its body_points row)
+static void apply_body_points(const T6BodyPoints *points, const T6Bone *bones, int32_t facing, T6SpecialPoints *special) {
+    for (uint32_t index = 0; index < points->count; index++) {
         const T6BodyPoint *body_point = &points->point[index];
         T6Vec4 offset = vec4_of(body_point->offset, 1);
-        t6_vec_times_mat(&special->fixed[index], &offset, &bones[body_point->bone].world);  // offset moved by bone pose
+        if (body_point->yawed) yaw_point(&special->fixed[index], facing, bone_point(bones, body_point->bone), offset);
+        else t6_vec_times_mat(&special->fixed[index], &offset, &bones[body_point->bone].world);  // offset moved by bone pose
     }
 }
 
@@ -172,11 +132,6 @@ static const struct { uint8_t slot, bone; float below; } FOOT_POINTS[] = {
 static void special_points(T6Fighter *f) {
     const T6Bone *bones = f->rig.bones_b;
     T6SpecialPoints *special = &f->special;
-    apply_body_points(&f->body_points, bones, special);
-    const T6Hitscan *hitscan = t6_hitscan_of(f);  // hitscan attack data of this move, if any
-    const T6Projectile *projectile = t6_projectile_of(f);  // projectile attack data of this move, if any
-    if (hitscan != nullptr) hitscan_tip(*hitscan, special->hitscan, bones, special);  // hitscan move: place its tip
-    if (projectile != nullptr) projectile_corners(*projectile, &special->projectile);  // projectile move: place its back corners
     int32_t yaw[] = {[YAW_FACING] = t6_rad_to_angle_round(t6_angle65535_to_rad(f->facing)),  // turn angles: facing, look
                      [YAW_LOOK] = t6_rad_to_angle_round(f->look_yaw), [YAW_BODY] = t6_rad_to_angle_round(f->body_yaw)};
     for (size_t entry = 0; entry < sizeof YAWED_POINTS / sizeof *YAWED_POINTS; entry++) {  // loop through the bone-based points
@@ -192,6 +147,8 @@ static void special_points(T6Fighter *f) {
         const T6Vec4 along = {{TIP_POINTS[entry].along_x, 0, 0, 1}};
         t6_vec_times_mat(&special->point[TIP_POINTS[entry].slot], &along, &bones[TIP_POINTS[entry].bone].world);
     }
+    apply_body_points(&f->body_points, bones, yaw[YAW_FACING], special);
+    t6_shot_tip(f);
 }
 
 // --- hurtboxes and push points
@@ -201,7 +158,13 @@ enum { RAISED_HURTBOX = 9, RAISED_TOP_HURTBOX = 13 };
 static constexpr float RAISED_LIFT = 250.0f;
 static constexpr float RAISED_TOP_LIFT = 400.0f;
 
-static void hurtbox_centres(T6Hit *hit, const T6Body *body, const T6Bone *bones, bool raised) {
+static constexpr float PUSH_BEHIND = -300.0f;  // property 0x8096 (FUN_001d62fc)
+
+static void hurtbox_centres(T6Fighter *f) {
+    T6Hit *hit = &f->hit;
+    const T6Body *body = &f->body;
+    const T6Bone *bones = f->rig.bones_b;
+    bool raised = f->raises_hurtboxes;
     for (int32_t hurtbox_index = 0; hurtbox_index < T6_HURTBOXES; hurtbox_index++) {  // loop through the hurtboxes of the body
         const T6HurtRow *row = &body->hurt[hurtbox_index];
         const float *bone_at = bone_point(bones, row->bone)->v;
@@ -213,9 +176,12 @@ static void hurtbox_centres(T6Hit *hit, const T6Body *body, const T6Bone *bones,
         if (raised && hurtbox_index == RAISED_HURTBOX) hurtbox->y = bone_at[1] + RAISED_LIFT;
         if (raised && hurtbox_index == RAISED_TOP_HURTBOX) hurtbox->y = bone_at[1] + RAISED_TOP_LIFT;
     }
+    int32_t facing = t6_rad_to_angle_round(t6_angle65535_to_rad(f->facing));
     for (int32_t push_index = 0; push_index < T6_PUSH_POINTS; push_index++) {  // loop through the push points of the body
-        const float *bone_at = bone_point(bones, body->push[push_index].bone)->v;
-        for (int axis = 0; axis < 3; axis++) hit->push_point[push_index].v[axis] = bone_at[axis];  // copy bone x, y, z
+        const T6Vec4 *bone_at = bone_point(bones, body->push[push_index].bone);
+        T6Vec4 point = *bone_at;
+        if (f->push_points_behind >> push_index & 1) yaw_point(&point, facing, bone_at, (T6Vec4){{0, 0, PUSH_BEHIND, 1}});
+        for (int axis = 0; axis < 3; axis++) hit->push_point[push_index].v[axis] = point.v[axis];  // x, y, z; r stays
     }
 }
 
@@ -223,7 +189,7 @@ void t6_hit_points(T6Fighter *f, const T6Move *move) {  // hitbox and hurtbox po
     if (f->kind != 0) return;  // extras do not set them
     special_points(f);  // special points first, the hitbox ends read them
     hitbox_ends(f, move);
-    hurtbox_centres(&f->hit, &f->body, f->rig.bones_b, f->raises_hurtboxes);
+    hurtbox_centres(f);
 }
 
 // --- radii

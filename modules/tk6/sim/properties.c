@@ -11,7 +11,7 @@
 #include "sim/hand_poses.h"
 #include "sim/hit.h"
 #include "sim/math.h"
-#include "sim/projectile.h"
+#include "sim/shot.h"
 #include "sim/requirements.h"
 #include "sim/stage.h"
 #include "sim/transition.h"
@@ -88,10 +88,9 @@ enum : uint16_t {
     PROP_TARGET_PUSHBACK_FROM_TARGET = T6_PROPERTY_BASE + 170,
     PROP_TARGET_TAKES_PUSHBACK = T6_PROPERTY_BASE + 171,        // the target takes the fighter's pushback record
     PROP_TARGET_TAKES_PUSHBACK_STATE = T6_PROPERTY_BASE + 172,  // the target takes the fighter's running pushback
-    PROP_HITSCAN_START = T6_PROPERTY_BASE + 173,
-    PROP_HITSCAN_STOP = T6_PROPERTY_BASE + 174,
-    PROP_PROJECTILE_START = T6_PROPERTY_BASE + 175,
-    PROP_PROJECTILE_FRAMES = T6_PROPERTY_BASE + 176,
+    PROP_SHOT_START = T6_PROPERTY_BASE + 173,         // value: the pushback entry of its growth
+    PROP_SHOT_STOP = T6_PROPERTY_BASE + 174,
+    PROP_SHOT_MODE = T6_PROPERTY_BASE + 176,          // TK6 0x80d5
     PROP_VELOCITY_Y = T6_PROPERTY_BASE + 179,
     PROP_FLOAT = T6_PROPERTY_BASE + 184,              // stops the fall and turns gravity off
     PROP_DRIFT_SPEED = T6_PROPERTY_BASE + 185,
@@ -135,6 +134,7 @@ enum : uint16_t {
     PROP_AIMS_HELD_SIDE = T6_PROPERTY_BASE + 368,        // P+0x258 bit 4
     PROP_DROPS_PUSH_SPHERES = T6_PROPERTY_BASE + 369,    // P+0x258 bit 3
     PROP_RAISES_HURTBOXES = T6_PROPERTY_BASE + 370,      // P+0x258 bit 10
+    PROP_PUSH_POINTS_BEHIND = T6_PROPERTY_BASE + 371,    // P+0x210
 };
 
 // (fcmpu order: NaN takes the first branch)
@@ -366,6 +366,7 @@ static bool flag_prop(T6Fighter *f, T6Fighter *target, uint16_t id, uint16_t val
     case PROP_AIMS_HELD_SIDE: f->aims_held_side = value & 1; break;
     case PROP_DROPS_PUSH_SPHERES: f->drops_push_spheres = value & 1; break;
     case PROP_RAISES_HURTBOXES: f->raises_hurtboxes = value & 1; break;
+    case PROP_PUSH_POINTS_BEHIND: f->push_points_behind = (uint8_t)value; break;
     case PROP_CAMERA_CATEGORY:  // a throw already marked as at a wall keeps the mark
         if (!(t6_in_throw(f->throw.chain) && f->throw.camera_category == T6_CAMERA_CATEGORY_WALL)) f->throw.camera_category = signed_value;
         break;
@@ -450,31 +451,11 @@ static bool move_prop(const T6World *w, T6Fighter *f, T6Fighter *target, uint16_
     return true;
 }
 
-// A pushback entry of the moveset becomes the script of a shot.
-static T6SpecialScript script_of(const T6World *w, const T6Fighter *f, uint16_t value) {
-    const T6Pushback *pushback = t6_pushback_at(w, t6_ref(f->moveset, value));  // shots reuse pushback entries for their path
-    return (T6SpecialScript){t6_ref(f->moveset, pushback->curve), (int16_t)pushback->frames,  // curve, then length in frames
-                             (int16_t)pushback->curve_frames, pushback->distance};
-}
-
-// The shots of the fighter's rows; a fighter without the row has nothing to start.
 static bool shot_prop(const T6World *w, T6Fighter *f, uint16_t id, uint16_t value) {
-    const T6Hitscan *hitscan = t6_hitscan_of(f);
-    const T6Projectile *projectile = t6_projectile_of(f);
     switch (id) {
-    case PROP_HITSCAN_START:
-        if (hitscan != nullptr)  // only fighters with a hitscan row (the eye laser)
-            f->special = t6_hitscan_start(f, *hitscan, script_of(w, f, value));
-        break;
-    case PROP_HITSCAN_STOP:
-        if (hitscan != nullptr) f->special = t6_hitscan_stop(f, *hitscan);  // ends the beam, if the fighter has one
-        break;
-    case PROP_PROJECTILE_START:
-        if (projectile != nullptr)  // only fighters with a projectile row (the fire)
-            f->special = t6_projectile_start(f, *projectile, script_of(w, f, value));
-        break;
-    case PROP_PROJECTILE_FRAMES:  // sets how many frames the projectile has left
-        f->special.projectile.frames_left = (int16_t)value; break;
+    case PROP_SHOT_START: t6_shot_start(w, f, value); break;
+    case PROP_SHOT_STOP: t6_shot_stop(f); break;
+    case PROP_SHOT_MODE: f->special.shot.mode = value; break;
     default: return false;
     }
     return true;

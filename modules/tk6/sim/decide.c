@@ -553,7 +553,7 @@ static bool ko_cuts(const T6Move *move) {
 }
 
 // The stats (outside the sim) are left out.
-// (hole tk6-reaction-input-diff :tags (tk6 sim) :sev gap) the input pass (FUN_001c3018 and its helpers) is not compared with the sim's, and no whole-frame row exists; the reaction pick, the relative angles and the transition filter have simdiff rows.
+// (hole tk6-reaction-input-diff :tags (tk6 sim) :sev gap) no whole-frame simdiff row (input, decide, move change in one); the input pass row (FUN_001cf7e4) covers a live pad fighter only, not the neutral and locked modes, CPU or script control, replays (FUN_00205bb0) or the TK6 change log (40 entries with the side, no reader; the sim keeps TK5's 25).
 void t6_decide_object(T6World *w, T6Fighter *f) {
     uint8_t moveset = f->moveset;  // keep the move set from before the hit
     f->self_damage.effect = SELF_DAMAGE_NONE;  // the points stay, as in the game

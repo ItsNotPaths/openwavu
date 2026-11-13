@@ -108,15 +108,12 @@ static void clear_wall_and_push_history(T6Fighter *f) {
     t6_previous_root(f);
 }
 
-// The shots stop. Stock clears them only for their characters, the only writers.
-static void stop_shots(T6SpecialPoints *points) {
-    points->hitscan.free_frames = 0;  // the hitscan shot stops
-    points->hitscan.length = 0.0f;
-    points->hitscan.script.frames = 0;
-    points->hitscan.script.curve_frames = 0;
-    points->projectile.frames_left = 0;  // the projectile stops
-    points->projectile.script.frames = 0;
-    points->projectile.script.curve_frames = 0;
+// The shot stops; its mode and tail stay (FUN_001ce8bc).
+static void stop_shot(T6ShotState *shot) {
+    shot->free_frames = 0;
+    shot->length = 0.0f;
+    shot->script.frames = 0;
+    shot->script.curve_frames = 0;
 }
 
 // Move var E holds a round mark of the move data; it is cleared with the round marks.
@@ -154,7 +151,7 @@ static void clear_move_state(T6Fighter *f, bool marks) {
     clear_vars(f, marks);  // clear move variables
     f->slide_frames = 0;  // no slide running
     f->marked_finished = 0;
-    stop_shots(&f->special);  // no shots flying
+    stop_shot(&f->special.shot);  // no shot flying
     f->blend.offset = (T6Vec3){};  // no blend running
     f->blend.ratio = 0.0f;
     f->blend.done.frames = 0;

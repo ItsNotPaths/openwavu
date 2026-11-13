@@ -376,6 +376,7 @@ struct T6Fighter {
     uint8_t aims_held_side;      // property 0x8124: the facing turns aim at held_near_side_angle; a move start clears it
     uint8_t drops_push_spheres;  // property 0x816f: push spheres 2, 3, 6 and 7 are off; a move start clears it
     uint8_t raises_hurtboxes;    // property 0x8123: hurtboxes 9 and 13 sit higher; a move start clears it
+    uint8_t push_points_behind;  // property 0x8096: bit k puts push point k 300 behind its bone; a move start clears it
     uint8_t marks_zero_damage;   // `PROP_MARKS_ZERO_DAMAGE`: a hit of 0 damage still marks the defender (zero_damage_hit)
     uint8_t air_move;            // the move has an air window or started in a juggle: a hit in it resets the body scale
     uint8_t can_lock_look;       // the look-at may lock on (set at a move change, a property clears it)

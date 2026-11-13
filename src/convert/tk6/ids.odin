@@ -6,18 +6,18 @@ import tk5_convert "../tk5"
 
 // What a converter did with a TK6 number the sim has no exact match for. Counts are by the TK6 number.
 Fallback :: enum {
-	// (hole tk6-open-requirements :tags (tk6 sim) :sev gap) never true still: 0x13b..0x13d, 0x142 (218 versus uses: worn customize item kinds, the item moves; the sim has only default costumes and no item kinds), 0x97 (42: a wall break fired, needs breaks); the rest sit behind scenario tests or only in campaign sets (tk6decomp requirements.md "Open ids in versus").
+	// (hole tk6-open-requirements :tags (tk6 sim) :sev gap) never true still: 0x13b..0x13d, 0x142 (218 versus uses, the item moves: count of worn parts whose record byte +9 is the kind of table 0x8f5164[param]; needs a part kind column, that table, the worn parts of the loadout and a sim count; the sim has default costumes only), 0x97 (42: a wall break fired, P+0x258 bit 19 from property 0x80aa when the touched wall's counter P+0x704 runs out; needs breakable walls with counters in the stage data and the break itself); the rest sit behind scenario tests or only in campaign sets (tk6decomp requirements.md "Open ids in versus").
 	Requirement_Open,      // the state it reads has no sim field: never true
 	Requirement_Unknown,   // in no table: never true
 	Requirement_Campaign,  // a Scenario Campaign or object test: never true in versus
-	// (hole tk6-dropped-properties :tags (tk6 sim) :sev gap) dropped but read by sim code: 0x8096 (9 uses: P+0x210 picks how 8 body points of FUN_001d62fc are built; their readers are not found), 0x808e (27: P+0x250 bit 49, readers not found), Raven's 0x81ba..0x81c0 (his clone, an extra object the sim does not have); 0x80c8/0x80c9 only reach the floor break fall (FUN_001ac074); the rest are effects, model layers, camera, HUD or stats (tk6decomp properties.md "Dropped ids by use").
+	// (hole tk6-dropped-properties :tags (tk6 sim) :sev gap) Raven's 0x81ba..0x81c0 (16 uses, his clone) need an extra object the sim does not have: a second fighter-like object linked at P+0xa0 that FUN_001d161c fills as a copy of Raven (pose, move, position), stepped and hit-tested with the fighters, which the reaction pick asks through FUN_001d1994 while P+0x710 > 0; the world would need an extra slot with its own move set ref, rig and hit shapes. The rest are settled (tk6decomp properties.md "Dropped ids by use").
 	Property_Dropped,      // no sim meaning (effects, model layers, HUD, guesses)
 	Property_Dead,         // read by nothing in the game
 	Facing_Property_Dropped, // a facing mode in a start, end or requirement list, or the opponent's mode
 	Motion_None,           // a motion code past the game's table: none
 	Transition_Class_Start,  // a transition class with no sim class: start
 	Command_Never,         // an input the command syntax can not hold: the cancel never matches
-	// (hole tk6-special-hit-points :tags (tk6 sim) :sev gap) codes 0x16..0x1a (100 versus uses) are model locators the sim has no model for, 0x1b/0x1c skeleton bones 0x4a/0x49 (Alisa), 0x31 (101: the shot point, block +0xc8, built by the shot mode +0xc4 like TK5's hitscan and projectile; the importer writes no shot rows), and the per-character blocks 0x2c..0x2e (Yoshimitsu's sword nodes), 0x2f, 0x30, 0x33, 0x36..0x3c (Kuma, Roger, NANCY, Azazel, Alisa) are not built: the point stays (tk6decomp sim_contract.md 9.7).
+	// (hole tk6-special-hit-points :tags (tk6 sim) :sev gap) unbuilt, the point stays: 0x16..0x1a (100 versus uses) model locators k = code - 0x16 of the model (FUN_0011ec94 on P+0xc20), which the sim has no model data for; 0x1b/0x1c (Alisa) and shot mode 13 (Azazel, the sim takes the head) want skeleton records 74 ATAMA_jnt / 73 KUBI_jnt, helper bones the sim skeleton does not hold (needs the helper chain under the neck, as tk6-head-chain); 0x2c..0x2e Yoshimitsu's sword joints (part BONE list ids 0x4b0, 0x4ba via FUN_00031258; head bone instead in mode 13 or model +0x80 == 2) need the part's own bones; 0x3a Azazel's model node 6 (FUN_0011a18c, FUN_00031118); 0x33 (block +0x84, NANCY) has no writer in FUN_001d62fc; 0x1d, 0x34, 0x35 are built inside the hitbox switch (0x1d5934) and not read (tk6decomp sim_contract.md 9.7).
 	Hitbox_Keep,           // a hitbox point code that is not a bone: the point stays
 	// (hole tk6-flow-states :tags (tk6 sim) :sev polish) game modes 9, 13, 14, 16, 17 hold in no phase; 14 and 16 send the round-start stand into a move that holds itself, when is open.
 	Flow_State_Guessed,    // a game flow state test (by state)
@@ -160,6 +160,7 @@ PROPERTY_RUNS := [?]Run{
 	{0x8124, 0x8124, 0x8170},  // the facing turns aim at the held near side
 	{0x816f, 0x816f, 0x8171},  // four push spheres off
 	{0x8123, 0x8123, 0x8172},  // two hurtboxes higher
+	{0x8096, 0x8096, 0x8173},  // push points behind their bones
 	{PROPERTY_TRACK, PROPERTY_TRACK, SIM_PROPERTY_TRACK},
 }
 
@@ -291,9 +292,11 @@ SPECIAL_POINT_SLOTS := [?]Special_Slot {
 	.Left_Foot_Low, .Left_Foot_High, .Right_Foot_High, .Left_Hand_Tip, .Right_Hand_Tip,
 }
 
-// The point of a special code the sim builds; false for codes it does not.
+// The point of a special code the sim builds; false for codes it does not. The shot's tip has the TK5 hitscan kind.
 @(private)
 special_point :: proc(code: u8) -> (point: tk5_convert.Hit_Point, built: bool) {
+	if code == SHOT_CODE do return {.Hitscan, 0}, true
+	for fixed in FIXED_POINT_CODES do if fixed.code == code do return {.Fixed, fixed.row}, true
 	if code < SPECIAL_POINT_FIRST || int(code) >= SPECIAL_POINT_FIRST + len(SPECIAL_POINT_SLOTS) do return
 	return {.Special, u8(SPECIAL_POINT_SLOTS[code - SPECIAL_POINT_FIRST])}, true
 }

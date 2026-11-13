@@ -62,38 +62,20 @@ typedef struct {
     bool no_flashback;                   // a KO in a round it fights skips the flashback
 } T6BodyRules;
 
-// A point fixed to a bone: the bone's world matrix applied to an offset. Of a character, from the ANCH row of its file
-// row i fills T6SpecialPoints.fixed[i]. `bone` is a bone of skeleton B.
+// A point on a bone, from the character's body_points row: the bone's world matrix applied to an offset, or, when `yawed`,
+// the offset turned by the facing and put at the bone's position. Row i fills T6SpecialPoints.fixed[i]; `bone` is a bone of
+// skeleton B.
 #define T6_BODY_POINTS 2
 
 typedef struct {
     uint8_t bone;
+    bool yawed;
     T6Vec3 offset;
 } T6BodyPoint;
 
-// A hitscan (Devil Jin's laser): a line from `bone` (skeleton B) along its x axis, as long as its script has grown it; a hitbox
-// on the line hits anything on it. Its start puts the tip at `start` (skeleton A). Its stop puts the tail on the line bone, and
-// the tip flies on away from it, the tail with it, for `free_frames` at the last growth step.
-typedef struct {
-    T6BodyPoint start;
-    int16_t free_frames;  // frames the shot flies on at its last speed once the script stops growing it
-    uint8_t bone;
-} T6Hitscan;
-
-// A projectile (Jinpachi's fire): its front flies along the facing by its script for `life` frames, then goes back to `start`
-// (skeleton A). The hitboxes run from the front to the two back corners, `back` behind it and `side` to each side.
-typedef struct {
-    T6BodyPoint start;
-    float back, side;
-    int16_t life;
-} T6Projectile;
-
-// The fixed bone points and the shots of a character (the ANCH row of its file). `hitscan` and `projectile`
-// name a row of T6_HITSCANS and T6_PROJECTILES (projectile.h) by its place in the list; zero is none.
 typedef struct {
     uint32_t count;  // entries of point[] in use, at most T6_BODY_POINTS
     T6BodyPoint point[T6_BODY_POINTS];
-    uint8_t hitscan, projectile;
 } T6BodyPoints;
 
 // How a character looks at the opponent (the GAZE row of its file). By move set, as the stock check is.

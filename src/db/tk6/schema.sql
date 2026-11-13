@@ -140,14 +140,13 @@ CREATE TABLE move (
 	tracking_far_angle  INTEGER NOT NULL,
 	rides_partner  INTEGER NOT NULL,  -- the thrower rides on the partner (Xiaoyu's Hien throws)
 	-- The hitbox of slot n ends at the end point and starts at the start point: a kind (none, bone, special, effect, keep,
-	-- fixed, hitscan, projectile) and an index.
+	-- fixed, shot) and an index.
 	hit_pair_end_kind_0 TEXT NOT NULL REFERENCES hit_point_kind(name), hit_pair_end_index_0 INTEGER NOT NULL,
 	hit_pair_start_kind_0 TEXT NOT NULL REFERENCES hit_point_kind(name), hit_pair_start_index_0 INTEGER NOT NULL,
 	hit_pair_end_kind_1 TEXT NOT NULL REFERENCES hit_point_kind(name), hit_pair_end_index_1 INTEGER NOT NULL,
 	hit_pair_start_kind_1 TEXT NOT NULL REFERENCES hit_point_kind(name), hit_pair_start_index_1 INTEGER NOT NULL,
 	hits_attack_bones INTEGER NOT NULL,  -- bit b: the move attacks with bone b of skeleton B
 	hits_slots     INTEGER NOT NULL,     -- hitbox slots that get points while active: 0..2
-	hits_launches  INTEGER NOT NULL,     -- a hitbox runs from the projectile's point
 	FOREIGN KEY (anim_owner, anim_idx) REFERENCES anim(character, idx)
 );
 CREATE INDEX move_character ON move(character);
@@ -517,14 +516,15 @@ CREATE TABLE body (  -- hurtboxes: vertical cylinders on bones of skeleton B, in
 	head_top        REAL NOT NULL      -- head end height in the standing idle (not stock: measured at import)
 );
 
--- Points fixed to a bone of skeleton B (special slots 6, 7), and the shots: rows of the sim's hitscan and projectile lists, 0: none.
+-- The character's own hitbox points (sim T6BodyPoints): a bone's world matrix applied to an offset, or with yawed = 1, the offset
+-- turned by the facing at the bone's position. Bones of skeleton B.
 CREATE TABLE body_points (
 	character TEXT PRIMARY KEY,
 	count     INTEGER NOT NULL,  -- points in use
-	point_bone_0 INTEGER NOT NULL, point_offset_x_0 REAL NOT NULL, point_offset_y_0 REAL NOT NULL, point_offset_z_0 REAL NOT NULL,
-	point_bone_1 INTEGER NOT NULL, point_offset_x_1 REAL NOT NULL, point_offset_y_1 REAL NOT NULL, point_offset_z_1 REAL NOT NULL,
-	hitscan   INTEGER NOT NULL,
-	projectile INTEGER NOT NULL
+	point_bone_0 INTEGER NOT NULL, point_yawed_0 INTEGER NOT NULL,
+	point_offset_x_0 REAL NOT NULL, point_offset_y_0 REAL NOT NULL, point_offset_z_0 REAL NOT NULL,
+	point_bone_1 INTEGER NOT NULL, point_yawed_1 INTEGER NOT NULL,
+	point_offset_x_1 REAL NOT NULL, point_offset_y_1 REAL NOT NULL, point_offset_z_1 REAL NOT NULL
 );
 
 -- The sim's two skeletons by body slot (skel.c): A 0..21 body bones, 22..26 end points, then helpers;
@@ -559,9 +559,8 @@ INSERT INTO hit_point_kind VALUES
 	('special', 2),     -- index: a special point slot
 	('effect', 3),      -- the effect hitboxes of the move's side; the previous point stays
 	('keep', 4),        -- the previous point stays
-	('fixed', 5),       -- index: a fixed bone point of the character (body_points)
-	('hitscan', 6),     -- index: 0 tip, 1 tail
-	('projectile', 7);  -- index: 0 front, 1 back left, 2 back right
+	('fixed', 5),       -- index: a point of the character's body_points row
+	('shot', 6);        -- the tip of the shot
 
 -- The names of the tracking codes (modules/tk6/sim/tracking.h).
 CREATE TABLE tracking_law (name TEXT PRIMARY KEY, code INTEGER NOT NULL UNIQUE);

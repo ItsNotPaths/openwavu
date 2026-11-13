@@ -7,13 +7,13 @@
 #include "sim/guard.h"
 #include "sim/properties.h"
 #include "sim/move_change.h"
-#include "sim/projectile.h"
+#include "sim/shot.h"
 #include "sim/requirements.h"
 
 void t6_move_step(T6World *w, T6Fighter *f) {
     const T6Fighter *opponent = t6_object(w, f->opponent);
     t6_move_motion(w, f);  // gravity, slides, pushes, turns and pushback
-    t6_shots_step(w, f);
+    t6_shot_step(w, f);
     t6_facing_step(w, f);
     t6_move_pivot(f);  // turn around the pivot bone, then count down the cancel lock
     t6_move_counters(w, f);  // tick timers, hitboxes, air window and move end

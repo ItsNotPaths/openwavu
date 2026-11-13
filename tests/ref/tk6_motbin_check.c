@@ -10,7 +10,7 @@
 #include "sim/requirements.h"
 #include "sqlite3.h"
 
-enum { PROPERTY_LAST = T6_PROPERTY_BASE + 370 };  // PROP_RAISES_HURTBOXES
+enum { PROPERTY_LAST = T6_PROPERTY_BASE + 371 };  // PROP_PUSH_POINTS_BEHIND
 
 static int problems;
 

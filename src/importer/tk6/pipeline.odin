@@ -137,7 +137,7 @@ import_character :: proc(im: ^Import, character: tk6.Character, roster: []tk6.Ro
 	// (hole tk6-body-rows :tags (tk6 importer) :sev polish) hurt and push radii, points and gaze are TK5's defaults, not read from TK6; NANCY's push spheres come from a table of their own, also against her (FUN_001d428c).
 	body_model := character.model == tk5_convert.MODEL_JINPACHI ? 0 : character.model  // TK6 has no Jinpachi: 34 is Bob
 	tk5_convert.write_body(w, id, body_model, tk5_convert.head_top(&skeleton, idle))
-	tk5_convert.write_body_points(w, id, -1)
+	tk6_convert.write_body_points(w, id, character.chara)
 	tk5_convert.write_gaze(w, id, -1)
 	tk6_convert.write_body_rules(w, id, character.model)
 

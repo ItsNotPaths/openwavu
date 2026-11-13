@@ -105,12 +105,9 @@ enum T6HitPointKind : uint8_t {
     HIT_POINT_SPECIAL,  // index: a slot of T6SpecialPoints.point
     HIT_POINT_EFFECT,   // the move uses the effect hitboxes of its side; no point of its own, so the previous point stays
     HIT_POINT_KEEP,     // the previous point stays
-    HIT_POINT_FIXED,    // index: a fixed bone point of the character
-    HIT_POINT_HITSCAN,     // index: T6HitscanPoint
-    HIT_POINT_PROJECTILE,  // index: T6ProjectilePoint
+    HIT_POINT_FIXED,    // index: a fixed point of the character
+    HIT_POINT_SHOT,     // the tip of the shot
 };
-enum T6HitscanPoint { HITSCAN_TIP, HITSCAN_TAIL };
-enum T6ProjectilePoint { PROJECTILE_FRONT, PROJECTILE_BACK_LEFT, PROJECTILE_BACK_RIGHT };
 
 typedef struct {
     uint8_t kind, index;
@@ -126,8 +123,7 @@ typedef struct {
 typedef struct {
     uint32_t attack_bones;  // bit b: the move attacks with bone b of skeleton B (the hit category requirements)
     uint8_t slots;          // hitbox slots that get points while the move is active: 0..2
-    bool launches;          // a hitbox runs from the projectile's point (stock code 118): the move change puts it on the body
-    uint8_t pad[2];
+    uint8_t pad[3];
 } T6MoveHits;
 
 // A voice clip of a move: selector << T6_VOICE_SELECTOR_SHIFT | number, the TK6 form (cue.h). A list holds up to T6_VOICECLIPS.
