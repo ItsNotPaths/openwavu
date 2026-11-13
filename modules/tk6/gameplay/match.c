@@ -1,4 +1,5 @@
 // The stock TK6 gameplay module's match: the world setup, one battle frame per tick from two pads, and the view.
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -122,6 +123,33 @@ static void report_round(const T6World *w) {
     ow_event(OW_EVENT_ROUND_END, round_winner(w), 0);
 }
 
+#ifdef T6_TRACE
+// One tab-separated line per frame on the log (build with SIM_TRACE=1): the round, then per side the pad, move and the
+// hit fields. A header line comes first.
+static void trace_frame(const T6World *w, const uint32_t pads[T6_FIGHTER_COUNT]) {
+    static bool headed;
+    char line[512];
+    int length = 0;
+    if (!headed) {
+        headed = true;
+        length = snprintf(line, sizeof line, "trace\tframe\tphase\tround");
+        for (int side = 1; side <= T6_FIGHTER_COUNT; side++)
+            length += snprintf(line + length, sizeof line - (size_t)length,
+                               "\tpad%d\tmove%d\tmove_frame%d\tx%d\ty%d\tz%d\thealth%d\tstate%d\tstate_class%d\thit_level%d\tlanded%d\twhiffed%d\thit_lockout%d",
+                               side, side, side, side, side, side, side, side, side, side, side, side, side);
+        ow_log((OwStr){(uint32_t)length, line});
+    }
+    length = snprintf(line, sizeof line, "trace\t%u\t%d\t%u", w->frame, w->round.phase, w->round.round);
+    for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
+        const T6Fighter *f = w->fighters[side];
+        length += snprintf(line + length, sizeof line - (size_t)length, "\t%#x\t%d\t%d\t%.0f\t%.0f\t%.0f\t%d\t%#x\t%u\t%#x\t%u\t%u\t%d",
+                           pads[side], f->move.index, f->frame, f->base_position.x, f->base_position.y, f->base_position.z,
+                           f->health >> 16, f->state, f->state_class, f->hit_level, f->landed_this_move, f->whiffed, f->hit_lockout);
+    }
+    ow_log((OwStr){(uint32_t)length, line});
+}
+#endif
+
 OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1) {
     T6MatchState *m = &t6_match;
     T6World *w = &m->world;
@@ -133,6 +161,9 @@ OW_EXPORT(ow_sim_step) void ow_sim_step(uint32_t pad0, uint32_t pad1) {
     }
     T6Phase before = w->round.phase;
     t6_hooks.frame(w);
+#ifdef T6_TRACE
+    trace_frame(w, pads);
+#endif
     for (int side = 0; side < T6_FIGHTER_COUNT; side++) m->fighters[side].menu_pressed = 0;
     if (w->round.phase == before) return;
     if (w->round.phase == T6_PHASE_KO) report_round(w);

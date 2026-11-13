@@ -85,23 +85,25 @@ fi
 # functions become imports (env) through --import-symbols. The sim cores need exact floats and wrapping ints.
 # (hole module-build :tags (wasm tk5mod) :needs ow-cli) build.sh builds the stock modules with zig itself; ow build should make them with the same pinned flags, reproducibly.
 mkdir -p build/modules/tk5 build/modules/tk6
-# game_module <module> <out> <link flags> <sources...>: rebuilt when anything under modules/<module> or sdk is newer.
+# game_module <module> <out> <flags> <sources...>: rebuilt when anything under modules/<module> or sdk is newer, or
+# the flags changed (<out>.flags keeps the last ones).
 # -s: zig's crt carries this machine's paths in its debug info, and the stock pack hash needs the same bytes everywhere.
 game_module() {
 	module="$1"
 	out="$2"
-	link="$3"
+	flags="$3"
 	shift 3
-	if [ ! -f "$out" ] || [ -n "$(find "modules/$module" sdk build/sdk -newer "$out" -print -quit)" ]; then
+	if [ ! -f "$out" ] || [ "$(cat "$out.flags" 2>/dev/null)" != "$flags" ] || [ -n "$(find "modules/$module" sdk build/sdk -newer "$out" -print -quit)" ]; then
 		vendor/zig/zig cc --target=wasm32-wasi -O2 -std=c23 -fwrapv -ffp-contract=off -fno-fast-math -mexec-model=reactor -s \
-			-I"modules/$module" -Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/cgltf/src -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $link \
+			-I"modules/$module" -Isdk/include -Ivendor/sqlite -Ivendor/jsmn -Ivendor/cgltf/src -Ivendor/sdl3/include -Ivendor/sdl3_ttf/include $flags \
 			-o "$out" "$@" build/sdk/libow_db.a build/sdk/libow_sound.a
+		printf '%s' "$flags" > "$out.flags"
 	fi
 }
-# game_modules <module> <out dir>: the sim, app and presenter of one game.
+# game_modules <module> <out dir>: the sim, app and presenter of one game. SIM_TRACE=1: the sim logs a line per frame (TK6).
 game_modules() {
 	core=("modules/$1"/sim/*.c "modules/$1"/load.c)
-	game_module "$1" "$2/gameplay.wasm" "" "${core[@]}" "modules/$1"/{view,pack_file}.c "modules/$1"/gameplay/*.c
+	game_module "$1" "$2/gameplay.wasm" "${SIM_TRACE:+-DT6_TRACE}" "${core[@]}" "modules/$1"/{view,pack_file}.c "modules/$1"/gameplay/*.c
 	game_module "$1" "$2/app.wasm" -Wl,--import-symbols "modules/$1"/app/*.c
 	game_module "$1" "$2/gamerender.wasm" -Wl,--import-symbols "${core[@]}" "modules/$1"/pack_file.c "modules/$1"/gamerender/*.c
 }
