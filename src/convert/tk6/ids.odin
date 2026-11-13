@@ -23,9 +23,9 @@ Fallback :: enum {
 	// (hole tk6-state-classes :tags (tk6 sim) :sev gap) state classes 0x15, 0x16, 0x1d..0x1f (326 uses) become invulnerable; the sim has no class for them.
 	State_Class_Nearest,   // a state class with no sim class: invulnerable
 	Command_Never,         // an input the command syntax can not hold: the cancel never matches
-	// (hole tk6-special-hit-points :tags (tk6 sim) :sev gap) 2831 hitbox slots use special point codes 0x16..0x3c, meaning open; the point stays.
+	// (hole tk6-special-hit-points :tags (tk6 sim) :sev gap) special point codes 0x16..0x1d and 0x28..0x3c (model nodes, Yoshimitsu's sword, Alisa, Azazel, Nancy, Roger, Kuma; tk6decomp docs/sim_contract.md 7) are not built: the point stays.
 	Hitbox_Keep,           // a hitbox point code that is not a bone: the point stays
-	// (hole tk6-flow-states :tags (tk6 sim) :sev polish) game flow state tests are guessed (1257 uses).
+	// (hole tk6-flow-states :tags (tk6 sim) :sev polish) game modes 9, 13, 14, 16, 17 hold in no phase; 14 and 16 send the round-start stand into a move that holds itself, when is open.
 	Flow_State_Guessed,    // a game flow state test (by state)
 	Frame_Truncated,       // a frame number wider than the sim's 16 bits, cut (by move record offset, property id, or 0 for cancels)
 }
@@ -54,8 +54,13 @@ REQUIREMENT_LIST_END :: 0x18d
 REQUIREMENT_NEVER :: 77   // a TK5 id that is never true
 REQUIREMENT_ALWAYS :: 0
 REQUIREMENT_LINK_TARGET :: 0x14c
-REQUIREMENT_FLOW_STATE :: 0x10a  // and 0x10b: the game's flow state (TK5 0xf1, 0xf2)
-REQUIREMENT_FLOW_NEXT :: 0x10b
+REQUIREMENT_PARAM_ZERO :: 0x109  // TK5 0xf0 battle state test; TK6 tests only param == 0 (every start and win pose cancel)
+REQUIREMENT_FLOW_STATE :: 0x10a  // the game mode (TK5 0xf1, the flow state)
+
+// Round flow tests TK6 dropped (never true), and 0x111, a question to a game object: false in versus, or every intro
+// would be the game over kneel [guess]. tk6decomp docs/requirements.md.
+@(private, rodata)
+REQUIREMENT_DROPPED := [?]u32{0x108, 0x10b, 0x10e, 0x111, 0x112, 0x116, 0x117, 0x118, 0x119, 0x11a}
 
 @(private, rodata)
 REQUIREMENT_RUNS := [?]Run{
@@ -92,16 +97,20 @@ REQUIREMENT_OPEN := [?]Run{
 	{0x159, 0x15a, 0},
 }
 
-// Flow states: TK6 state -> the TK5 state requirement_param reads [guess: by use counts]; others hold in no phase.
+// The phases a TK6 game mode stands for, as the sim's phase test (tk5_convert.requirement_param). The round end
+// (FUN_002099f4) sets 7 when the match is over (win poses) and 10 when a round follows (round loss poses) [proven].
+// Other modes hold in no phase.
 @(private, rodata)
-FLOW_STATES := [?]Pair{{7, 9}, {10, 10}}
+FLOW_PHASES := [?]struct {mode: u32, every, first: tk5_convert.Phase}{{7, .Match_End, .None}, {10, .Flashback, .Round_End}}
 
 // The sim requirement id and param. Ids from 0x8000 on are properties (instant properties of a list).
 @(private)
 requirement_of :: proc(id, parameter: u32, fallbacks: ^Fallbacks) -> (sim_id, sim_parameter: u32) {
+	if id == REQUIREMENT_PARAM_ZERO do return parameter == 0 ? REQUIREMENT_ALWAYS : REQUIREMENT_NEVER, parameter
+	for dropped in REQUIREMENT_DROPPED do if dropped == id do return REQUIREMENT_NEVER, parameter
 	if run_holds(REQUIREMENT_RUNS[:], id) {
 		sim_id = run_value(REQUIREMENT_RUNS[:], id)
-		if id == REQUIREMENT_FLOW_STATE || id == REQUIREMENT_FLOW_NEXT do return sim_id, flow_state(parameter, fallbacks)
+		if id == REQUIREMENT_FLOW_STATE do return sim_id, flow_state(parameter, fallbacks)
 		return sim_id, parameter
 	}
 	for pair in REQUIREMENT_NEW do if pair.tk6 == id do return pair.sim, parameter
@@ -115,9 +124,11 @@ requirement_of :: proc(id, parameter: u32, fallbacks: ^Fallbacks) -> (sim_id, si
 }
 
 @(private)
-flow_state :: proc(state: u32, fallbacks: ^Fallbacks) -> u32 {
-	count(fallbacks, .Flow_State_Guessed, state)
-	for pair in FLOW_STATES do if pair.tk6 == state do return pair.sim
+flow_state :: proc(mode: u32, fallbacks: ^Fallbacks) -> u32 {
+	count(fallbacks, .Flow_State_Guessed, mode)
+	for phase in FLOW_PHASES do if phase.mode == mode {
+		return 1 << u32(phase.every) + u32(phase.first) * tk5_convert.PHASE_FIRST_FRAME_UNIT
+	}
 	return 0
 }
 
@@ -288,6 +299,37 @@ hitbox_bones :: proc(codes: u32) -> (sim_codes: u32) {
 	return
 }
 
+SPECIAL_POINT_FIRST :: 0x1e  // codes 0x1e..0x27: points the game builds from the bones each frame (FUN_001d62fc)
+// The sim's special point slots, in its order (hit.h T6SpecialSlot).
+Special_Slot :: enum u8 {
+	Chest_Ahead, Chest_Behind, Head_Ahead, Left_Foot_Low, Left_Foot_High, Right_Foot_High,
+	Pelvis_Ahead, Pelvis_Ahead_Body, Left_Hand_Tip, Right_Hand_Tip,
+}
+
+// The slot of each code 0x1e..0x27, tk6decomp docs/sim_contract.md 7.
+@(private, rodata)
+SPECIAL_POINT_SLOTS := [?]Special_Slot {
+	.Chest_Ahead, .Chest_Behind, .Pelvis_Ahead, .Pelvis_Ahead_Body, .Head_Ahead,
+	.Left_Foot_Low, .Left_Foot_High, .Right_Foot_High, .Left_Hand_Tip, .Right_Hand_Tip,
+}
+
+// The point of a special code the sim builds; false for codes it does not.
+@(private)
+special_point :: proc(code: u8) -> (point: tk5_convert.Hit_Point, built: bool) {
+	if code < SPECIAL_POINT_FIRST || int(code) >= SPECIAL_POINT_FIRST + len(SPECIAL_POINT_SLOTS) do return
+	return {.Special, u8(SPECIAL_POINT_SLOTS[code - SPECIAL_POINT_FIRST])}, true
+}
+
+// The special points the sim builds, over the points tk5_convert.hitbox_hits read of the same codes.
+@(private)
+special_pairs :: proc(hits: ^tk5_convert.Move_Hits, codes: u32) {
+	code_at :: proc(codes: u32, position: int) -> u8 {return u8(codes >> u32(24 - 8 * position))}  // file order
+	for &pair, slot in hits.pairs {
+		if point, built := special_point(code_at(codes, 2 * slot)); built do pair.end = point
+		if point, built := special_point(code_at(codes, 2 * slot + 1)); built do pair.start = point
+	}
+}
+
 // Four point codes in file order, as the TK5 codes that tk5_convert.hitbox_hits reads.
 @(private)
 hitbox_of :: proc(codes: u32, fallbacks: ^Fallbacks) -> (sim_codes: u32) {
@@ -297,7 +339,7 @@ hitbox_of :: proc(codes: u32, fallbacks: ^Fallbacks) -> (sim_codes: u32) {
 		if code == EFFECT_CODE {
 			sim_code = SIM_EFFECT_CODE
 		} else if code > BONE_CODE_LAST {
-			count(fallbacks, .Hitbox_Keep, code)
+			if _, built := special_point(u8(code)); !built do count(fallbacks, .Hitbox_Keep, code)
 			sim_code = SIM_KEEP_CODE
 		}
 		sim_codes |= sim_code << shift

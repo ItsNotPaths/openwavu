@@ -17,9 +17,6 @@
 #include "sim/transition.h"
 #include "sim/vec.h"
 
-// Alias indexes of the start move: its cancels pick the intro, the round start or the win pose. The other fighter of an
-// intro plays the away move.
-enum { ALIAS_START = 0, ALIAS_AWAY = 36 };
 enum { NO_OPTION = 65535 };
 static const float START_DISTANCE = 1000.0f;  // the opponent distance a reset starts with
 
@@ -29,9 +26,8 @@ static constexpr T6ThrowPosition START_POSITION = {THROW_STANDING, HIT_FRONT};  
 
 static void start_move(T6World *w, T6Fighter *f, T6Fighter *opponent, bool away) {
     f->skip_motion = 0;
-    uint32_t alias = ALIAS_START;
-    if (away) alias = ALIAS_AWAY;
-    f->pending_id = (int16_t)t6_move_alias(w, f, alias);  // the move id the start alias points to
+    uint32_t alias = away ? T6_ALIAS_AWAY : T6_ALIAS_ROUND_START;
+    f->pending_id = (int16_t)t6_move_alias(w, f, alias - T6_ALIAS_BASE);  // the move id the start alias points to
     T6Ref move = t6_move_lookup(w, f, (uint16_t)f->pending_id);
     f->frame = 1;  // the start move begins on its first frame
     f->pending_frame = 1;

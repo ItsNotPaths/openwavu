@@ -141,6 +141,7 @@ write_moves :: proc(w: ^db.Writer, keys: ^Keys, animation_owner: string, sheets:
 		sim_codes := hitbox_of(move.unknown_48[0], fallbacks)
 		hits, hits_ok := tk5_convert.hitbox_hits(sim_codes, NO_MOVESET)
 		if !hits_ok do return fmt.tprintf("%s move %d: a hitbox on a special slot its row leaves unwritten", character, index)
+		special_pairs(&hits, move.unknown_48[0])
 		owner, animation_index := tk5_convert.anim_ref(character, animation_owner, move.animation)
 		next, next_alias := move_ref(keys, move.transition)
 		values := make([dynamic]db.Value)

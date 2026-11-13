@@ -79,6 +79,7 @@ enum : uint32_t {
 // the moves of a reaction.
 enum : uint16_t {
     T6_ALIAS_BASE = 32768,
+    T6_ALIAS_ROUND_START = T6_ALIAS_BASE + 0,  // a round starts in it; its cancels pick the intro, win and loss poses
     T6_ALIAS_IDLE_STAND = T6_ALIAS_BASE + 1,
     T6_ALIAS_IDLE_CROUCH = T6_ALIAS_BASE + 2,
     T6_ALIAS_KO = T6_ALIAS_BASE + 25,
@@ -91,6 +92,7 @@ enum : uint16_t {
     T6_ALIAS_KEEPS_BOUND = T6_ALIAS_BASE + 36,  // a plain cancel into these keeps the bound, as into the launches
     T6_ALIAS_KEEPS_BOUND_LAST = T6_ALIAS_BASE + 38,
     T6_ALIAS_THROW_CLASH = T6_ALIAS_BASE + 43,  // both fighters threw at once
+    T6_ALIAS_AWAY = T6_ALIAS_BASE + 44,  // the fighter out of focus during an intro (a slot holding the idle)
     T6_ALIAS_FORCED_REACTION = T6_ALIAS_BASE + 63,  // the reaction moves the hit reaction pick forces; not read yet
     T6_ALIAS_FORCED_REACTION_LAST = T6_ALIAS_BASE + 67,
     T6_ALIAS_FORCED_GUARD = T6_ALIAS_BASE + 68,  // a stand guard move the game forces with the guard motion; not read yet

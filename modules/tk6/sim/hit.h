@@ -14,6 +14,7 @@ typedef struct { float x, y, z, radius_squared, radius; } T6Hurtbox;  // vertica
 
 enum T6SpecialSlot {  // slots of T6SpecialPoints.point, rebuilt every frame from the bones; moves use them as hitbox ends
     SPECIAL_CHEST_AHEAD, SPECIAL_CHEST_BEHIND, SPECIAL_HEAD_AHEAD, SPECIAL_L_FOOT_LOW, SPECIAL_L_FOOT_HIGH, SPECIAL_R_FOOT_HIGH,
+    SPECIAL_PELVIS_AHEAD, SPECIAL_PELVIS_AHEAD_BODY, SPECIAL_L_HAND_TIP, SPECIAL_R_HAND_TIP,  // new in TK6
     T6_SPECIAL_SLOTS,
 };
 

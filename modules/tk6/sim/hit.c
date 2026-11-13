@@ -145,13 +145,21 @@ static void apply_body_points(const T6BodyPoints *points, const T6Bone *bones, T
     }
 }
 
-typedef enum { YAW_FACING, YAW_LOOK } YawSource;
+typedef enum { YAW_FACING, YAW_LOOK, YAW_BODY } YawSource;
 
-// Special points 0..2: an offset ahead of or behind a bone, turned by the facing or the look direction.
+// An offset ahead of or behind a bone, turned by the facing, the look or the body direction.
 static const struct { uint8_t slot, bone; YawSource yaw; float offset_z; } YAWED_POINTS[] = {
     {SPECIAL_HEAD_AHEAD, BONE_HEAD_END, YAW_FACING, 200.0f},
     {SPECIAL_CHEST_AHEAD, BONE_CHEST, YAW_FACING, 300.0f},
     {SPECIAL_CHEST_BEHIND, BONE_CHEST, YAW_LOOK, -300.0f},
+    {SPECIAL_PELVIS_AHEAD, BONE_PELVIS, YAW_FACING, 800.0f},
+    {SPECIAL_PELVIS_AHEAD_BODY, BONE_PELVIS, YAW_BODY, 800.0f},
+};
+
+// A point this far along the bone's own x: the tips of the fists.
+static const struct { uint8_t slot, bone; float along_x; } TIP_POINTS[] = {
+    {SPECIAL_L_HAND_TIP, BONE_L_HAND, 100.0f},
+    {SPECIAL_R_HAND_TIP, BONE_R_HAND, 100.0f},
 };
 
 // Special points 3..5: a point this far below a foot.
@@ -170,7 +178,7 @@ static void special_points(T6Fighter *f) {
     if (hitscan != nullptr) hitscan_tip(*hitscan, special->hitscan, bones, special);  // hitscan move: place its tip
     if (projectile != nullptr) projectile_corners(*projectile, &special->projectile);  // projectile move: place its back corners
     int32_t yaw[] = {[YAW_FACING] = t6_rad_to_angle_round(t6_angle65535_to_rad(f->facing)),  // turn angles: facing, look
-                     [YAW_LOOK] = t6_rad_to_angle_round(f->look_yaw)};
+                     [YAW_LOOK] = t6_rad_to_angle_round(f->look_yaw), [YAW_BODY] = t6_rad_to_angle_round(f->body_yaw)};
     for (size_t entry = 0; entry < sizeof YAWED_POINTS / sizeof *YAWED_POINTS; entry++) {  // loop through the bone-based points
         const T6Vec4 offset = {{0, 0, YAWED_POINTS[entry].offset_z, 1}};
         yaw_point(&special->point[YAWED_POINTS[entry].slot], yaw[YAWED_POINTS[entry].yaw],  // turn the offset, put it at the bone
@@ -179,6 +187,10 @@ static void special_points(T6Fighter *f) {
     for (size_t entry = 0; entry < sizeof FOOT_POINTS / sizeof *FOOT_POINTS; entry++) {  // loop through the foot points
         const T6Vec4 below = {{0, FOOT_POINTS[entry].below, 0, 1}};
         t6_vec_subtract(&special->point[FOOT_POINTS[entry].slot], bone_point(bones, FOOT_POINTS[entry].bone), &below);
+    }
+    for (size_t entry = 0; entry < sizeof TIP_POINTS / sizeof *TIP_POINTS; entry++) {  // loop through the tips
+        const T6Vec4 along = {{TIP_POINTS[entry].along_x, 0, 0, 1}};
+        t6_vec_times_mat(&special->point[TIP_POINTS[entry].slot], &along, &bones[TIP_POINTS[entry].bone].world);
     }
 }
 
