@@ -3,6 +3,8 @@
 package tk6_convert
 
 import "core:encoding/json"
+import "core:fmt"
+import "core:math"
 import "core:os"
 import "core:slice"
 import "../../gltf"
@@ -54,6 +56,8 @@ write_stage_collision :: proc(collision_path, surfaces_path: string, stage: form
 		append(&indices, base, base + 1, base + 2, base, base + 2, base + 3)
 	}
 	if len(stage.walls) > 0 do add_collision_mesh(&model, &root, "walls", positions[:], normals[:], surface[:], nil, indices[:])
+	add_start_nodes(&model, &root, "centre", stage.centres)
+	add_start_nodes(&model, &root, "entrance", stage.entrances)
 
 	append(&model.nodes, root)
 	scene: gltf.Scene
@@ -62,6 +66,20 @@ write_stage_collision :: proc(collision_path, surfaces_path: string, stage: form
 	gltf.write_glb(&model, collision_path) or_return
 	text, failed := json.marshal(SURFACES, {pretty = true})
 	return failed == nil && os.write_entire_file(surfaces_path, text) == nil
+}
+
+// Nodes "start.<list>.<index>" with the turn in extras, the names modules/tk6/sim/stage_file.c reads. The height is
+// dropped: the placement stands the fighters at y 0 (FUN_001c5044), and posf heights do not follow the floor levels.
+@(private = "file")
+add_start_nodes :: proc(model: ^gltf.Gltf, root: ^gltf.Node, list: string, points: []formats.Stage_Start) {
+	for point, index in points {
+		extras := make(json.Object)
+		extras["turn"] = json.Float(point.turn)
+		append(&model.nodes, gltf.Node{
+			name = fmt.tprintf("start.%s.%d", list, index), translation = floats(point.position.x, 0, point.position.z),
+			rotation = floats(0, math.sin(point.turn / 2), 0, math.cos(point.turn / 2)), extras = extras})
+		append(&root.children, len(model.nodes) - 1)
+	}
 }
 
 // A slice literal points at the stack: the glb is written after this frame ends.

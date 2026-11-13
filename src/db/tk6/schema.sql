@@ -774,9 +774,10 @@ CREATE TABLE character_effect_row (
 
 -- The arena ring of a stage (FUN_001bf15c): fighters farther apart than pull_in are pulled onto a circle of radius. mm.
 CREATE TABLE stage_arena (
-	stage   TEXT PRIMARY KEY REFERENCES stage(id),
-	radius  REAL NOT NULL,
-	pull_in REAL NOT NULL
+	stage        TEXT PRIMARY KEY REFERENCES stage(id),
+	radius       REAL NOT NULL,
+	pull_in      REAL NOT NULL,
+	start_offset REAL NOT NULL  -- side 1's x on the start line before the stage turn; side 2 stands at minus it
 );
 
 -- A costume's row of the game's fighter table (FUN_0023ade0): what costume requirements compare (P+0x5c), and its variant.

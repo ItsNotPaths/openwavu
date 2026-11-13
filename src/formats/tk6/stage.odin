@@ -211,6 +211,30 @@ in_parent :: proc(place, parent: [16]f32) -> [16]f32 {
 	return transmute([16]f32)(transmute(matrix[4, 4]f32)parent * transmute(matrix[4, 4]f32)place)
 }
 
+STAGE_POINTS :: 23    // from the first file: "posf"
+START_CENTRES :: 0    // posf table: the start line centres (FUN_001c548c)
+START_ENTRANCES :: 1  // posf table: the entrance points
+POINT_TABLES :: 0x10  // posf: u32 offset of table t at +0x10 + 8t; table: u32 count, {u32 offset from the table, u32 size}[count]
+POINT_POSITION :: 0x40  // point record: f32 position[3], then f32 turns x, y, z (FUN_0019b5e4)
+POINT_TURN_Y :: 0x50
+
+// One posf table of start points (FUN_0019ac38, FUN_0019b5e4).
+@(private = "file")
+read_starts :: proc(data: []byte, table: int) -> (points: []Stage_Start, ok: bool) {
+	if len(data) < POINT_TABLES + 8 * table + 4 || string(data[:4]) != "posf" do return
+	at := int(tk5.be_u32(data, POINT_TABLES + 8 * table))
+	if at + 4 > len(data) do return
+	count := int(tk5.be_u32(data, at))
+	if at + 4 + 8 * count > len(data) do return
+	points = make([]Stage_Start, count)
+	for &point, index in points {
+		record := at + int(tk5.be_u32(data, at + 4 + 8 * index))
+		if record + POINT_TURN_Y + 4 > len(data) do return
+		point = {vector(data, record + POINT_POSITION), tk5.be_f32(data, record + POINT_TURN_Y)}
+	}
+	return points, true
+}
+
 WALL_COUNT :: 0x24
 WALL_TABLE :: 0x28
 WALL_RECORD :: 0x90  // u32 size, u32 material, f32 centre x, z, radius², i32 object, 2 x u32, f32 normal[4], corner[4][4]
@@ -236,10 +260,18 @@ Stage_Floor :: struct {
 	corners: [3][3]f32,
 }
 
+// A start point of posf: the centre of the start line (table 0) or the entrance point (table 1), and its turn about y.
+Stage_Start :: struct {
+	position: [3]f32,
+	turn:     f32,  // radians
+}
+
 Stage_Collision :: struct {
 	walls:        []Stage_Wall,
 	floors:       []Stage_Floor,
 	floor_height: f32,  // the start level's: 7000 mm over the lower level on stages 03, 09, 12, 19, else 0
+	centres:      []Stage_Start,
+	entrances:    []Stage_Start,
 }
 
 // The wall quads of the "hitd" file and the floor triangles of the "flor" file. A stage with no walls is open.
@@ -248,6 +280,9 @@ read_stage_collision :: proc(game: Game_Files, stage: Stage, allocator := contex
 	out.walls = read_walls(game, stage) or_return
 	out.floors = read_floors(game, stage) or_return
 	if len(out.floors) == 0 do return
+	file := read_file(game, stage.first + STAGE_POINTS, allocator = context.temp_allocator) or_return
+	out.centres = read_starts(file, START_CENTRES) or_return
+	out.entrances = read_starts(file, START_ENTRANCES) or_return
 	out.floor_height = out.floors[0].corners[0].y
 	return out, true
 }

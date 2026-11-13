@@ -111,6 +111,13 @@ int main(int count, char **arguments) {
         } else if (strncmp(line, "load", 4) == 0) {
             t6_match = kept;
             memcpy(t6_match_data.sides, kept_sides, sizeof kept_sides);
+        } else if (strncmp(line, "place", 5) == 0) {
+            printf("place");
+            for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
+                const T6Fighter *f = &t6_match.fighters[side];
+                printf(" %.3f %.3f %d", f->base_position.x, f->base_position.z, f->facing);
+            }
+            printf("\n");
         } else if (strncmp(line, "mark ", 5) == 0) {
             printf("%s", line);
         }

@@ -178,7 +178,7 @@ static int32_t polygon_count(const Mesh *floors) {
     return count;
 }
 
-static const char *const START_LISTS[T6_START_LISTS] = {"side_1", "side_2", "entrance"};
+static const char *const START_LISTS[T6_START_LISTS] = {"centre", "entrance"};
 
 // A start node: its list and index, from "start.<list>.<index>". False for any other node.
 static bool start_node(Json node, int32_t *list, int32_t *index) {
@@ -243,7 +243,6 @@ static const char *open_source(Source *source, T6Bytes collision, T6Bytes surfac
     }
     for (list = 0; list < T6_START_LISTS; list++)
         if (nodes[list] != source->start_count[list]) return "collision: start indexes have gaps";
-    if (source->start_count[T6_START_SIDE_1] != source->start_count[T6_START_SIDE_2]) return "collision: side 1 and 2 differ";
     return NULL;
 }
 

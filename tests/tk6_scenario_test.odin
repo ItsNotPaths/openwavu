@@ -3,6 +3,7 @@
 package tests
 
 import "core:fmt"
+import "core:math"
 import "core:os"
 import "core:strconv"
 import "core:strings"
@@ -47,16 +48,22 @@ build_scenario_tool :: proc() -> bool {
 	return err == nil && state.exit_code == 0
 }
 
+@(private = "file")
+run_tool :: proc(t: ^testing.T, pack, stage, script: string) -> (stdout: []byte, ok: bool) {
+	script_path :: "build/tk6_scenario.txt"
+	if !testing.expect(t, os.write_entire_file(script_path, transmute([]byte)script) == nil, "script not written") do return
+	state, out, _, err := os.process_exec({command = {TK6_SCENARIO_TOOL, pack, "kazuya", "kazuya", stage, script_path}}, context.temp_allocator)
+	if !testing.expectf(t, err == nil && state.exit_code == 0, "the scenario tool failed on %s (%v)", stage, state.exit_code) do return
+	return out, true
+}
+
 // Runs a script and reads its state lines, split at its marks.
 @(private = "file")
 run_scenario :: proc(t: ^testing.T, script: string) -> (run: Scenario_Run, ok: bool) {
 	pack, imported := tk6_pack(t)
 	if !imported do return
 	if !testing.expect(t, build_scenario_tool(), "tests/ref/tk6_scenario.c did not build") do return
-	script_path :: "build/tk6_scenario.txt"
-	if !testing.expect(t, os.write_entire_file(script_path, transmute([]byte)script) == nil, "script not written") do return
-	state, stdout, _, err := os.process_exec({command = {TK6_SCENARIO_TOOL, pack, "kazuya", "kazuya", "stage_00", script_path}}, context.temp_allocator)
-	if !testing.expectf(t, err == nil && state.exit_code == 0, "the scenario tool failed (%v)", state.exit_code) do return
+	stdout := run_tool(t, pack, "stage_00", script) or_return
 	run.allocator = context.temp_allocator
 	append(&run, make([dynamic][2]Scenario_Side, context.temp_allocator))
 	for line in strings.split_lines(string(stdout), context.temp_allocator) {
@@ -123,4 +130,42 @@ tk6_one_bound_per_combo :: proc(t: ^testing.T) {
 	for frame in run[0] do bounded ||= frame[1].bounds == 1
 	if !testing.expect(t, bounded, "the electric, then d/f+1,2, did not bound") do return
 	for block in run[1:] do for frame in block do if !testing.expectf(t, frame[1].bounds <= 1, "bounds %d in one combo", frame[1].bounds) do return
+}
+
+// The fight starts on the stage's start line: centred on the posf centre, turned by its turn, 2000 apart (stage 12:
+// 5000, side 1 on the right), each fighter facing the other.
+@(test)
+tk6_fighters_start_on_the_stage_line :: proc(t: ^testing.T) {
+	Start_Line :: struct {
+		stage:       string,
+		centre, gap: [2]f32,  // x, z; gap: side 2's place minus side 1's
+	}
+	TURN_03 :: -80.0 * math.PI / 180
+	lines := []Start_Line{
+		{"stage_00", {0, 0}, {2000, 0}},
+		{"stage_03", {0, 0}, {2000 * math.cos(f32(TURN_03)), -2000 * math.sin(f32(TURN_03))}},
+		{"stage_09", {-2000, 0}, {2000 * math.cos(f32(4.764749)), -2000 * math.sin(f32(4.764749))}},
+		{"stage_12", {0, 0}, {-5000, 0}},
+	}
+	pack, imported := tk6_pack(t)
+	if !imported do return
+	if !testing.expect(t, build_scenario_tool(), "tests/ref/tk6_scenario.c did not build") do return
+	for line in lines {
+		stdout, ran := run_tool(t, pack, line.stage, "fight\nplace\n")
+		if !ran do continue
+		fields: []string
+		for text in strings.split_lines(string(stdout), context.temp_allocator) do if strings.has_prefix(text, "place ") do fields = strings.fields(text, context.temp_allocator)
+		if !testing.expectf(t, len(fields) == 7, "%s: no place line", line.stage) do continue
+		value :: proc(text: string) -> f32 {number, _ := strconv.parse_f32(text); return number}
+		place := [2][2]f32{{value(fields[1]), value(fields[2])}, {value(fields[4]), value(fields[5])}}
+		facing := [2]f32{value(fields[3]), value(fields[6])}
+		centre, gap := (place[0] + place[1]) / 2, place[1] - place[0]
+		testing.expectf(t, math.abs(centre.x - line.centre.x) < 20 && math.abs(centre.y - line.centre.y) < 20, "%s: centred on %v", line.stage, centre)
+		testing.expectf(t, math.abs(gap.x - line.gap.x) < 20 && math.abs(gap.y - line.gap.y) < 20, "%s: gap %v, want %v", line.stage, gap, line.gap)
+		for side in 0 ..< 2 {
+			toward := (side == 0 ? gap : -gap) / math.sqrt(gap.x * gap.x + gap.y * gap.y)
+			angle := facing[side] * 2 * math.PI / 65536
+			testing.expectf(t, toward.x * math.sin(angle) + toward.y * math.cos(angle) > 0.99, "%s: side %d does not face the other", line.stage, side + 1)
+		}
+	}
 }

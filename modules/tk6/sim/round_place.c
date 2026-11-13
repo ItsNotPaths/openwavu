@@ -9,8 +9,7 @@
 #include "sim/stage.h"
 #include "sim/vec.h"
 
-static const float FALLBACK_X = 1000.0f;       // the fallback line when the stage has no start points
-static const float SIDE_DISTANCE = 2000.0f;    // side 2 stands this far from side 1, toward its table point
+static const T6StartPoint NO_START = {};  // a stage without start records: the origin, no turn
 
 // The start index is signed and wraps by the record count.
 static int32_t record_index(const T6World *w, int32_t count) {
@@ -42,59 +41,44 @@ static void face(T6Fighter *f, int16_t angle, float radians) {
 static void face_raw(T6Fighter *f, float radians) { face(f, angle_of(radians), radians); }  // to binary angle, then face
 static void face_snapped(T6Fighter *f, int16_t angle) { face(f, angle, t6_angle65535_to_rad(angle)); }  // to radians, then face
 
-// Both fighters on one entrance point, facing one way (the scene starts and the match end).
-static void place_on_entrance(T6World *w) {
-    int32_t count = w->stage->start[T6_START_ENTRANCE].count;  // number of entrance records
-    if (count == 0) {  // no entrance records: fall back to the origin
+// The record the start index picks from a list, or NO_START when the list is empty.
+static T6StartPoint start_point(T6World *w, int32_t list) {
+    int32_t count = w->stage->start[list].count;
+    if (count == 0) {
         w->start_record = 0;
-        for (int side = 0; side < T6_FIGHTER_COUNT; side++) {  // loop through both fighters
-            t6_round_stand_at(w->fighters[side], 0.0f, 0.0f);  // stand at x 0, z 0
-            face(w->fighters[side], 0, 0.0f);  // face angle 0
-        }
-        return;
+        return NO_START;
     }
-    int32_t index = record_index(w, count);  // wrapped start record
-    T6StartPoint point = w->stage->start[T6_START_ENTRANCE].points[index];  // the entrance point for that record
+    return w->stage->start[list].points[record_index(w, count)];
+}
+
+// Both fighters on one entrance point, facing against its turn (the scene starts and the match end).
+static void place_on_entrance(T6World *w) {
+    T6StartPoint point = start_point(w, T6_START_ENTRANCE);
     for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
-        t6_round_stand_at(w->fighters[side], point.position.x, point.position.z);  // stand on the point's x and z
-        face_raw(w->fighters[side], point.turn);
+        t6_round_stand_at(w->fighters[side], point.position.x, point.position.z);
+        face_raw(w->fighters[side], -point.turn);
     }
 }
 
-// Side 1 on its table point, side 2 two thousand units from it toward its own table point.
-static void place_on_lines(T6World *w) {
-    T6Fighter *first_fighter = w->fighters[0], *second_fighter = w->fighters[1];
-    int32_t count = w->stage->start[T6_START_SIDE_1].count;  // number of side 1 records
-    if (count == 0) {  // no records: use the fallback line
-        w->start_record = 0;
-        t6_round_stand_at(first_fighter, -FALLBACK_X, 0.0f);  // side 1 at -FALLBACK_X, z 0
-        face_snapped(first_fighter, (int16_t)t6_fctiwz(t6_atan2(-FALLBACK_X, 0.0f) * T6_RAD_TO_ANGLE));  // face atan2(-1000, 0)
-        t6_round_stand_at(second_fighter, FALLBACK_X, 0.0f);  // side 2 at FALLBACK_X, z 0
-        face_snapped(second_fighter, (int16_t)t6_fctiwz(t6_atan2(FALLBACK_X, 0.0f) * T6_RAD_TO_ANGLE));  // face atan2(1000, 0)
-        return;
+// (hole tk6-start-kinds :tags (tk6 sim) :sev polish) the game's placement kinds are not modelled: Azazel (model 0x26) in kinds 3 and 4 starts at 1500, kind 5 at 1.75 times the offset, kind 9 reads posf table 2, kinds 11..13, 21, 23, 24 place by other code (tk6decomp data.md posf).
+// Side 1 at the start offset along x, side 2 at minus it, both turned by the centre's turn and moved onto it
+// (FUN_001c548c, row vectors: x times (cos, 0, -sin)).
+static void place_on_line(T6World *w) {
+    T6StartPoint centre = start_point(w, T6_START_CENTRE);
+    float sine = t6_sin(centre.turn), cosine = t6_cos(centre.turn);
+    for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
+        float along = side == 0 ? w->stage->start_offset : -w->stage->start_offset;
+        float offset_x = along * cosine, offset_z = -along * sine;
+        t6_round_stand_at(w->fighters[side], centre.position.x + offset_x, centre.position.z + offset_z);
+        // Our fix: the game takes atan2 of the world position, which only faces the fighters at each other when the
+        // centre is the origin; stages 02 (z 3750) and 09 (x -2000) are not. The offset alone faces them on every stage.
+        face_snapped(w->fighters[side], (int16_t)t6_fctiwz(t6_atan2(offset_x, offset_z) * T6_RAD_TO_ANGLE));
     }
-    int32_t index = record_index(w, count);  // wrapped start record
-    T6StartPoint first = w->stage->start[T6_START_SIDE_1].points[index];  // side 1 and side 2 points for that record
-    T6StartPoint second = w->stage->start[T6_START_SIDE_2].points[index];
-    t6_round_stand_at(first_fighter, first.position.x, first.position.z);  // stand side 1 on its point
-    face_raw(first_fighter, first.turn);
-    T6Vec4 from = {{first.position.x, 0.0f, first.position.z, 1.0f}}, to = {{second.position.x, 0.0f, second.position.z, 1.0f}};
-    T6Vec4 along, unit, step, end;
-    t6_vec_subtract(&along, &to, &from);
-    float length = t6_length3(along.x, along.y, along.z);
-    float inverse = 0.0f;
-    if (length != 0.0f) inverse = 1.0f / length;  // 1 / length, unless zero
-    t6_vec_scale(&unit, &along, inverse);  // unit: the direction from side 1 to side 2
-    t6_vec_scale(&step, &unit, SIDE_DISTANCE);  // a fixed distance along that direction
-    step.w = 0.0f;  // clear w so step is only an offset
-    t6_vec_add(&end, &from, &step);  // end: side 1 point moved along step
-    t6_round_stand_at(second_fighter, end.x, end.z);  // stand side 2 at end
-    face_raw(second_fighter, second.turn);
 }
 
 void t6_round_place(T6World *w, T6RoundSetup setup) {
     if (setup.on_entrance_point) place_on_entrance(w);  // entrance layout if the setup asks
-    else place_on_lines(w);
+    else place_on_line(w);
     for (int side = 0; side < T6_FIGHTER_COUNT; side++) {
         T6Fighter *f = w->fighters[side];
         f->position.y = 0.0f;  // put on the ground, no tilt
@@ -105,20 +89,16 @@ void t6_round_place(T6World *w, T6RoundSetup setup) {
 
 void t6_round_nearest_start(T6World *w) {
     const T6Fighter *first = w->fighters[0], *second = w->fighters[1];
-    int32_t count = w->stage->start[T6_START_SIDE_1].count;  // number of side 1 records
-    if (count <= 0) return;  // no records: nothing to pick
+    T6StartList centres = w->stage->start[T6_START_CENTRE];
     float best = w->stage_depth;  // best distance so far, starts at stage depth
     float mid_z = (first->base_position.z + second->base_position.z) * 0.5f;  // the middle between the two fighters
     float mid_x = (first->base_position.x + second->base_position.x) * 0.5f;
-    for (int32_t record = 0; record < count; record++) {  // loop through every start record
-        T6Vec3 first_start = w->stage->start[T6_START_SIDE_1].points[record].position;  // this record's two points
-        T6Vec3 second_start = w->stage->start[T6_START_SIDE_2].points[record].position;
-        float offset_z = mid_z - ((first_start.z + second_start.z) * 0.5f);  // gap between the two middles
-        float offset_x = mid_x - ((first_start.x + second_start.x) * 0.5f);
-        float distance = t6_length_xz(offset_x, offset_z);  // ground distance of that gap
-        if (best > distance) {  // closer than the best so far
+    for (int32_t record = 0; record < centres.count; record++) {
+        T6Vec3 centre = centres.points[record].position;
+        float distance = t6_length_xz(mid_x - centre.x, mid_z - centre.z);
+        if (best > distance) {
             best = distance;
-            w->start_record = record;  // this record is the best
+            w->start_record = record;
         }
     }
 }

@@ -250,7 +250,6 @@ write_part :: proc(im: ^Import, owner, part, slot, skeleton_part: string, file: 
 
 // The six layers as one glb, each placed by its nodes, and the walls and floor.
 // (hole tk6-stage-look :tags (tk6 importer) :sev polish) stage blend modes, node anims (gyas) and the effect list are not read.
-// (hole tk6-stage-start :tags (tk6 importer) :sev gap) posf table 0 (one centre point and yaw per stage) is not imported, so the sim's fallback line places the fighters; the facing of the placement (FUN_001c548c) is open (tk6decomp data.md posf).
 // (hole tk6-floor-breaks :tags (tk6 importer) :sev gap) floor and wall breaks are not imported; they look like stage objects (properties touch them), not fighter code [guess].
 import_stage :: proc(im: ^Import, stage: tk6.Stage, music: db.Value) {
 	collision, has_collision := tk6.read_stage_collision(im.game, stage, context.temp_allocator)

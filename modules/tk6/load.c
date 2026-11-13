@@ -1093,11 +1093,12 @@ static const char *stage_files(sqlite3 *db, const char *stage, T6ReadFile read, 
 
 static const char *stage_arena(sqlite3 *db, const char *stage, T6Stage *out) {
     sqlite3_stmt *row;
-    const char *failed = prepare(db, "SELECT radius, pull_in FROM stage_arena WHERE stage = ?1", stage, &row);
+    const char *failed = prepare(db, "SELECT radius, pull_in, start_offset FROM stage_arena WHERE stage = ?1", stage, &row);
     if (!failed && sqlite3_step(row) != SQLITE_ROW) failed = fail("stage %s: no arena row", stage);
     if (!failed) {
         out->arena_radius = (float)sqlite3_column_double(row, 0);
         out->arena_pull_in = (float)sqlite3_column_double(row, 1);
+        out->start_offset = (float)sqlite3_column_double(row, 2);
     }
     sqlite3_finalize(row);
     return failed;
